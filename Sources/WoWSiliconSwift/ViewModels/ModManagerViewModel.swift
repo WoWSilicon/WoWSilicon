@@ -65,6 +65,30 @@ final class ModManagerViewModel: ObservableObject, Identifiable {
         }
     }
 
+    func install(from sourceURL: URL) {
+        guard !isPerformingAction else { return }
+        isPerformingAction = true
+        status = .loading("Installing mod…")
+        Task.detached { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try ModService.installMod(from: sourceURL, version: self.version, supportsDLL: self.supportsDLL)
+                let mods = try ModService.scanMods(version: self.version, supportsDLL: self.supportsDLL)
+                Task { @MainActor in
+                    self.mods = mods
+                    self.status = .ready
+                    self.isPerformingAction = false
+                }
+            } catch {
+                Task { @MainActor in
+                    self.status = self.mods.isEmpty ? .idle : .ready
+                    self.isPerformingAction = false
+                    self.alert = ManagerAlert(message: error.localizedDescription)
+                }
+            }
+        }
+    }
+
     func delete(mod: ModInfo) {
         guard !isPerformingAction else { return }
         isPerformingAction = true

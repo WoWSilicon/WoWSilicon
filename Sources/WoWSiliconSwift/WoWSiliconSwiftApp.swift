@@ -7,13 +7,6 @@ import UniformTypeIdentifiers
 struct WoWSiliconSwiftApp: App {
     @StateObject private var viewModel = MainDashboardViewModel()
 
-    init() {
-        if let image = turtleIconImage() {
-            NSApplication.shared.applicationIconImage = image
-        }
-        _ = UpdaterService.shared
-    }
-
     var body: some Scene {
         WindowGroup {
             MainDashboardView(viewModel: viewModel)
@@ -24,6 +17,9 @@ struct WoWSiliconSwiftApp: App {
                     height: windowHeight
                 ))
                 .registerEnvironmentValues(viewModel)
+                .onAppear {
+                    configureApplication()
+                }
         }
         .windowResizability(.contentSize)
         .windowToolbarStyle(.unifiedCompact)
@@ -35,6 +31,13 @@ struct WoWSiliconSwiftApp: App {
                 }
             }
         }
+    }
+
+    private func configureApplication() {
+        if let image = turtleIconImage() {
+            NSApplication.shared.applicationIconImage = image
+        }
+        _ = UpdaterService.shared
     }
 }
 

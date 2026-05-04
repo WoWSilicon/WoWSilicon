@@ -1,8 +1,11 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 struct ModManagerView: View {
     @ObservedObject var viewModel: ModManagerViewModel
     let onClose: () -> Void
+    @State private var modPendingDeletion: ModInfo?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -22,6 +25,8 @@ struct ModManagerView: View {
                     }
                 }
                 Spacer()
+                Button("Install DLL...") { installDLL() }
+                    .disabled(viewModel.isPerformingAction)
                 Button("Refresh") { viewModel.refresh() }
                     .disabled(viewModel.isPerformingAction)
                 Button("Close", action: onClose)
@@ -53,7 +58,7 @@ struct ModManagerView: View {
                             .disabled(mod.required || viewModel.isPerformingAction)
 
                             Spacer()
-                            Button("Delete") { viewModel.delete(mod: mod) }
+                            Button("Delete") { modPendingDeletion = mod }
                                 .disabled(mod.required || viewModel.isPerformingAction)
                         }
                     }
@@ -62,10 +67,34 @@ struct ModManagerView: View {
             }
         }
         .padding()
-        .frame(minWidth: 520, minHeight: 360)
+        .frame(minWidth: 550, minHeight: 500)
         .onAppear { viewModel.refresh() }
         .alert(item: $viewModel.alert) { alert in
             Alert(title: Text("Mods"), message: Text(alert.message), dismissButton: .default(Text("OK")))
+        }
+        .alert(item: $modPendingDeletion) { mod in
+            Alert(
+                title: Text("Delete Mod?"),
+                message: Text("This will remove \(mod.name) from the mods folder and from dlls.txt."),
+                primaryButton: .destructive(Text("Delete")) {
+                    viewModel.delete(mod: mod)
+                },
+                secondaryButton: .cancel()
+            )
+        }
+    }
+
+    private func installDLL() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "dll")].compactMap { $0 }
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.title = "Install DLL Mod"
+        panel.message = "Choose a DLL file to copy into the mods folder and enable."
+
+        if panel.runModal() == .OK, let url = panel.url {
+            viewModel.install(from: url)
         }
     }
 }

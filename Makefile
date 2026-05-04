@@ -40,9 +40,9 @@ xcode:
 	@echo "Opening Xcode project..."
 	tuist generate
 
-run: build
-	@echo "Launching $(BINARY_NAME)..."
-	$(RELEASE_BIN)
+run: bundle
+	@echo "Launching $(APP_NAME).app..."
+	open "$(APP_BUNDLE)"
 
 bundle: build
 	@$(MAKE) app_icon

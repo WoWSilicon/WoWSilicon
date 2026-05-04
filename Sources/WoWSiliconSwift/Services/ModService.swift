@@ -39,6 +39,9 @@ enum ModServiceError: LocalizedError {
     case gamePathMissing
     case modsNotSupported
     case modsDirectoryMissing(String)
+    case invalidModFile(String)
+    case protectedMod(String)
+    case copyFailed(String)
     case writeFailed(String)
     case deleteFailed(String)
 
@@ -50,6 +53,12 @@ enum ModServiceError: LocalizedError {
             return "Mods are not supported for this version."
         case .modsDirectoryMissing(let path):
             return "Mods directory not found: \(path)"
+        case .invalidModFile(let path):
+            return "Only DLL files can be installed as mods: \(path)"
+        case .protectedMod(let name):
+            return "\(name) is managed by WoWSilicon and cannot be replaced from the Mod Manager."
+        case .copyFailed(let reason):
+            return reason
         case .writeFailed(let reason):
             return reason
         case .deleteFailed(let reason):
@@ -101,6 +110,48 @@ enum ModService {
         }
 
         return mods.sorted { $0.name.lowercased() < $1.name.lowercased() }
+    }
+
+    static func installMod(from sourceURL: URL, version: GameVersion, supportsDLL: Bool) throws -> ModInfo {
+        guard supportsDLL else { throw ModServiceError.modsNotSupported }
+        guard !version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ModServiceError.gamePathMissing
+        }
+        guard sourceURL.pathExtension.lowercased() == "dll" else {
+            throw ModServiceError.invalidModFile(sourceURL.lastPathComponent)
+        }
+
+        let requiredMods = getRequiredMods(for: version)
+        let name = sourceURL.lastPathComponent
+        guard !requiredMods.contains(name.lowercased()) else {
+            throw ModServiceError.protectedMod(name)
+        }
+
+        let modsURL = URL(fileURLWithPath: version.gamePath, isDirectory: true).appendingPathComponent("mods", isDirectory: true)
+        let destinationURL = modsURL.appendingPathComponent(name, isDirectory: false)
+
+        do {
+            try FileManager.default.createDirectory(at: modsURL, withIntermediateDirectories: true)
+            if sourceURL.standardizedFileURL != destinationURL.standardizedFileURL {
+                if FileManager.default.fileExists(atPath: destinationURL.path) {
+                    try FileManager.default.removeItem(at: destinationURL)
+                }
+                try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+            }
+        } catch {
+            throw ModServiceError.copyFailed(error.localizedDescription)
+        }
+
+        var enabledMods = enabledModSet(gamePath: version.gamePath, requiredMods: requiredMods)
+        enabledMods.insert("mods/" + name)
+        try writeDllsFile(enabledMods: enabledMods, gamePath: version.gamePath)
+
+        let mods = try scanMods(version: version, supportsDLL: supportsDLL)
+        if let installed = mods.first(where: { $0.name == name }) {
+            return installed
+        }
+
+        throw ModServiceError.copyFailed("Installed \(name), but it could not be found in the mods directory.")
     }
 
     static func setMod(_ mod: ModInfo, enabled: Bool, version: GameVersion) throws -> ModInfo {
@@ -155,7 +206,9 @@ enum ModService {
         }
         var set = Set(requiredMods.map { "mods/" + $0 })
         for line in content.split(whereSeparator: { $0.isNewline }) {
-            set.insert(line.trimmingCharacters(in: .whitespaces))
+            let entry = line.trimmingCharacters(in: .whitespaces)
+            guard !entry.isEmpty else { continue }
+            set.insert(entry)
         }
         return set
     }

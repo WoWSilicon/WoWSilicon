@@ -48,6 +48,7 @@ final class MainDashboardViewModel: ObservableObject {
     private var optionsSessionInitialVanillaTweaksParameters: String?
     private var optionsSessionInitialVersionID: String?
     private var hasActiveOptionsSession = false
+    private var patchStatusRefreshID = 0
     static let allowedCursorSizeMultipliers = [1, 2, 4]
 
     private static func normalizedCursorSizeMultiplier(_ value: Int) -> Int {
@@ -791,6 +792,7 @@ final class MainDashboardViewModel: ObservableObject {
             crossOverPatchStatus = StatusValue(text: "Not Applied", level: .error)
             versions = versionManager.orderedVersions()
             currentVersionID = versionManager.currentVersionID
+            patchStatusRefreshID += 1
             isGamePatched = false
             isGamePatchActionable = false
             isCrossOverPatched = false
@@ -813,19 +815,15 @@ final class MainDashboardViewModel: ObservableObject {
         gamePathStatus = makePathStatus(for: currentVersion.gamePath)
         crossOverPathStatus = makePathStatus(for: currentVersion.crossOverPath)
 
-        let gamePatchDescriptor = PatchingStatusChecker.evaluateGamePatch(for: currentVersion)
-        gamePatchStatus = StatusValue(text: gamePatchDescriptor.text, level: gamePatchDescriptor.level)
-        isGamePatched = gamePatchDescriptor.applied
-        isGamePatchActionable = gamePatchDescriptor.actionable
-
         let crossOverPathSet = !currentVersion.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let crossOverPatchDescriptor = PatchingStatusChecker.evaluateCrossOverPatch(crossOverPath: crossOverPathSet ? currentVersion.crossOverPath : nil)
-        crossOverPatchStatus = StatusValue(text: crossOverPatchDescriptor.text, level: crossOverPatchDescriptor.level)
-        isCrossOverPatched = crossOverPatchDescriptor.applied
-        isCrossOverPatchActionable = crossOverPatchDescriptor.actionable && crossOverPathSet
-
-        let gamePathReady = !currentVersion.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        canLaunch = gamePathReady && isGamePatched && isCrossOverPatched && crossOverPathSet
+        gamePatchStatus = StatusValue(text: "Checking...", level: .info)
+        crossOverPatchStatus = StatusValue(text: crossOverPathSet ? "Checking..." : "Not Applied", level: crossOverPathSet ? .info : .error)
+        isGamePatched = false
+        isGamePatchActionable = false
+        isCrossOverPatched = false
+        isCrossOverPatchActionable = false
+        canLaunch = false
+        refreshPatchStatuses(for: currentVersion, crossOverPathSet: crossOverPathSet)
 
         if currentVersion.hasLauncher && !FileManager.default.fileExists(atPath: currentVersion.launcherExePath) {
             versionManager.updateCurrentVersion { $0.launcherExePath = "" }
@@ -841,6 +839,35 @@ final class MainDashboardViewModel: ObservableObject {
 
         if !isOptionAsAltBusy {
             refreshOptionAsAltStatus()
+        }
+    }
+
+    private func refreshPatchStatuses(for version: GameVersion, crossOverPathSet: Bool) {
+        patchStatusRefreshID += 1
+        let refreshID = patchStatusRefreshID
+
+        Task.detached { [version, crossOverPathSet] in
+            let gamePatchDescriptor = PatchingStatusChecker.evaluateGamePatch(for: version)
+            let crossOverPatchDescriptor = PatchingStatusChecker.evaluateCrossOverPatch(
+                crossOverPath: crossOverPathSet ? version.crossOverPath : nil
+            )
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                guard self.patchStatusRefreshID == refreshID else { return }
+                guard self.currentVersion?.id == version.id else { return }
+
+                self.gamePatchStatus = StatusValue(text: gamePatchDescriptor.text, level: gamePatchDescriptor.level)
+                self.isGamePatched = gamePatchDescriptor.applied
+                self.isGamePatchActionable = gamePatchDescriptor.actionable
+
+                self.crossOverPatchStatus = StatusValue(text: crossOverPatchDescriptor.text, level: crossOverPatchDescriptor.level)
+                self.isCrossOverPatched = crossOverPatchDescriptor.applied
+                self.isCrossOverPatchActionable = crossOverPatchDescriptor.actionable && crossOverPathSet
+
+                let gamePathReady = !version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                self.canLaunch = gamePathReady && gamePatchDescriptor.applied && crossOverPatchDescriptor.applied && crossOverPathSet
+            }
         }
     }
 
