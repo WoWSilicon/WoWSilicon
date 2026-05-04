@@ -9,6 +9,7 @@ struct AddonManagerView: View {
     @State private var installURL = ""
     @State private var showBulkInstallSheet = false
     @State private var bulkInstallText = ""
+    @State private var addonPendingDeletion: AddonInfo?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -16,10 +17,20 @@ struct AddonManagerView: View {
             content
         }
         .padding()
-        .frame(minWidth: 620, minHeight: 420)
+        .frame(minWidth: 620, minHeight: 500)
         .onAppear { viewModel.refresh(checkUpdates: false) }
         .alert(item: $viewModel.alert) { alert in
             Alert(title: Text("Addons"), message: Text(alert.message), dismissButton: .default(Text("OK")))
+        }
+        .alert(item: $addonPendingDeletion) { addon in
+            Alert(
+                title: Text("Delete Addon?"),
+                message: Text("This will remove \(addon.name) from the AddOns folder."),
+                primaryButton: .destructive(Text("Delete")) {
+                    viewModel.delete(addon: addon)
+                },
+                secondaryButton: .cancel()
+            )
         }
         .sheet(isPresented: $showBulkInstallSheet) {
             BulkInstallSheet(
@@ -145,7 +156,7 @@ struct AddonManagerView: View {
                                 Button("Update") { viewModel.update(addon: addon) }
                                     .disabled(viewModel.isPerformingAction)
                             }
-                            Button("Delete") { viewModel.delete(addon: addon) }
+                            Button("Delete") { addonPendingDeletion = addon }
                                 .disabled(viewModel.isPerformingAction)
                         }
                     }
