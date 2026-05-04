@@ -11,7 +11,7 @@ struct WoWSiliconSwiftApp: App {
         if let image = turtleIconImage() {
             NSApplication.shared.applicationIconImage = image
         }
-        NSApplication.shared.mainMenu = nil
+        _ = UpdaterService.shared
     }
 
     var body: some Scene {
@@ -28,6 +28,13 @@ struct WoWSiliconSwiftApp: App {
         .windowResizability(.contentSize)
         .windowToolbarStyle(.unifiedCompact)
         .windowStyle(.hiddenTitleBar)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates...") {
+                    UpdaterService.shared.checkForUpdates()
+                }
+            }
+        }
     }
 }
 

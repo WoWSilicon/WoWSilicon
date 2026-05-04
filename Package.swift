@@ -14,9 +14,15 @@ let package = Package(
             targets: ["WoWSiliconSwift"]
         )
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.1")
+    ],
     targets: [
         .executableTarget(
             name: "WoWSiliconSwift",
+            dependencies: [
+                .product(name: "Sparkle", package: "Sparkle")
+            ],
             path: "Sources",
             resources: [
                 .copy("WoWSiliconSwift/Resources/Icons"),
@@ -24,7 +30,8 @@ let package = Package(
             ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
-                .linkedFramework("SwiftUI")
+                .linkedFramework("SwiftUI"),
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
             ]
         ),
         .testTarget(

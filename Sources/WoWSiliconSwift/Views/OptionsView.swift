@@ -84,6 +84,12 @@ struct OptionsView: View {
             }
             optionAsAltControls
             retinaModeControls
+            Divider()
+                .padding(.vertical, 4)
+            Button("Check for Updates...") {
+                UpdaterService.shared.checkForUpdates()
+            }
+            .buttonStyle(.bordered)
         }
     }
 

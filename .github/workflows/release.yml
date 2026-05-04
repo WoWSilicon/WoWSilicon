@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example 2.6.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout app repo
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          build_number="$(tools/release/version_to_build_number.sh "$version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set release version
+        run: tools/release/set_version.sh "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.build_number }}"
+
+      - name: Test
+        run: swift test
+
+      - name: Checkout Pages repo
+        uses: actions/checkout@v4
+        with:
+          repository: WoWSilicon/wowsilicon.github.io
+          path: pages
+          token: ${{ secrets.PAGES_REPO_TOKEN }}
+
+      - name: Build DMG and appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          EXISTING_APPCAST: ${{ github.workspace }}/pages/appcast.xml
+        run: |
+          set -euo pipefail
+          make appcast \
+            VERSION="${{ steps.version.outputs.version }}" \
+            BUILD_NUMBER="${{ steps.version.outputs.build_number }}" \
+            DOWNLOAD_URL_PREFIX="https://github.com/WoWSilicon/WoWSilicon/releases/download/${{ steps.version.outputs.tag }}/"
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          dmg=".build/release-archives/WoWSilicon-$VERSION.dmg"
+          notes=".build/appcast/WoWSilicon-$VERSION.md"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$dmg" --clobber
+          else
+            gh release create "$TAG" "$dmg" --title "WoWSilicon $VERSION" --notes-file "$notes"
+          fi
+
+      - name: Publish appcast to Pages repo
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          cp .build/appcast/appcast.xml pages/appcast.xml
+          cd pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add appcast.xml
+          if git diff --cached --quiet; then
+            echo "No appcast changes to publish."
+          else
+            git commit -m "Update appcast for WoWSilicon $VERSION"
+            git push
+          fi

@@ -3,6 +3,9 @@ import ProjectDescription
 let project = Project(
     name: "WoWSilicon",
     organizationName: "com.wowsilicon",
+    packages: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.1")
+    ],
     options: .options(
         automaticSchemesOptions: .enabled(
             targetSchemesGrouping: .singleScheme,
@@ -13,7 +16,7 @@ let project = Project(
     settings: .settings(
         base: [
             "MARKETING_VERSION": "2.5.0",
-            "CURRENT_PROJECT_VERSION": "2",
+            "CURRENT_PROJECT_VERSION": "250",
             "SWIFT_VERSION": "6.0",
             "MACOSX_DEPLOYMENT_TARGET": "14.0",
             "DEVELOPMENT_TEAM": "",
@@ -37,6 +40,9 @@ let project = Project(
             sources: ["Sources/WoWSiliconSwift/**/*.swift"],
             resources: [
                 "Sources/WoWSiliconSwift/Resources/**"
+            ],
+            dependencies: [
+                .package(product: "Sparkle")
             ],
             settings: .settings(
                 base: [
@@ -93,4 +99,3 @@ let project = Project(
         )
     ]
 )
-

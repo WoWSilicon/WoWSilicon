@@ -2,31 +2,35 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleName</key>
-	<string>WoWSilicon</string>
 	<key>CFBundleDisplayName</key>
 	<string>WoWSilicon</string>
-	<key>CFBundleIdentifier</key>
-	<string>com.wowsilicon.swift</string>
-	<key>CFBundleVersion</key>
-	<string>2</string>
-	<key>CFBundleShortVersionString</key>
-	<string>2.5.0</string>
 	<key>CFBundleExecutable</key>
 	<string>WoWSilicon</string>
 	<key>CFBundleIconFile</key>
 	<string>turtle</string>
 	<key>CFBundleIconFiles</key>
 	<array>
-	<string>turtle</string>
+		<string>turtle</string>
 	</array>
+	<key>CFBundleIdentifier</key>
+	<string>com.wowsilicon.swift</string>
+	<key>CFBundleName</key>
+	<string>WoWSilicon</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>2.5.0</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>14.0</string>
+	<key>CFBundleVersion</key>
+	<string>250</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.games</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>SUFeedURL</key>
+	<string>https://wowsilicon.github.io/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>KAU42Mn11WBoZMPfk8Elr1jdmUba6oEBaTaPVykn/zk=</string>
 </dict>
 </plist>
