@@ -4,6 +4,21 @@
 
 # WoWSilicon
 
+<p align="center">
+  <a href="https://github.com/WoWSilicon/WoWSilicon/actions/workflows/release.yml">
+    <img src="https://github.com/WoWSilicon/WoWSilicon/actions/workflows/release.yml/badge.svg" alt="Release workflow status">
+  </a>
+  <a href="https://github.com/WoWSilicon/WoWSilicon/stargazers">
+    <img src="https://img.shields.io/github/stars/WoWSilicon/WoWSilicon?style=flat&label=stars" alt="GitHub stars">
+  </a>
+  <a href="https://github.com/WoWSilicon/WoWSilicon/releases">
+    <img src="https://img.shields.io/github/downloads/WoWSilicon/WoWSilicon/total?style=flat&label=downloads" alt="GitHub release downloads">
+  </a>
+  <a href="https://github.com/WoWSilicon/WoWSilicon/releases">
+    <img src="https://img.shields.io/github/v/release/WoWSilicon/WoWSilicon?style=flat&label=latest" alt="Latest release">
+  </a>
+</p>
+
 WoWSilicon is a macOS launcher for older World of Warcraft clients on Apple Silicon Macs.
 
 It is built around CrossOver, RosettaX87, DX9 translation, and runtime patching so clients from the 2006-2010 era can run more efficiently on modern macOS hardware.
