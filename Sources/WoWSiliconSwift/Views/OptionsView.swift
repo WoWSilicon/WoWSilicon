@@ -38,7 +38,7 @@ struct OptionsView: View {
                         environmentSection
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: 560, alignment: .topLeading)
             }
 
             Divider()
@@ -151,11 +151,11 @@ struct OptionsView: View {
                     Button("Refresh") { refreshRealmlist() }
                         .buttonStyle(.bordered)
                 }
-            } else {
+            } else if let realmlistURL {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Realmlist")
                         .font(.headline)
-                    Text(realmlistURL!.path)
+                    Text(realmlistURL.path)
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)

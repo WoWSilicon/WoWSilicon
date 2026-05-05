@@ -15,4 +15,4 @@ if ! [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ && "$patch" =~ ^[0-9]+$ ]];
   exit 1
 fi
 
-printf '%d%d%d\n' "$((10#$major))" "$((10#$minor))" "$((10#$patch))"
+printf '%d\n' "$((10#$major * 10000 + 10#$minor * 100 + 10#$patch))"

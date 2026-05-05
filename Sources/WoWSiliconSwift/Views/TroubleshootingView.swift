@@ -17,7 +17,7 @@ struct TroubleshootingView: View {
             }
         }
         .padding()
-        .frame(minWidth: 620, minHeight: 480)
+        .frame(minWidth: 620, minHeight: 500)
         .onAppear { viewModel.refresh() }
         .alert(item: $viewModel.alert) { alert in
             Alert(title: Text("Troubleshooting"), message: Text(alert.message), dismissButton: .default(Text("OK")))

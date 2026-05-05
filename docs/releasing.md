@@ -16,9 +16,10 @@ The `WoWSilicon/WoWSilicon` repository needs these Actions secrets:
 The app uses semantic versions for display and a numeric build number for update ordering.
 
 ```text
-2.5.0 -> 250
-2.5.1 -> 251
-2.6.0 -> 260
+2.5.0  -> 20500
+2.5.1  -> 20501
+2.5.10 -> 20510
+2.6.0  -> 20600
 ```
 
 The release workflow computes the build number automatically from the tag.
@@ -34,7 +35,7 @@ make appcast
 For a specific version:
 
 ```sh
-make dmg VERSION=2.6.0 BUILD_NUMBER=260
+make dmg VERSION=2.6.0 BUILD_NUMBER=20600
 ```
 
 ## Release Flow
