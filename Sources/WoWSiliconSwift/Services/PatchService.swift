@@ -73,7 +73,7 @@ enum PatchService {
         try FileManager.default.createDirectory(at: modsURL, withIntermediateDirectories: true)
 
         try copyResource(named: "winerosetta", extension: "dll", subdirectory: "Patching/winerosetta", to: modsURL.appendingPathComponent("winerosetta.dll"))
-        try copyResource(named: "d3d9", extension: "dll", subdirectory: "Patching/winerosetta", to: gameURL.appendingPathComponent("d3d9.dll"))
+        try copyResource(named: "d3d9", extension: "dll", subdirectory: "Patching/d9vk", to: gameURL.appendingPathComponent("d3d9.dll"))
 
         // Remove legacy exe-patching artifacts
         try removeIfExists(gameURL.appendingPathComponent("Wow_patched.exe"))
