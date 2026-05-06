@@ -92,7 +92,7 @@ enum PatchService {
         }
 
         // Optional utility used by vanilla tweaks
-        if version.supportsVanillaTweaks, let vanillaTweaksURL = resourceURL(named: "vanilla-tweaks", extension: "exe", subdirectory: "Patching/winerosetta/vanilla-tweaks") {
+        if version.supportsVanillaTweaks, let vanillaTweaksURL = resourceURL(named: "vanilla-tweaks", extension: "exe", subdirectory: "Patching/vanilla-tweaks") {
             let destination = gameURL.appendingPathComponent("vanilla-tweaks.exe")
             try copyItem(from: vanillaTweaksURL, to: destination)
         }
