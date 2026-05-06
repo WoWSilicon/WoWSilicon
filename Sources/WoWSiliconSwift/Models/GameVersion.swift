@@ -303,8 +303,8 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
 
     var libSiliconPatchSubdirectory: String? {
         switch wowVersion {
-        case "1.12.1": return "Patching/winerosetta/vanilla"
-        case "3.3.5a": return "Patching/winerosetta/wotlk"
+        case "1.12.1": return "Patching/libSiliconPatch/vanilla"
+        case "3.3.5a": return "Patching/libSiliconPatch/wotlk"
         default: return nil
         }
     }
