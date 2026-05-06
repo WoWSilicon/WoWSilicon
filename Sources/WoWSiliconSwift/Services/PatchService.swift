@@ -111,8 +111,6 @@ enum PatchService {
             try patchDivxDecoder(version: version, gameURL: gameURL)
         }
 
-        // Apply tahoe patches to target files (DivxDecoder.dll, fmod.dll, wow*.exe)
-        try TahoePatchService.applyPatchesToUnpatchedFiles(in: gameURL, versionId: version.id)
     }
 
     private static func patchDivxDecoder(version: GameVersion, gameURL: URL) throws {
@@ -199,8 +197,6 @@ enum PatchService {
 
         try removeDllEntries(in: gameURL)
 
-        // Revert tahoe patches from target files
-        try TahoePatchService.revertPatchesFromPatchedFiles(in: gameURL, versionId: version.id)
     }
 
     static func applyCrossOverPatch(crossOverPath: String? = nil) throws {

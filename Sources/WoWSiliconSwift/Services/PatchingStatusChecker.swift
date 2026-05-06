@@ -67,20 +67,6 @@ enum PatchingStatusChecker {
                 )
             }
 
-            // Check if any target files need tahoe patching
-            let gameURL = URL(fileURLWithPath: gamePath)
-            let unpatchedFiles = TahoePatchService.findUnpatchedFiles(in: gameURL, versionId: version.id)
-            if !unpatchedFiles.isEmpty {
-                let count = unpatchedFiles.count
-                let fileWord = count == 1 ? "file needs" : "files need"
-                return PatchStatusDescriptor(
-                    applied: false,
-                    text: "\(count) \(fileWord) tahoe patch",
-                    level: .warning,
-                    actionable: true
-                )
-            }
-
             return PatchStatusDescriptor(
                 applied: true,
                 text: "Applied",
@@ -98,20 +84,6 @@ enum PatchingStatusChecker {
                     applied: false,
                     text: "Missing \(missingName)",
                     level: .error,
-                    actionable: true
-                )
-            }
-
-            // Check if any target files need tahoe patching
-            let gameURL = URL(fileURLWithPath: gamePath)
-            let unpatchedFiles = TahoePatchService.findUnpatchedFiles(in: gameURL, versionId: version.id)
-            if !unpatchedFiles.isEmpty {
-                let count = unpatchedFiles.count
-                let fileWord = count == 1 ? "file needs" : "files need"
-                return PatchStatusDescriptor(
-                    applied: false,
-                    text: "\(count) \(fileWord) tahoe patch",
-                    level: .warning,
                     actionable: true
                 )
             }
