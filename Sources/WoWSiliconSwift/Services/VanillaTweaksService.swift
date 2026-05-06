@@ -55,7 +55,7 @@ enum VanillaTweaksService {
             throw VanillaTweaksError.wowExecutableMissing(wowURL.path)
         }
 
-        guard let tweaksURL = PatchService.resourceURL(named: "vanilla-tweaks", extension: "exe", subdirectory: "Patching/winerosetta") else {
+        guard let tweaksURL = PatchService.resourceURL(named: "vanilla-tweaks", extension: "exe", subdirectory: "Patching/winerosetta/vanilla-tweaks") else {
             throw VanillaTweaksError.resourcesMissing
         }
 
