@@ -82,6 +82,7 @@ struct OptionsView: View {
                     binding: viewModel.boolBinding(\.enableVanillaTweaks)
                 )
             }
+            telemetryControls
             optionAsAltControls
             retinaModeControls
             Divider()
@@ -241,6 +242,19 @@ struct OptionsView: View {
         }
         .toggleStyle(.switch)
         .disabled(disabled)
+    }
+
+    private var telemetryControls: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            toggleRow(
+                "Share Anonymous Usage Statistics",
+                binding: viewModel.telemetryEnabledBinding()
+            )
+            Text("Shares app version, WoW version, macOS version, renderer, and configured realmlist server for public aggregate stats. No IP address, username, account name, character name, file paths, or hardware identifiers are collected.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var vanillaTweaksParametersBinding: Binding<String> {

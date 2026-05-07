@@ -30,6 +30,7 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var shouldShowVersionMismatchPrompt: Bool = false
     @Published private(set) var versionMismatchData: (base: String, tweaked: String)?
     @Published var shouldShowMigrationPrompt: Bool = false
+    @Published var shouldShowTelemetryConsentPrompt: Bool = false
     @Published private(set) var isApplyingVanillaTweaks: Bool = false
     @Published private(set) var isOptionAsAltBusy: Bool = false
     @Published private(set) var optionAsAltStatus: OptionAsAltStatus = .unknown
@@ -49,6 +50,7 @@ final class MainDashboardViewModel: ObservableObject {
     private var optionsSessionInitialVersionID: String?
     private var hasActiveOptionsSession = false
     private var patchStatusRefreshID = 0
+    private var didRecordLaunchTelemetry = false
     static let allowedCursorSizeMultipliers = [1, 2, 4]
 
     private static func normalizedCursorSizeMultiplier(_ value: Int) -> Int {
@@ -70,6 +72,7 @@ final class MainDashboardViewModel: ObservableObject {
         }
 
         userPrefs = prefsStore.load()
+        normalizeTelemetryPrefs()
 
         // Don't persist defaults into WoWSilicon before the user decides whether to migrate,
         // as that would cause the destination files to already exist and block the file move.
@@ -84,6 +87,8 @@ final class MainDashboardViewModel: ObservableObject {
         }
 
         refreshSnapshot()
+        updateTelemetryConsentPromptState()
+        recordLaunchTelemetryIfNeeded()
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
     }
@@ -277,6 +282,7 @@ final class MainDashboardViewModel: ObservableObject {
         let result = versionStore.loadVersionManager()
         versionManager = result.manager
         userPrefs = prefsStore.load()
+        normalizeTelemetryPrefs()
         if userPrefs.autoDeleteWdb == false {
             userPrefs.autoDeleteWdb = true
         }
@@ -284,6 +290,8 @@ final class MainDashboardViewModel: ObservableObject {
         persistVersionManager()
         persistUserPrefs()
         refreshSnapshot()
+        updateTelemetryConsentPromptState()
+        recordLaunchTelemetryIfNeeded()
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
     }
@@ -315,6 +323,7 @@ final class MainDashboardViewModel: ObservableObject {
                 guard let self else { return }
                 switch result {
                 case .success:
+                    self.recordWowStartTelemetry(for: currentVersion)
                     break
                 case .failure(let error):
                     switch error {
@@ -606,6 +615,20 @@ final class MainDashboardViewModel: ObservableObject {
                 }
             }
         )
+    }
+
+    func telemetryEnabledBinding() -> Binding<Bool> {
+        Binding(
+            get: { self.userPrefs.telemetryEnabled },
+            set: { enabled in
+                self.setTelemetryEnabled(enabled, markConsentAsked: true)
+            }
+        )
+    }
+
+    func handleTelemetryConsent(accepted: Bool) {
+        shouldShowTelemetryConsentPrompt = false
+        setTelemetryEnabled(accepted, markConsentAsked: true)
     }
 
     var optionAsAltStatusText: String {
@@ -981,6 +1004,9 @@ final class MainDashboardViewModel: ObservableObject {
         updated.enableVanillaTweaks = settings.enableVanillaTweaks
         updated.autoDeleteWdb = true
         updated.remapOptionAsAlt = settings.remapOptionAsAlt
+        updated.telemetryEnabled = userPrefs.telemetryEnabled
+        updated.telemetryConsentAsked = userPrefs.telemetryConsentAsked
+        updated.telemetryInstallID = userPrefs.telemetryInstallID
         updated.environmentVariables = settings.environmentVariables
         updated.vanillaTweaksParameters = settings.vanillaTweaksParameters
 
@@ -1001,6 +1027,47 @@ final class MainDashboardViewModel: ObservableObject {
 
     private func persistUserPrefs() {
         prefsStore.save(userPrefs)
+    }
+
+    private func normalizeTelemetryPrefs() {
+        let trimmedID = userPrefs.telemetryInstallID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedID.isEmpty {
+            userPrefs.telemetryInstallID = UUID().uuidString
+        }
+    }
+
+    private func updateTelemetryConsentPromptState() {
+        shouldShowTelemetryConsentPrompt = !shouldShowMigrationPrompt && !userPrefs.telemetryConsentAsked
+    }
+
+    private func setTelemetryEnabled(_ enabled: Bool, markConsentAsked: Bool) {
+        userPrefs.telemetryEnabled = enabled
+        if markConsentAsked {
+            userPrefs.telemetryConsentAsked = true
+            shouldShowTelemetryConsentPrompt = false
+        }
+        normalizeTelemetryPrefs()
+        persistUserPrefs()
+        if enabled {
+            recordLaunchTelemetryIfNeeded()
+        }
+    }
+
+    private func recordLaunchTelemetryIfNeeded() {
+        guard userPrefs.telemetryEnabled, !didRecordLaunchTelemetry else { return }
+        didRecordLaunchTelemetry = true
+        TelemetryService.shared.recordLaunch(
+            prefs: userPrefs,
+            context: TelemetryEventContext(version: versionManager.currentVersion)
+        )
+    }
+
+    private func recordWowStartTelemetry(for version: GameVersion) {
+        guard userPrefs.telemetryEnabled else { return }
+        TelemetryService.shared.recordWowStart(
+            prefs: userPrefs,
+            context: TelemetryEventContext(version: version)
+        )
     }
 
     private func handleVanillaTweaksParametersChange(previousValue: String, currentValue: String, version: GameVersion) {

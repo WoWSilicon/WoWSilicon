@@ -73,6 +73,17 @@ final class RealmlistServiceTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: realmlistURL, encoding: .utf8), "set realmlist localhost\n")
     }
 
+    func testCurrentRealmValueExtractsSetRealmlistValue() throws {
+        let gameURL = try makeTemporaryDirectory()
+        let realmlistURL = gameURL.appendingPathComponent("realmlist.wtf")
+        try """
+        SET locale "enUS"
+        SET realmlist "logon.example.test"
+        """.write(to: realmlistURL, atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(RealmlistService.currentRealmValue(gamePath: gameURL.path), "logon.example.test")
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("WoWSiliconSwiftTests-\(UUID().uuidString)", isDirectory: true)

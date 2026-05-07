@@ -1,0 +1,8 @@
+name = "telemetry"
+main = "worker.js"
+compatibility_date = "2026-05-07"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "wowsilicon-db"
+database_id = "212cd4cc-4219-48ba-a82a-187f11276c2d"

@@ -123,6 +123,16 @@ struct MainDashboardView: View {
         } message: {
             Text("A previous TurtleSilicon installation was detected. Would you like to migrate your settings to WoWSilicon?")
         }
+        .alert("Share Anonymous Stats?", isPresented: $viewModel.shouldShowTelemetryConsentPrompt) {
+            Button("No Thanks", role: .cancel) {
+                viewModel.handleTelemetryConsent(accepted: false)
+            }
+            Button("Share Anonymous Stats") {
+                viewModel.handleTelemetryConsent(accepted: true)
+            }
+        } message: {
+            Text("Help us show anonymous WoWSilicon usage stats, like how many people use the launcher, which WoW versions are used, macOS version, renderer, and configured realmlist server. We do not collect your IP address, username, account name, character name, file paths, or hardware identifiers.")
+        }
         .alert("Apply vanilla-tweaks?", isPresented: $vanillaTweaksAlert) {
             Button("Cancel", role: .cancel) {
                 viewModel.handleVanillaTweaksConfirmation(apply: false)

@@ -33,7 +33,26 @@ struct RealmlistService {
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    static func currentRealmValue(gamePath: String) -> String? {
+        guard case .single(_, let content) = find(gamePath: gamePath) else { return nil }
+        return extractRealmValue(from: content)
+    }
+
     // MARK: - Helpers
+
+    private static func extractRealmValue(from content: String) -> String? {
+        for line in content.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lowercased = trimmed.lowercased()
+            guard lowercased.hasPrefix("set realmlist") else { continue }
+
+            let remainder = trimmed.dropFirst("set realmlist".count)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            return remainder.isEmpty ? nil : String(remainder)
+        }
+        return nil
+    }
 
     private static func findCandidates(under root: URL) -> [URL] {
         let fm = FileManager.default
