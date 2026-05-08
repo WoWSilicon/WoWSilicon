@@ -163,7 +163,15 @@ enum TroubleshootingService {
             
             let crossOverURL = URL(fileURLWithPath: crossOverPath, isDirectory: true)
             let cxVersion = PatchService.detectCrossOverVersion(at: crossOverURL)
-            let cxVersionStr = cxVersion == .v26OrHigher ? "26 or newer" : "25 or older"
+            let cxVersionStr: String
+            switch cxVersion {
+            case .v25OrLower:
+                cxVersionStr = "25 or older"
+            case .v26:
+                cxVersionStr = "26"
+            case .v27OrHigher:
+                cxVersionStr = "27 or newer"
+            }
             baseLog += "Detected Version: \(cxVersionStr)\n"
             
             let wineloaderPath = crossOverPath + "/Contents/SharedSupport/CrossOver/CrossOver-Hosted Application/wineloader2"
@@ -173,7 +181,7 @@ enum TroubleshootingService {
                 baseLog += "wineloader2: Not found\n"
             }
             
-            if cxVersion == .v26OrHigher {
+            if cxVersion == .v26 {
                 let cxUnixDir = crossOverURL
                     .appendingPathComponent("Contents", isDirectory: true)
                     .appendingPathComponent("SharedSupport", isDirectory: true)

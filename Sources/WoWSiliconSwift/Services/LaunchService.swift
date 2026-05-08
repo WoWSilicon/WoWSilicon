@@ -248,7 +248,7 @@ final class LaunchService: @unchecked Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
-        if crossOverVersion == .v26OrHigher {
+        if crossOverVersion == .v26 {
             return "cd \(game) && ROSETTA_X87_PATH=\(rosettaBinary) \(envPart) \(wineloader2) \(wow)"
         } else {
             return "cd \(game) && \(envPart) \(rosettaBinary) \(wineloader2) \(wow)"
@@ -277,7 +277,7 @@ final class LaunchService: @unchecked Sendable {
         let wineloader2 = doubleQuote(wineloader2Path)
 
         let shellCommand: String
-        if crossOverVersion == .v26OrHigher {
+        if crossOverVersion == .v26 {
             shellCommand = "WINEDLLOVERRIDES=\"d3d9=n,b\" \(wineloader2) \(installer)"
         } else {
             shellCommand = "WINEDLLOVERRIDES=\"d3d9=n,b\" \(wineloader2) \(installer)"
@@ -341,7 +341,7 @@ final class LaunchService: @unchecked Sendable {
         let gamePatched = PatchingStatusChecker.evaluateGamePatch(for: version).applied
 
         let shellCommand: String
-        if crossOverVersion == .v26OrHigher {
+        if crossOverVersion == .v26 {
             if gamePatched {
                 let rosettaURL = URL(fileURLWithPath: version.gamePath)
                     .appendingPathComponent("rosettax87")

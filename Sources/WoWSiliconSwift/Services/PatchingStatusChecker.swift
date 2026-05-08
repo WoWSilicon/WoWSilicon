@@ -122,6 +122,14 @@ enum PatchingStatusChecker {
         }
 
         let crossOverVersion = PatchService.detectCrossOverVersion(at: crossOverURL)
+        guard crossOverVersion == .v26 else {
+            return PatchStatusDescriptor(
+                applied: false,
+                text: "CrossOver 26 required",
+                level: .error,
+                actionable: false
+            )
+        }
 
         // Check if wineloader2 exists
         guard FileManager.default.fileExists(atPath: wineloader2Path) else {
@@ -143,44 +151,42 @@ enum PatchingStatusChecker {
             )
         }
 
-        if crossOverVersion == .v26OrHigher {
-            let cxUnixDir = crossOverURL
-                .appendingPathComponent("Contents", isDirectory: true)
-                .appendingPathComponent("SharedSupport", isDirectory: true)
-                .appendingPathComponent("CrossOver", isDirectory: true)
-                .appendingPathComponent("lib", isDirectory: true)
-                .appendingPathComponent("wine", isDirectory: true)
-                .appendingPathComponent("x86_64-unix", isDirectory: true)
+        let cxUnixDir = crossOverURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("SharedSupport", isDirectory: true)
+            .appendingPathComponent("CrossOver", isDirectory: true)
+            .appendingPathComponent("lib", isDirectory: true)
+            .appendingPathComponent("wine", isDirectory: true)
+            .appendingPathComponent("x86_64-unix", isDirectory: true)
 
-            let wineBinary = cxUnixDir.appendingPathComponent("wine", isDirectory: false)
-            let ntdllBinary = cxUnixDir.appendingPathComponent("ntdll.so", isDirectory: false)
+        let wineBinary = cxUnixDir.appendingPathComponent("wine", isDirectory: false)
+        let ntdllBinary = cxUnixDir.appendingPathComponent("ntdll.so", isDirectory: false)
 
-            if PatchService.isSigned(at: wineBinary) {
-                return PatchStatusDescriptor(
-                    applied: false,
-                    text: "wine needs patch",
-                    level: .warning,
-                    actionable: true
-                )
-            }
+        if PatchService.isSigned(at: wineBinary) {
+            return PatchStatusDescriptor(
+                applied: false,
+                text: "wine needs patch",
+                level: .warning,
+                actionable: true
+            )
+        }
 
-            guard let bundledNtdllURL = PatchService.resourceURL(named: "ntdll", extension: "so", subdirectory: "Patching/winerosetta") else {
-                return PatchStatusDescriptor(
-                    applied: false,
-                    text: "Missing ntdll resource",
-                    level: .error,
-                    actionable: false
-                )
-            }
+        guard let bundledNtdllURL = PatchService.resourceURL(named: "ntdll", extension: "so", subdirectory: "Patching/winerosetta") else {
+            return PatchStatusDescriptor(
+                applied: false,
+                text: "Missing ntdll resource",
+                level: .error,
+                actionable: false
+            )
+        }
 
-            if PatchService.fileChecksum(at: ntdllBinary) != PatchService.fileChecksum(at: bundledNtdllURL) {
-                return PatchStatusDescriptor(
-                    applied: false,
-                    text: "ntdll.so needs patch",
-                    level: .warning,
-                    actionable: true
-                )
-            }
+        if PatchService.fileChecksum(at: ntdllBinary) != PatchService.fileChecksum(at: bundledNtdllURL) {
+            return PatchStatusDescriptor(
+                applied: false,
+                text: "ntdll.so needs patch",
+                level: .warning,
+                actionable: true
+            )
         }
 
         return PatchStatusDescriptor(

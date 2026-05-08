@@ -8,6 +8,7 @@ enum PatchServiceError: LocalizedError {
     case resourceMissing(String)
     case fileOperationFailed(String)
     case crossOverNotFound
+    case unsupportedCrossOverVersion
     case crossOverWineloaderMissing(String)
 
     var errorDescription: String? {
@@ -22,6 +23,8 @@ enum PatchServiceError: LocalizedError {
             return reason
         case .crossOverNotFound:
             return "CrossOver.app not found at /Applications/CrossOver.app"
+        case .unsupportedCrossOverVersion:
+            return "CrossOver 26 is required for this WoWSilicon version."
         case .crossOverWineloaderMissing(let path):
             return "CrossOver wineloader not found at \(path)"
         }
@@ -31,7 +34,8 @@ enum PatchServiceError: LocalizedError {
 enum PatchService {
     enum CrossOverVersion {
         case v25OrLower
-        case v26OrHigher
+        case v26
+        case v27OrHigher
     }
 
     static func detectCrossOverVersion(at crossOverURL: URL) -> CrossOverVersion {
@@ -41,10 +45,12 @@ enum PatchService {
            let versionString = plist["CFBundleShortVersionString"] as? String,
            let majorVersion = Int(versionString.split(separator: ".").first ?? "") {
             
-            if majorVersion >= 26 {
-                return .v26OrHigher
-            } else {
+            if majorVersion < 26 {
                 return .v25OrLower
+            } else if majorVersion == 26 {
+                return .v26
+            } else {
+                return .v27OrHigher
             }
         }
         
@@ -58,7 +64,7 @@ enum PatchService {
             .appendingPathComponent("x86_64-unix", isDirectory: true)
             .appendingPathComponent("wine", isDirectory: false)
             
-        return FileManager.default.fileExists(atPath: winev26Path.path) ? .v26OrHigher : .v25OrLower
+        return FileManager.default.fileExists(atPath: winev26Path.path) ? .v26 : .v25OrLower
     }
 
     static func applyGamePatch(for version: GameVersion) throws {
@@ -207,6 +213,9 @@ enum PatchService {
         }
 
         let crossOverVersion = detectCrossOverVersion(at: crossOverURL)
+        guard crossOverVersion == .v26 else {
+            throw PatchServiceError.unsupportedCrossOverVersion
+        }
 
         let wineloaderBasePath = crossOverURL
             .appendingPathComponent("Contents", isDirectory: true)
@@ -230,7 +239,7 @@ enum PatchService {
         // Set executable permissions
         try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: wineloaderCopy.path)
 
-        if crossOverVersion == .v26OrHigher {
+        if crossOverVersion == .v26 {
             let cxUnixDir = crossOverURL
                 .appendingPathComponent("Contents", isDirectory: true)
                 .appendingPathComponent("SharedSupport", isDirectory: true)
@@ -281,7 +290,7 @@ enum PatchService {
 
         try removeIfExists(wineloader2URL)
 
-        if crossOverVersion == .v26OrHigher {
+        if crossOverVersion == .v26 {
             let cxUnixDir = crossOverURL
                 .appendingPathComponent("Contents", isDirectory: true)
                 .appendingPathComponent("SharedSupport", isDirectory: true)

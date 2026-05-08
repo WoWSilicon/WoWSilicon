@@ -40,6 +40,19 @@ jobs:
       - name: Set release version
         run: tools/release/set_version.sh "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.build_number }}"
 
+      - name: Resolve release notes
+        id: release_notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes="docs/releases/${{ steps.version.outputs.version }}.md"
+          if [[ -f "$notes" ]]; then
+            echo "file=$notes" >> "$GITHUB_OUTPUT"
+          else
+            echo "Release notes not found at $notes; using generated placeholder notes."
+            echo "file=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Test
         run: swift test
 
@@ -54,6 +67,7 @@ jobs:
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           EXISTING_APPCAST: ${{ github.workspace }}/pages/appcast.xml
+          RELEASE_NOTES_FILE: ${{ steps.release_notes.outputs.file }}
         run: |
           set -euo pipefail
           make appcast \
@@ -72,6 +86,7 @@ jobs:
           notes=".build/appcast/WoWSilicon-$VERSION.md"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$dmg" --clobber
+            gh release edit "$TAG" --title "WoWSilicon $VERSION" --notes-file "$notes"
           else
             gh release create "$TAG" "$dmg" --title "WoWSilicon $VERSION" --notes-file "$notes"
           fi

@@ -38,16 +38,33 @@ For a specific version:
 make dmg VERSION=2.6.0 BUILD_NUMBER=20600
 ```
 
+To include release notes in the appcast locally, add a markdown file under
+`docs/releases/` and pass it to `make appcast`:
+
+```sh
+RELEASE_NOTES_FILE=docs/releases/2.6.0.md make appcast VERSION=2.6.0 BUILD_NUMBER=20600
+```
+
 ## Release Flow
 
-Update the version, commit it, then create and push a tag:
+Add release notes for the version:
+
+```sh
+docs/releases/2.6.0.md
+```
+
+Then update the version, commit it, and create and push a tag:
 
 ```sh
 tools/release/set_version.sh 2.6.0
-git add Packaging/Info.plist Project.swift
+git add Packaging/Info.plist Project.swift docs/releases/2.6.0.md
 git commit -m "Bump version to 2.6.0"
 git tag v2.6.0
 git push origin main --tags
 ```
+
+The GitHub Action uses `docs/releases/<version>.md` when it exists. The same
+notes are embedded in the Sparkle appcast and used as the GitHub Release body.
+If the file is missing, the release falls back to generated placeholder notes.
 
 The GitHub Action builds the DMG, creates or updates the GitHub Release, generates the signed update feed, and publishes `appcast.xml` to the Pages repository.
