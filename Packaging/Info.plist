@@ -28,10 +28,10 @@
 	<string>public.app-category.games</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
-	<key>SUFeedURL</key>
-	<string>https://wowsilicon.github.io/appcast.xml</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
+	<key>SUFeedURL</key>
+	<string>https://wowsilicon.github.io/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>KAU42Mn11WBoZMPfk8Elr1jdmUba6oEBaTaPVykn/zk=</string>
 </dict>
