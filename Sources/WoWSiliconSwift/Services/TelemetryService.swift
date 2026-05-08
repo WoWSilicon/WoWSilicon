@@ -33,11 +33,25 @@ final class TelemetryService: @unchecked Sendable {
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
     private let queue = DispatchQueue(label: "com.wowsilicon.telemetry", qos: .utility)
+    private let stateLock = NSLock()
+    private var clientTelemetryEnabled = false
     private var cachedConfig: TelemetryConfig?
     private var configExpiresAt: Date?
     private var backoffUntil: Date?
 
     private init() {}
+
+    func setClientTelemetryEnabled(_ enabled: Bool) {
+        stateLock.lock()
+        clientTelemetryEnabled = enabled
+        stateLock.unlock()
+
+        if !enabled {
+            session.getAllTasks { tasks in
+                tasks.forEach { $0.cancel() }
+            }
+        }
+    }
 
     func recordLaunch(prefs: UserPrefs, context: TelemetryEventContext) {
         record(event: "launch", prefs: prefs, context: context, sessionID: prefs.telemetryInstallID)
@@ -49,12 +63,15 @@ final class TelemetryService: @unchecked Sendable {
 
     private func record(event: String, prefs: UserPrefs, context: TelemetryEventContext, sessionID: String) {
         guard prefs.telemetryEnabled else { return }
+        guard isClientTelemetryEnabled else { return }
         guard backoffUntil.map({ Date() < $0 }) != true else { return }
 
         queue.async { [weak self] in
             guard let self else { return }
+            guard self.isClientTelemetryEnabled else { return }
             self.fetchConfigIfNeeded { [weak self] config in
                 guard let self else { return }
+                guard self.isClientTelemetryEnabled else { return }
                 guard config.telemetryEnabled else { return }
                 if event == "heartbeat", !config.heartbeatEnabled { return }
 
@@ -86,6 +103,7 @@ final class TelemetryService: @unchecked Sendable {
         let url = baseURL.appendingPathComponent("config.json")
         session.dataTask(with: url) { [weak self] data, response, _ in
             guard let self else { return }
+            guard self.isClientTelemetryEnabled else { return }
 
             if let response = response as? HTTPURLResponse,
                response.statusCode == 429 || response.statusCode == 503 {
@@ -107,13 +125,16 @@ final class TelemetryService: @unchecked Sendable {
     }
 
     private func post(_ payload: TelemetryPayload) {
+        guard isClientTelemetryEnabled else { return }
         var request = URLRequest(url: baseURL.appendingPathComponent("event"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = try? encoder.encode(payload)
 
         session.dataTask(with: request) { [weak self] _, response, _ in
-            guard let self, let response = response as? HTTPURLResponse else { return }
+            guard let self else { return }
+            guard self.isClientTelemetryEnabled else { return }
+            guard let response = response as? HTTPURLResponse else { return }
             if response.statusCode == 429 || response.statusCode == 503 {
                 self.applyBackoff(from: response)
             }
@@ -124,6 +145,13 @@ final class TelemetryService: @unchecked Sendable {
         let retryAfter = response.value(forHTTPHeaderField: "Retry-After")
             .flatMap(TimeInterval.init) ?? 6 * 60 * 60
         backoffUntil = Date().addingTimeInterval(retryAfter)
+    }
+
+    private var isClientTelemetryEnabled: Bool {
+        stateLock.lock()
+        let enabled = clientTelemetryEnabled
+        stateLock.unlock()
+        return enabled
     }
 }
 

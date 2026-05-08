@@ -73,6 +73,7 @@ final class MainDashboardViewModel: ObservableObject {
 
         userPrefs = prefsStore.load()
         normalizeTelemetryPrefs()
+        TelemetryService.shared.setClientTelemetryEnabled(userPrefs.telemetryEnabled)
 
         // Don't persist defaults into WoWSilicon before the user decides whether to migrate,
         // as that would cause the destination files to already exist and block the file move.
@@ -283,6 +284,7 @@ final class MainDashboardViewModel: ObservableObject {
         versionManager = result.manager
         userPrefs = prefsStore.load()
         normalizeTelemetryPrefs()
+        TelemetryService.shared.setClientTelemetryEnabled(userPrefs.telemetryEnabled)
         if userPrefs.autoDeleteWdb == false {
             userPrefs.autoDeleteWdb = true
         }
@@ -1042,6 +1044,7 @@ final class MainDashboardViewModel: ObservableObject {
 
     private func setTelemetryEnabled(_ enabled: Bool, markConsentAsked: Bool) {
         userPrefs.telemetryEnabled = enabled
+        TelemetryService.shared.setClientTelemetryEnabled(enabled)
         if markConsentAsked {
             userPrefs.telemetryConsentAsked = true
             shouldShowTelemetryConsentPrompt = false

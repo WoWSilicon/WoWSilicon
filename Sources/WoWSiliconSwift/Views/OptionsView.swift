@@ -82,11 +82,11 @@ struct OptionsView: View {
                     binding: viewModel.boolBinding(\.enableVanillaTweaks)
                 )
             }
-            telemetryControls
             optionAsAltControls
             retinaModeControls
             Divider()
                 .padding(.vertical, 4)
+            telemetryControls
             Button("Check for Updates...") {
                 UpdaterService.shared.checkForUpdates()
             }
