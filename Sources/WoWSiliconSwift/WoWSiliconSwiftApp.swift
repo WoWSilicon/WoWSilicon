@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 @main
 struct WoWSiliconSwiftApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var viewModel = MainDashboardViewModel()
 
     var body: some Scene {
@@ -38,6 +39,12 @@ struct WoWSiliconSwiftApp: App {
             NSApplication.shared.applicationIconImage = image
         }
         _ = UpdaterService.shared
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        .terminateNow
     }
 }
 

@@ -30,6 +30,8 @@
 	<string>14.0</string>
 	<key>SUFeedURL</key>
 	<string>https://wowsilicon.github.io/appcast.xml</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>SUPublicEDKey</key>
 	<string>KAU42Mn11WBoZMPfk8Elr1jdmUba6oEBaTaPVykn/zk=</string>
 </dict>

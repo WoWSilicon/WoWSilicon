@@ -1,23 +1,25 @@
 import AppKit
+import Darwin
 import Sparkle
 
 @MainActor
 final class UpdaterService: NSObject {
     static let shared = UpdaterService()
 
-    private let updaterController: SPUStandardUpdaterController?
+    private var updaterController: SPUStandardUpdaterController?
 
     override private init() {
+        super.init()
+
         if Self.isConfigured {
             updaterController = SPUStandardUpdaterController(
                 startingUpdater: true,
-                updaterDelegate: nil,
+                updaterDelegate: self,
                 userDriverDelegate: nil
             )
         } else {
             updaterController = nil
         }
-        super.init()
     }
 
     func checkForUpdates() {
@@ -39,5 +41,29 @@ final class UpdaterService: NSObject {
         let feedURL = (info["SUFeedURL"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let publicKey = (info["SUPublicEDKey"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return !feedURL.isEmpty && !publicKey.isEmpty && !publicKey.hasPrefix("TODO_")
+    }
+}
+
+extension UpdaterService: SPUUpdaterDelegate {
+    func updaterShouldRelaunchApplication(_ updater: SPUUpdater) -> Bool {
+        return true
+    }
+
+    func updater(
+        _ updater: SPUUpdater,
+        shouldPostponeRelaunchForUpdate item: SUAppcastItem,
+        untilInvokingBlock installHandler: @escaping () -> Void
+    ) -> Bool {
+        DispatchQueue.main.async {
+            installHandler()
+        }
+        return false
+    }
+
+    func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
+        NSApp.terminate(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            exit(0)
+        }
     }
 }
