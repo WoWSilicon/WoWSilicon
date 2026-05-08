@@ -38,7 +38,7 @@ struct OptionsView: View {
                         environmentSection
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: 560, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
 
             Divider()
@@ -342,13 +342,12 @@ struct OptionsView: View {
                     .buttonStyle(.bordered)
                     .disabled(viewModel.isRetinaModeBusy || viewModel.retinaModeStatus.isDisabled)
 
-                Spacer(minLength: 12)
+                Spacer()
 
-                VStack(alignment: .trailing, spacing: 6) {
+                VStack(alignment: .trailing, spacing: 4) {
                     Text("Cursor Size")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-
                     Picker("Cursor Size", selection: viewModel.cursorSizeBinding()) {
                         ForEach(MainDashboardViewModel.allowedCursorSizeMultipliers, id: \.self) { value in
                             Text("\(value)x").tag(value)
@@ -356,7 +355,7 @@ struct OptionsView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 180)
+                    .fixedSize()
                 }
             }
 
