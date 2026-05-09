@@ -9,6 +9,11 @@ The `WoWSilicon/WoWSilicon` repository needs these Actions secrets:
 - `SPARKLE_PRIVATE_KEY`
 - `PAGES_REPO_TOKEN`
 
+`SPARKLE_PRIVATE_KEY` must be the Sparkle private EdDSA key value only. Do not
+use the public key, XML, or the full `generate_keys` output. The secret should
+look like one base64 string; optional surrounding quotes or a
+`SPARKLE_PRIVATE_KEY=` prefix are tolerated.
+
 `PAGES_REPO_TOKEN` must have contents write access to `WoWSilicon/wowsilicon.github.io`.
 
 ## Versioning

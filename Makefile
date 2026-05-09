@@ -96,7 +96,7 @@ appcast: dmg
 		cp "$${EXISTING_APPCAST}" "$(APPCAST_PATH)"; \
 	fi
 	@if [ -n "$${SPARKLE_PRIVATE_KEY:-}" ]; then \
-		printf '%s' "$${SPARKLE_PRIVATE_KEY}" | "$(SPARKLE_GENERATE_APPCAST)" \
+		tools/release/normalize_sparkle_private_key.sh | "$(SPARKLE_GENERATE_APPCAST)" \
 			--ed-key-file - \
 			--embed-release-notes \
 			--download-url-prefix "$(DOWNLOAD_URL_PREFIX)" \
