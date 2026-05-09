@@ -56,6 +56,27 @@ jobs:
       - name: Test
         run: swift test
 
+      - name: Validate Sparkle private key
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          ruby -rbase64 -e '
+            key = ENV.fetch("SPARKLE_PRIVATE_KEY", "")
+            abort "SPARKLE_PRIVATE_KEY is empty." if key.empty?
+            stripped = key.gsub(/\s+/, "")
+            if stripped.include?("SPARKLE_PRIVATE_KEY") || stripped.include?("PRIVATE_KEY") || stripped.include?("SUPublicEDKey") || stripped.include?("<key>") || stripped.include?("<string>")
+              abort "SPARKLE_PRIVATE_KEY must be only the exported private key value, not XML, labels, or shell assignment text."
+            end
+            begin
+              decoded = Base64.strict_decode64(stripped)
+            rescue ArgumentError
+              abort "SPARKLE_PRIVATE_KEY is not valid base64. Re-export it with generate_keys -x and paste only the file contents."
+            end
+            unless decoded.bytesize == 32
+              abort "SPARKLE_PRIVATE_KEY decoded to #{decoded.bytesize} bytes; Sparkle EdDSA private seed exports should decode to 32 bytes."
+            end
+          '
+
       - name: Checkout Pages repo
         uses: actions/checkout@v4
         with:
