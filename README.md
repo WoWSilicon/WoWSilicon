@@ -2,7 +2,7 @@
   <img src="Sources/WoWSiliconSwift/Resources/Icons/turtlesilicon_icon.png" alt="WoWSilicon icon" width="96" height="96">
 </p>
 
-# WoWSilicon
+<h1 align="center">WoWSilicon</h1>
 
 <p align="center">
   <a href="https://github.com/WoWSilicon/WoWSilicon/actions/workflows/release.yml">
