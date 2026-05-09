@@ -96,8 +96,12 @@ appcast: dmg
 		cp "$${EXISTING_APPCAST}" "$(APPCAST_PATH)"; \
 	fi
 	@if [ -n "$${SPARKLE_PRIVATE_KEY:-}" ]; then \
-		tools/release/normalize_sparkle_private_key.sh | "$(SPARKLE_GENERATE_APPCAST)" \
-			--ed-key-file - \
+		set -e; \
+		temp_key="$$(mktemp)"; \
+		trap 'rm -f "$$temp_key"' EXIT; \
+		printf '%s' "$${SPARKLE_PRIVATE_KEY}" > "$$temp_key"; \
+		"$(SPARKLE_GENERATE_APPCAST)" \
+			--ed-key-file "$$temp_key" \
 			--embed-release-notes \
 			--download-url-prefix "$(DOWNLOAD_URL_PREFIX)" \
 			--link "https://wowsilicon.github.io/" \
