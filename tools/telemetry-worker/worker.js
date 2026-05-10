@@ -144,6 +144,7 @@ async function getStats(db) {
   const now = Math.floor(Date.now() / 1000);
   const activeSince = now - ACTIVE_WINDOW_SECONDS;
   const today = new Date(now * 1000).toISOString().slice(0, 10);
+  const monthStart = today.slice(0, 7) + "-01";
 
   const totals = await db.prepare(
     `SELECT event, COUNT(*) AS count
@@ -157,6 +158,13 @@ async function getStats(db) {
      WHERE day = ?
      GROUP BY event`
   ).bind(today).all();
+
+  const monthTotals = await db.prepare(
+    `SELECT event, COUNT(DISTINCT install_id) AS count
+     FROM daily_event_installs
+     WHERE day >= ?
+     GROUP BY event`
+  ).bind(monthStart).all();
 
   const dimensions = await db.prepare(
     `SELECT dimension, value, COUNT(*) AS count
@@ -175,6 +183,15 @@ async function getStats(db) {
      LIMIT 200`
   ).bind(today).all();
 
+  const monthDimensions = await db.prepare(
+    `SELECT dimension, value, COUNT(DISTINCT install_id) AS count
+     FROM daily_dimension_installs
+     WHERE day >= ?
+     GROUP BY dimension, value
+     ORDER BY count DESC
+     LIMIT 200`
+  ).bind(monthStart).all();
+
   const installs = await db.prepare("SELECT COUNT(*) AS count FROM installs").first();
   const active = await db.prepare(
     "SELECT COUNT(*) AS count FROM active_sessions WHERE last_seen_at >= ?"
@@ -187,8 +204,10 @@ async function getStats(db) {
     active_now: active?.count || 0,
     unique_events: rowsToObject(totals.results, "event"),
     unique_events_today: rowsToObject(todayTotals.results, "event"),
+    unique_events_month: rowsToObject(monthTotals.results, "event"),
     unique_dimensions: groupDimensions(dimensions.results),
     unique_dimensions_today: groupDimensions(todayDimensions.results),
+    unique_dimensions_month: groupDimensions(monthDimensions.results),
   };
 }
 
