@@ -22,6 +22,16 @@ enum PatchingStatusChecker {
         }
 
         let gamePath = version.gamePath
+        let gameURL = URL(fileURLWithPath: gamePath, isDirectory: true)
+
+        guard PatchService.isSupportedGameClient(at: gameURL) else {
+            return PatchStatusDescriptor(
+                applied: false,
+                text: "Not a WoW client",
+                level: .error,
+                actionable: false
+            )
+        }
 
         if version.usesRosettaPatching {
             var requiredFiles = [

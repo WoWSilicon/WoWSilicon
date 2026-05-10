@@ -5,6 +5,7 @@ import CryptoKit
 enum PatchServiceError: LocalizedError {
     case gamePathMissing
     case invalidGamePath(String)
+    case gameClientNotDetected
     case resourceMissing(String)
     case fileOperationFailed(String)
     case crossOverNotFound
@@ -17,6 +18,8 @@ enum PatchServiceError: LocalizedError {
             return "Game path is not set. Please choose your game directory first."
         case .invalidGamePath(let path):
             return "The selected game path is invalid or inaccessible: \(path)"
+        case .gameClientNotDetected:
+            return "This folder does not look like a World of Warcraft client. Select the folder containing DivxDecoder.dll."
         case .resourceMissing(let name):
             return "Bundled resource \(name) is missing from the application package."
         case .fileOperationFailed(let reason):
@@ -74,6 +77,9 @@ enum PatchService {
 
         let gameURL = URL(fileURLWithPath: version.gamePath, isDirectory: true)
         try ensureDirectoryExists(gameURL, errorOnMissing: .invalidGamePath(version.gamePath))
+        guard isSupportedGameClient(at: gameURL) else {
+            throw PatchServiceError.gameClientNotDetected
+        }
 
         let modsURL = gameURL.appendingPathComponent("mods", isDirectory: true)
         try FileManager.default.createDirectory(at: modsURL, withIntermediateDirectories: true)
@@ -179,6 +185,11 @@ enum PatchService {
             ? "/Applications/CrossOver.app"
             : version.crossOverPath
         return crossOverPath + "/Contents/SharedSupport/CrossOver/CrossOver-Hosted Application/wineloader2"
+    }
+
+    static func isSupportedGameClient(at gameURL: URL) -> Bool {
+        FileManager.default.fileExists(atPath: gameURL.appendingPathComponent("DivxDecoder.dll").path)
+            || FileManager.default.fileExists(atPath: gameURL.appendingPathComponent("DivxDecoder.dll.bak").path)
     }
 
     static func removeGamePatch(for version: GameVersion) throws {
