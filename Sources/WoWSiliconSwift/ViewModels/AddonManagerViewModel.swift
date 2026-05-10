@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 @MainActor
 final class AddonManagerViewModel: ObservableObject, Identifiable {
@@ -24,9 +25,57 @@ final class AddonManagerViewModel: ObservableObject, Identifiable {
     @Published var alert: ManagerAlert?
 
     private let gamePath: String?
+    private var didPromptForGit = false
 
     init(gamePath: String?) {
         self.gamePath = gamePath
+    }
+
+    func promptToInstallGitIfMissing() {
+        _ = ensureGitAvailableOrPrompt(force: false)
+    }
+
+    private func ensureGitAvailableOrPrompt(force: Bool) -> Bool {
+        if DependencyService.isGitInstalled() {
+            return true
+        }
+        if !force && didPromptForGit {
+            return false
+        }
+        didPromptForGit = true
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Git is required for addon management"
+        alert.informativeText = "WoWSilicon uses Git to install, check, and update addon repositories. Install Apple's Command Line Tools to add Git to this Mac."
+        alert.addButton(withTitle: "Install Git")
+        alert.addButton(withTitle: "Not Now")
+
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return false
+        }
+
+        launchGitInstaller()
+        return false
+    }
+
+    private func launchGitInstaller() {
+        guard !isPerformingAction else { return }
+        isPerformingAction = true
+        Task.detached { [weak self] in
+            do {
+                try DependencyService.installGit()
+                await MainActor.run { [weak self] in
+                    self?.isPerformingAction = false
+                    self?.alert = ManagerAlert(message: "Apple's Git installer has been opened. Finish the installation, then reopen or refresh the Addon Manager.")
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.isPerformingAction = false
+                    self?.alert = ManagerAlert(message: error.localizedDescription)
+                }
+            }
+        }
     }
 
     func refresh(checkUpdates: Bool = false) {
@@ -53,6 +102,8 @@ final class AddonManagerViewModel: ObservableObject, Identifiable {
     }
 
     func install(from url: String) {
+        guard ensureGitAvailableOrPrompt(force: true) else { return }
+
         let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
         let existingURLs = Set(addons.compactMap { $0.gitRemoteURL })
         if existingURLs.contains(trimmedURL) {
@@ -81,6 +132,8 @@ final class AddonManagerViewModel: ObservableObject, Identifiable {
     }
 
     func installMultiple(from text: String) {
+        guard ensureGitAvailableOrPrompt(force: true) else { return }
+
         let rawUrls = text
             .split(whereSeparator: { $0.isNewline })
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -145,6 +198,7 @@ final class AddonManagerViewModel: ObservableObject, Identifiable {
     }
 
     func update(addon: AddonInfo) {
+        guard ensureGitAvailableOrPrompt(force: true) else { return }
         guard !isPerformingAction else { return }
         isPerformingAction = true
         Task.detached { [weak self] in
@@ -199,6 +253,7 @@ final class AddonManagerViewModel: ObservableObject, Identifiable {
     }
 
     func updateAll() {
+        guard ensureGitAvailableOrPrompt(force: true) else { return }
         let gitAddons = filteredAddons.filter { $0.hasGitRepo && $0.needsUpdate }
         guard !gitAddons.isEmpty else {
             alert = ManagerAlert(message: "No git addons need updates.")

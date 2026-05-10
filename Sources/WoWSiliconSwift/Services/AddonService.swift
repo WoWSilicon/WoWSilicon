@@ -243,8 +243,12 @@ enum AddonService {
     }
 
     private static func runGit(arguments: [String], at directory: String?) throws -> GitResult {
+        guard let gitURL = DependencyService.gitExecutableURL() else {
+            throw AddonServiceError.gitFailed("Git is not installed.")
+        }
+
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.executableURL = gitURL
         process.arguments = arguments
         if let directory {
             process.currentDirectoryURL = URL(fileURLWithPath: directory)

@@ -28,6 +28,7 @@ enum DependencyServiceError: LocalizedError {
     case downloadFailed(String)
     case installFailed(String)
     case verificationFailed
+    case gitInstallFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -39,6 +40,8 @@ enum DependencyServiceError: LocalizedError {
             return output.isEmpty ? "Failed to install Microsoft Visual C++ Redistributable." : output
         case .verificationFailed:
             return "The installer finished, but the Visual C++ Runtime files were not found in the Wine prefix."
+        case .gitInstallFailed(let reason):
+            return reason
         }
     }
 }
@@ -68,6 +71,71 @@ enum DependencyService {
         "vcruntime140",
         "vcruntime140_1"
     ]
+
+    static func isGitInstalled() -> Bool {
+        guard let gitURL = gitExecutableURL() else { return false }
+        let task = Process()
+        task.executableURL = gitURL
+        task.arguments = ["--version"]
+
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = pipe
+
+        do {
+            try task.run()
+            _ = pipe.fileHandleForReading.readDataToEndOfFile()
+            task.waitUntilExit()
+            return task.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
+    static func gitExecutableURL() -> URL? {
+        let standaloneCandidates = [
+            "/opt/homebrew/bin/git",
+            "/usr/local/bin/git",
+            "/usr/local/git/bin/git"
+        ]
+
+        if let path = standaloneCandidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+            return URL(fileURLWithPath: path)
+        }
+
+        if commandLineToolsInstalled(), FileManager.default.isExecutableFile(atPath: "/usr/bin/git") {
+            return URL(fileURLWithPath: "/usr/bin/git")
+        }
+
+        return nil
+    }
+
+    static func installGit() throws {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
+        task.arguments = ["--install"]
+
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = pipe
+
+        do {
+            try task.run()
+        } catch {
+            throw DependencyServiceError.gitInstallFailed("Failed to open Apple's Git installer: \(error.localizedDescription)")
+        }
+
+        let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+
+        if task.terminationStatus != 0 {
+            let output = String(data: outputData, encoding: .utf8) ?? ""
+            if output.localizedCaseInsensitiveContains("already installed") || isGitInstalled() {
+                return
+            }
+            throw DependencyServiceError.gitInstallFailed(output.isEmpty ? "Failed to open Apple's Git installer." : output)
+        }
+    }
 
     static func isVisualCppRuntimeInstalled() -> Bool {
         let prefixURL = WineRegistrySupport.winePrefixURL()
@@ -203,6 +271,25 @@ enum DependencyService {
 
         return overrideDLLs.allSatisfy { dll in
             content.contains(#""*\#(dll)"="native,builtin""#)
+        }
+    }
+
+    private static func commandLineToolsInstalled() -> Bool {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
+        task.arguments = ["-p"]
+
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = pipe
+
+        do {
+            try task.run()
+            _ = pipe.fileHandleForReading.readDataToEndOfFile()
+            task.waitUntilExit()
+            return task.terminationStatus == 0
+        } catch {
+            return false
         }
     }
 }

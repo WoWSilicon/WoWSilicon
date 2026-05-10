@@ -18,7 +18,10 @@ struct AddonManagerView: View {
         }
         .padding()
         .frame(minWidth: 620, minHeight: 500)
-        .onAppear { viewModel.refresh(checkUpdates: false) }
+        .onAppear {
+            viewModel.promptToInstallGitIfMissing()
+            viewModel.refresh(checkUpdates: false)
+        }
         .alert(item: $viewModel.alert) { alert in
             Alert(title: Text("Addons"), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }

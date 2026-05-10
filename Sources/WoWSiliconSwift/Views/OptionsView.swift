@@ -61,6 +61,7 @@ struct OptionsView: View {
             viewModel.refreshRetinaModeStatus()
             viewModel.refreshGraphicsSettings()
             viewModel.refreshVisualCppRuntimeStatus()
+            viewModel.refreshGitStatus()
             viewModel.beginOptionsSession()
             refreshRealmlist()
         }
@@ -224,16 +225,11 @@ struct OptionsView: View {
             Text("Dependencies")
                 .font(.headline)
 
-            HStack(spacing: 8) {
-                Text("Microsoft Visual C++ Runtime 2022")
-                Spacer()
-                Text(viewModel.visualCppRuntimeStatus.text)
-                    .foregroundStyle(visualCppRuntimeStatusColor)
-                if viewModel.isDependencyInstallInProgress {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-            }
+            dependencyStatusRow(
+                title: "Microsoft Visual C++ Runtime 2022",
+                status: viewModel.visualCppRuntimeStatus,
+                isBusy: viewModel.isDependencyInstallInProgress
+            )
 
             Button("Install VC++ Runtime 2022") {
                 viewModel.installVisualCppRuntime()
@@ -242,6 +238,34 @@ struct OptionsView: View {
             .disabled(!viewModel.canInstallDependencies || viewModel.visualCppRuntimeStatus == .installed)
 
             Text(dependenciesHelpText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+                .padding(.vertical, 4)
+
+            dependencyStatusRow(
+                title: "Git",
+                status: viewModel.gitStatus,
+                isBusy: viewModel.isGitInstallInProgress
+            )
+
+            HStack(spacing: 12) {
+                Button("Install Git") {
+                    viewModel.installGit()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.isGitInstallInProgress || viewModel.gitStatus == .installed)
+
+                Button("Refresh") {
+                    viewModel.refreshGitStatus()
+                }
+                .buttonStyle(.bordered)
+                .disabled(viewModel.isGitInstallInProgress)
+            }
+
+            Text("Git is required for addon installs and updates. This opens Apple's Command Line Tools installer, which includes Git.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -256,7 +280,24 @@ struct OptionsView: View {
     }
 
     private var visualCppRuntimeStatusColor: Color {
-        switch viewModel.visualCppRuntimeStatus {
+        dependencyStatusColor(viewModel.visualCppRuntimeStatus)
+    }
+
+    private func dependencyStatusRow(title: String, status: DependencyInstallStatus, isBusy: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+            Spacer()
+            Text(status.text)
+                .foregroundStyle(dependencyStatusColor(status))
+            if isBusy {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+    }
+
+    private func dependencyStatusColor(_ status: DependencyInstallStatus) -> Color {
+        switch status {
         case .installed:
             return .green
         case .missing, .unknown:

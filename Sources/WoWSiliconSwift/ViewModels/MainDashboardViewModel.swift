@@ -38,6 +38,8 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var retinaModeStatus: OptionAsAltStatus = .unknown
     @Published private(set) var isDependencyInstallInProgress: Bool = false
     @Published private(set) var visualCppRuntimeStatus: DependencyInstallStatus = .unknown
+    @Published private(set) var isGitInstallInProgress: Bool = false
+    @Published private(set) var gitStatus: DependencyInstallStatus = .unknown
     @Published private(set) var currentVersion: GameVersion?
     @Published private(set) var supportsMods: Bool = false
     @Published private(set) var versions: [GameVersion] = []
@@ -95,6 +97,7 @@ final class MainDashboardViewModel: ObservableObject {
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
         refreshVisualCppRuntimeStatus()
+        refreshGitStatus()
     }
 
     func selectVersion(id: String) {
@@ -107,6 +110,7 @@ final class MainDashboardViewModel: ObservableObject {
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
         refreshVisualCppRuntimeStatus()
+        refreshGitStatus()
     }
 
     func addVersion(name: String, baseID: String, wantsLauncher: Bool) {
@@ -126,6 +130,7 @@ final class MainDashboardViewModel: ObservableObject {
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
         refreshVisualCppRuntimeStatus()
+        refreshGitStatus()
     }
 
     func removeVersion(id: String) {
@@ -139,6 +144,7 @@ final class MainDashboardViewModel: ObservableObject {
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
         refreshVisualCppRuntimeStatus()
+        refreshGitStatus()
     }
 
 
@@ -513,6 +519,43 @@ final class MainDashboardViewModel: ObservableObject {
             let installed = DependencyService.isVisualCppRuntimeInstalled()
             DispatchQueue.main.async {
                 self?.visualCppRuntimeStatus = installed ? .installed : .missing
+            }
+        }
+    }
+
+    func installGit() {
+        guard !isGitInstallInProgress else { return }
+
+        isGitInstallInProgress = true
+        gitStatus = .inProgress("Opening installer...")
+        patchFeedback = nil
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                try DependencyService.installGit()
+                DispatchQueue.main.async {
+                    self?.isGitInstallInProgress = false
+                    self?.gitStatus = DependencyService.isGitInstalled() ? .installed : .inProgress("Installer opened")
+                    self?.patchFeedback = PatchFeedback(title: "Git", message: "Apple's Git installer has been opened. Finish the installation, then refresh the status.", isError: false)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.isGitInstallInProgress = false
+                    self?.gitStatus = .error(error.localizedDescription)
+                    self?.patchFeedback = PatchFeedback(title: "Git Install Failed", message: error.localizedDescription, isError: true)
+                    self?.refreshGitStatus()
+                }
+            }
+        }
+    }
+
+    func refreshGitStatus() {
+        guard !isGitInstallInProgress else { return }
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let installed = DependencyService.isGitInstalled()
+            DispatchQueue.main.async {
+                self?.gitStatus = installed ? .installed : .missing
             }
         }
     }
