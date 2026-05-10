@@ -498,7 +498,7 @@ final class MainDashboardViewModel: ObservableObject {
                 try DependencyService.installVisualCppRuntime(crossOverPath: crossOverPath)
                 DispatchQueue.main.async {
                     self?.isDependencyInstallInProgress = false
-                    self?.visualCppRuntimeStatus = .installed
+                    self?.visualCppRuntimeStatus = DependencyService.isVisualCppRuntimeInstalled() ? .installed : .missing
                     self?.patchFeedback = PatchFeedback(title: "Dependencies", message: "Microsoft Visual C++ Runtime 2022 installed successfully.", isError: false)
                 }
             } catch {

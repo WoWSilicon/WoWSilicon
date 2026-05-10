@@ -173,7 +173,7 @@ enum DependencyService {
             try runInstaller(installerURL: x64InstallerURL, prefixURL: prefixURL, wineExecutable: wineExecutable)
         }
 
-        guard isVisualCppRuntimeInstalled() else {
+        guard waitForVisualCppRuntimeInstalled() else {
             throw DependencyServiceError.verificationFailed
         }
     }
@@ -272,6 +272,18 @@ enum DependencyService {
         return overrideDLLs.allSatisfy { dll in
             content.contains(#""*\#(dll)"="native,builtin""#)
         }
+    }
+
+    private static func waitForVisualCppRuntimeInstalled(timeout: TimeInterval = 20) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if isVisualCppRuntimeInstalled() {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 1)
+        } while Date() < deadline
+
+        return isVisualCppRuntimeInstalled()
     }
 
     private static func commandLineToolsInstalled() -> Bool {
