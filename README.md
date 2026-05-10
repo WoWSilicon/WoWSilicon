@@ -17,6 +17,9 @@
   <a href="https://github.com/WoWSilicon/WoWSilicon/releases">
     <img src="https://img.shields.io/github/v/release/WoWSilicon/WoWSilicon?style=flat&label=latest" alt="Latest release">
   </a>
+  <a href="https://discord.gg/pwZD5zBwfD">
+    <img src="https://img.shields.io/badge/discord-join-5865F2?style=flat&logo=discord&logoColor=white" alt="Join the Discord">
+  </a>
 </p>
 
 WoWSilicon is a macOS launcher for older World of Warcraft clients on Apple Silicon Macs.
