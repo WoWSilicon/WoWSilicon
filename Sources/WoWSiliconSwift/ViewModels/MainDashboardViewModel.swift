@@ -36,6 +36,8 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var optionAsAltStatus: OptionAsAltStatus = .unknown
     @Published private(set) var isRetinaModeBusy: Bool = false
     @Published private(set) var retinaModeStatus: OptionAsAltStatus = .unknown
+    @Published private(set) var isDependencyInstallInProgress: Bool = false
+    @Published private(set) var visualCppRuntimeStatus: DependencyInstallStatus = .unknown
     @Published private(set) var currentVersion: GameVersion?
     @Published private(set) var supportsMods: Bool = false
     @Published private(set) var versions: [GameVersion] = []
@@ -92,6 +94,7 @@ final class MainDashboardViewModel: ObservableObject {
         recordLaunchTelemetryIfNeeded()
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
+        refreshVisualCppRuntimeStatus()
     }
 
     func selectVersion(id: String) {
@@ -103,6 +106,7 @@ final class MainDashboardViewModel: ObservableObject {
         refreshSnapshot()
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
+        refreshVisualCppRuntimeStatus()
     }
 
     func addVersion(name: String, baseID: String, wantsLauncher: Bool) {
@@ -121,6 +125,7 @@ final class MainDashboardViewModel: ObservableObject {
         refreshSnapshot()
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
+        refreshVisualCppRuntimeStatus()
     }
 
     func removeVersion(id: String) {
@@ -133,6 +138,7 @@ final class MainDashboardViewModel: ObservableObject {
         refreshSnapshot()
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
+        refreshVisualCppRuntimeStatus()
     }
 
 
@@ -465,6 +471,51 @@ final class MainDashboardViewModel: ObservableObject {
     func enableRetinaMode() { setRetinaMode(true) }
 
     func disableRetinaMode() { setRetinaMode(false) }
+
+    var canInstallDependencies: Bool {
+        guard let currentVersion else { return false }
+        let hasCrossOverPath = !currentVersion.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return hasCrossOverPath && isCrossOverPatched && !isDependencyInstallInProgress
+    }
+
+    func installVisualCppRuntime() {
+        guard canInstallDependencies else { return }
+        guard let currentVersion else { return }
+
+        let crossOverPath = currentVersion.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        isDependencyInstallInProgress = true
+        visualCppRuntimeStatus = .inProgress("Installing...")
+        patchFeedback = nil
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                try DependencyService.installVisualCppRuntime(crossOverPath: crossOverPath)
+                DispatchQueue.main.async {
+                    self?.isDependencyInstallInProgress = false
+                    self?.visualCppRuntimeStatus = .installed
+                    self?.patchFeedback = PatchFeedback(title: "Dependencies", message: "Microsoft Visual C++ Runtime 2022 installed successfully.", isError: false)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.isDependencyInstallInProgress = false
+                    self?.visualCppRuntimeStatus = .error(error.localizedDescription)
+                    self?.patchFeedback = PatchFeedback(title: "Dependencies Failed", message: error.localizedDescription, isError: true)
+                    self?.refreshVisualCppRuntimeStatus()
+                }
+            }
+        }
+    }
+
+    func refreshVisualCppRuntimeStatus() {
+        guard !isDependencyInstallInProgress else { return }
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let installed = DependencyService.isVisualCppRuntimeInstalled()
+            DispatchQueue.main.async {
+                self?.visualCppRuntimeStatus = installed ? .installed : .missing
+            }
+        }
+    }
 
     private func setOptionAsAlt(_ enabled: Bool) {
         guard !isOptionAsAltBusy else { return }

@@ -34,6 +34,8 @@ struct OptionsView: View {
                         graphicsSection
                     case .realmlist:
                         realmlistSection
+                    case .dependencies:
+                        dependenciesSection
                     case .environment:
                         environmentSection
                     }
@@ -58,6 +60,7 @@ struct OptionsView: View {
             viewModel.refreshOptionAsAltStatus()
             viewModel.refreshRetinaModeStatus()
             viewModel.refreshGraphicsSettings()
+            viewModel.refreshVisualCppRuntimeStatus()
             viewModel.beginOptionsSession()
             refreshRealmlist()
         }
@@ -216,10 +219,60 @@ struct OptionsView: View {
         }
     }
 
+    private var dependenciesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Dependencies")
+                .font(.headline)
+
+            HStack(spacing: 8) {
+                Text("Microsoft Visual C++ Runtime 2022")
+                Spacer()
+                Text(viewModel.visualCppRuntimeStatus.text)
+                    .foregroundStyle(visualCppRuntimeStatusColor)
+                if viewModel.isDependencyInstallInProgress {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            Button("Install VC++ Runtime 2022") {
+                viewModel.installVisualCppRuntime()
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!viewModel.canInstallDependencies || viewModel.visualCppRuntimeStatus == .installed)
+
+            Text(dependenciesHelpText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var dependenciesHelpText: String {
+        if viewModel.isCrossOverPatched {
+            return "Installs Microsoft's x86 Visual C++ Runtime into ~/.wine using the patched CrossOver wineloader."
+        }
+        return "Set and patch CrossOver before installing dependencies."
+    }
+
+    private var visualCppRuntimeStatusColor: Color {
+        switch viewModel.visualCppRuntimeStatus {
+        case .installed:
+            return .green
+        case .missing, .unknown:
+            return .secondary
+        case .inProgress:
+            return .blue
+        case .error:
+            return .red
+        }
+    }
+
     private enum OptionsTab: String, CaseIterable, Identifiable {
         case general
         case graphics
         case realmlist
+        case dependencies
         case environment
 
         var id: OptionsTab { self }
@@ -228,6 +281,7 @@ struct OptionsView: View {
             case .general: return "General"
             case .graphics: return "Graphics"
             case .realmlist: return "Realmlist"
+            case .dependencies: return "Dependencies"
             case .environment: return "Environment"
             }
         }
