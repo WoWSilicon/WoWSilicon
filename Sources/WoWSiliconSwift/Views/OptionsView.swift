@@ -16,12 +16,17 @@ struct OptionsView: View {
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Picker("", selection: $selectedTab) {
-                ForEach(OptionsTab.allCases) { tab in
-                    Text(tab.title).tag(tab)
+            HStack {
+                Spacer()
+                Picker("", selection: $selectedTab) {
+                    ForEach(OptionsTab.allCases) { tab in
+                        Text(tab.title).tag(tab)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .fixedSize(horizontal: true, vertical: false)
+                Spacer()
             }
-            .pickerStyle(.segmented)
 
             Divider()
 
@@ -41,6 +46,7 @@ struct OptionsView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(.trailing, 18)
             }
 
             Divider()
@@ -286,14 +292,17 @@ struct OptionsView: View {
     private func dependencyStatusRow(title: String, status: DependencyInstallStatus, isBusy: Bool) -> some View {
         HStack(spacing: 8) {
             Text(title)
+                .lineLimit(2)
             Spacer()
             Text(status.text)
+                .lineLimit(1)
                 .foregroundStyle(dependencyStatusColor(status))
             if isBusy {
                 ProgressView()
                     .controlSize(.small)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func dependencyStatusColor(_ status: DependencyInstallStatus) -> Color {
