@@ -347,9 +347,9 @@ final class LaunchService: @unchecked Sendable {
                     .appendingPathComponent("rosettax87")
                     .appendingPathComponent("rosettax87")
                 let rosettaBinary = doubleQuote(rosettaURL.path)
-                shellCommand = "cd \(launcherDir) && ROSETTA_X87_PATH=\(rosettaBinary) \(envPart) \(wineloader2) \(exeName) --disable-gpu"
+                shellCommand = "cd \(launcherDir) && ROSETTA_X87_PATH=\(rosettaBinary) \(envPart) \(wineloader2) \(exeName) --disable-gpu --in-process-gpu"
             } else {
-                shellCommand = "cd \(launcherDir) && \(envPart) \(wineloader2) \(exeName) --disable-gpu"
+                shellCommand = "cd \(launcherDir) && \(envPart) \(wineloader2) \(exeName) --disable-gpu --in-process-gpu"
             }
         } else {
             if gamePatched {
@@ -357,9 +357,9 @@ final class LaunchService: @unchecked Sendable {
                     .appendingPathComponent("rosettax87")
                     .appendingPathComponent("rosettax87")
                 let rosettaBinary = doubleQuote(rosettaURL.path)
-                shellCommand = "cd \(launcherDir) && \(envPart) \(rosettaBinary) \(wineloader2) \(exeName) --disable-gpu"
+                shellCommand = "cd \(launcherDir) && \(envPart) \(rosettaBinary) \(wineloader2) \(exeName) --disable-gpu --in-process-gpu"
             } else {
-                shellCommand = "cd \(launcherDir) && \(envPart) \(wineloader2) \(exeName) --disable-gpu"
+                shellCommand = "cd \(launcherDir) && \(envPart) \(wineloader2) \(exeName) --disable-gpu --in-process-gpu"
             }
         }
 
