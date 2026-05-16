@@ -93,28 +93,20 @@ enum OptionAsAltService {
     }
 
     private static func queryRegistryValue(prefixURL: URL, wineExecutable: String, valueName: String) -> Bool {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: wineExecutable)
-        task.arguments = ["reg", "query", WineRegistrySupport.macDriverRegistryKey, "/v", valueName]
-        task.environment = WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable)
-
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-
-        do {
-            try task.run()
-        } catch {
-            return false
-        }
-        let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-
-        guard task.terminationStatus == 0 else {
+        guard let result = try? ProcessRunner.run(
+            executablePath: wineExecutable,
+            arguments: ["reg", "query", WineRegistrySupport.macDriverRegistryKey, "/v", valueName],
+            environment: WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable),
+            timeout: 10
+        ) else {
             return false
         }
 
-        let output = String(data: outputData, encoding: .utf8) ?? ""
+        guard result.exitCode == 0 else {
+            return false
+        }
+
+        let output = result.stdout
         return output.contains(valueName) && output.contains("Y")
     }
 
@@ -124,37 +116,29 @@ enum OptionAsAltService {
         try batchContent.write(to: batchURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: batchURL) }
 
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: wineExecutable)
-        task.arguments = ["cmd", "/c", batchURL.path]
-
         let environment = WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable)
-        task.environment = environment
 
-        let commandDescription = """
-        Executable: \(wineExecutable)
-        Arguments: cmd /c \(batchURL.path)
-        Environment:
-          WINEPREFIX=\(environment["WINEPREFIX"] ?? "unset")
-        Batch Contents:
-        \(batchContent)
-        """
+        let result = try ProcessRunner.run(
+            executablePath: wineExecutable,
+            arguments: ["cmd", "/c", batchURL.path],
+            environment: environment,
+            timeout: 60
+        )
 
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-
-        try task.run()
-        let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-
-        let output = String(data: outputData, encoding: .utf8) ?? ""
-        if task.terminationStatus != 0 {
+        if result.exitCode != 0 {
+            let commandDescription = """
+            Executable: \(wineExecutable)
+            Arguments: cmd /c \(batchURL.path)
+            Environment:
+              WINEPREFIX=\(environment["WINEPREFIX"] ?? "unset")
+            Batch Contents:
+            \(batchContent)
+            """
             throw OptionAsAltServiceError.commandFailed("""
             \(commandDescription)
-            Exit Code: \(task.terminationStatus)
+            Exit Code: \(result.exitCode)
             Output:
-            \(output)
+            \(result.combinedOutput)
             """)
         }
     }

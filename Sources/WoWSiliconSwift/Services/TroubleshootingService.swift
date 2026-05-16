@@ -302,19 +302,13 @@ enum TroubleshootingService {
     private static func run(_ components: [String]) -> String? {
         guard let executable = components.first else { return nil }
         let args = Array(components.dropFirst())
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: executable)
-        task.arguments = args
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-        do {
-            try task.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            task.waitUntilExit()
-            return String(data: data, encoding: .utf8)
-        } catch {
+        guard let result = try? ProcessRunner.run(
+            executablePath: executable,
+            arguments: args,
+            timeout: 10
+        ) else {
             return nil
         }
+        return result.combinedOutput
     }
 }

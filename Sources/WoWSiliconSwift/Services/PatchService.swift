@@ -145,23 +145,16 @@ enum PatchService {
                 continue  // this client doesn't have this DLL — skip
             }
 
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: wineloaderPath)
-            task.environment = env
-            task.arguments = ["rundll32", "libDllLdr.dll,\(patch.entry)", gameURL.path]
-            task.currentDirectoryURL = gameURL
+            let result = try ProcessRunner.run(
+                executablePath: wineloaderPath,
+                arguments: ["rundll32", "libDllLdr.dll,\(patch.entry)", gameURL.path],
+                environment: env,
+                currentDirectory: gameURL,
+                timeout: 120
+            )
 
-            let pipe = Pipe()
-            task.standardOutput = pipe
-            task.standardError = pipe
-
-            try task.run()
-            let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-            task.waitUntilExit()
-
-            if task.terminationStatus != 0 {
-                let output = String(data: outputData, encoding: .utf8) ?? ""
-                throw PatchServiceError.fileOperationFailed("Failed to run \(patch.entry): \(output)")
+            if result.exitCode != 0 {
+                throw PatchServiceError.fileOperationFailed("Failed to run \(patch.entry): \(result.combinedOutput)")
             }
         }
     }
@@ -241,14 +234,11 @@ enum PatchService {
 
         let wineloaderCopy = wineloaderBasePath.appendingPathComponent("wineloader2", isDirectory: false)
 
-        // Copy wineloader to wineloader2
         try copyItem(from: wineloaderOrig, to: wineloaderCopy)
 
-        // Remove code signature from wineloader2
         try removeSignature(at: wineloaderCopy)
 
-        // Set executable permissions
-        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: wineloaderCopy.path)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: Int(0o755))], ofItemAtPath: wineloaderCopy.path)
 
         if crossOverVersion == .v26 {
             let cxUnixDir = crossOverURL
@@ -346,7 +336,7 @@ enum PatchService {
         try copyItem(from: source, to: destination)
 
         if makeExecutable {
-            try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: destination.path)
+            try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: Int(0o755))], ofItemAtPath: destination.path)
         }
     }
 
@@ -379,19 +369,20 @@ enum PatchService {
     }
 
     private static func removeSignature(at url: URL) throws {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-        task.arguments = ["--remove-signature", url.path]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
         do {
-            try task.run()
-            let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-            task.waitUntilExit()
-            if task.terminationStatus != 0 {
-                let output = String(data: outputData, encoding: .utf8) ?? ""
+            let result = try ProcessRunner.run(
+                executablePath: "/usr/bin/codesign",
+                arguments: ["--remove-signature", url.path],
+                timeout: 30
+            )
+            if result.exitCode != 0 {
                 try? FileManager.default.removeItem(at: url)
+                let output = result.combinedOutput
+                if output.contains("EPERM") || output.contains("Operation not permitted") {
+                    throw PatchServiceError.fileOperationFailed(
+                        "Insufficient permissions to modify \(url.path). Grant the app access in System Settings > Privacy & Security > App Management."
+                    )
+                }
                 throw PatchServiceError.fileOperationFailed(output.isEmpty ? "codesign --remove-signature failed." : output)
             }
         } catch let error as PatchServiceError {
@@ -403,27 +394,27 @@ enum PatchService {
     }
 
     static func isSigned(at url: URL) -> Bool {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-        task.arguments = ["-d", url.path]
-        let pipe = Pipe()
-        task.standardError = pipe
-        try? task.run()
-        task.waitUntilExit()
-        return task.terminationStatus == 0
+        guard let result = try? ProcessRunner.run(
+            executablePath: "/usr/bin/codesign",
+            arguments: ["-d", url.path],
+            timeout: 10
+        ) else {
+            return false
+        }
+        return result.exitCode == 0
     }
 
     static func isSignedByCodeWeavers(at url: URL) -> Bool {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-        task.arguments = ["-dvv", url.path]
-        let pipe = Pipe()
-        task.standardError = pipe
-        try? task.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        guard task.terminationStatus == 0, let output = String(data: data, encoding: .utf8) else { return false }
-        return output.contains("CodeWeavers")
+        guard let result = try? ProcessRunner.run(
+            executablePath: "/usr/bin/codesign",
+            arguments: ["-dvv", url.path],
+            timeout: 10
+        ) else {
+            return false
+        }
+        guard result.exitCode == 0 else { return false }
+        // codesign -dvv writes signing info to stderr
+        return result.stderr.contains("CodeWeavers")
     }
 
     static func fileChecksum(at url: URL) -> String? {

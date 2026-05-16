@@ -247,26 +247,17 @@ enum AddonService {
             throw AddonServiceError.gitFailed("Git is not installed.")
         }
 
-        let process = Process()
-        process.executableURL = gitURL
-        process.arguments = arguments
-        if let directory {
-            process.currentDirectoryURL = URL(fileURLWithPath: directory)
-        }
+        let result = try ProcessRunner.run(
+            executablePath: gitURL.path,
+            arguments: arguments,
+            currentDirectory: directory.map { URL(fileURLWithPath: $0) },
+            timeout: 120
+        )
 
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-
-        try process.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        let combined = String(data: data, encoding: .utf8) ?? ""
         return GitResult(
-            stdout: combined,
-            stderr: combined,
-            exitStatus: process.terminationStatus
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitStatus: result.exitCode
         )
     }
 }

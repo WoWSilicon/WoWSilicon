@@ -173,12 +173,22 @@ final class LaunchService: @unchecked Sendable {
         process.standardError = stderr
 
         stdout.fileHandleForReading.readabilityHandler = { handle in
-            if let text = String(data: handle.availableData, encoding: .utf8), !text.isEmpty {
+            let data = handle.availableData
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
+            if let text = String(data: data, encoding: .utf8), !text.isEmpty {
                 print("[GAME]", text)
             }
         }
         stderr.fileHandleForReading.readabilityHandler = { handle in
-            if let text = String(data: handle.availableData, encoding: .utf8), !text.isEmpty {
+            let data = handle.availableData
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
+            if let text = String(data: data, encoding: .utf8), !text.isEmpty {
                 print("[GAME:ERR]", text)
             }
         }
@@ -450,16 +460,14 @@ final class LaunchService: @unchecked Sendable {
     }
 
     private func isProcessRunning(named name: String) -> Bool {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        task.arguments = ["-f", name]
-        do {
-            try task.run()
-            task.waitUntilExit()
-            return task.terminationStatus == 0
-        } catch {
+        guard let result = try? ProcessRunner.run(
+            executablePath: "/usr/bin/pgrep",
+            arguments: ["-f", name],
+            timeout: 5
+        ) else {
             return false
         }
+        return result.exitCode == 0
     }
 
     private func trackProcess(_ process: Process) {

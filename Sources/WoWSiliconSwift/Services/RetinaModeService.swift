@@ -70,21 +70,17 @@ enum RetinaModeService {
         guard let wineExecutable = WineRegistrySupport.wineloaderPath(from: crossOverPath) else { return nil }
 
         let prefixURL = WineRegistrySupport.winePrefixURL()
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: wineExecutable)
-        task.arguments = ["reg", "query", WineRegistrySupport.macDriverRegistryKey, "/v", "RetinaMode"]
-        task.environment = WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable)
+        guard let result = try? ProcessRunner.run(
+            executablePath: wineExecutable,
+            arguments: ["reg", "query", WineRegistrySupport.macDriverRegistryKey, "/v", "RetinaMode"],
+            environment: WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable),
+            timeout: 10
+        ) else {
+            return nil
+        }
+        guard result.exitCode == 0 else { return false }
 
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-
-        do { try task.run() } catch { return nil }
-        let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        guard task.terminationStatus == 0 else { return false }
-
-        let output = String(data: outputData, encoding: .utf8) ?? ""
+        let output = result.stdout
         return output.contains("RetinaMode") && output.contains("Y")
     }
 
@@ -94,22 +90,15 @@ enum RetinaModeService {
         try batchContent.write(to: batchURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: batchURL) }
 
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: wineExecutable)
-        task.arguments = ["cmd", "/c", batchURL.path]
-        let environment = WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable)
-        task.environment = environment
+        let result = try ProcessRunner.run(
+            executablePath: wineExecutable,
+            arguments: ["cmd", "/c", batchURL.path],
+            environment: WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable),
+            timeout: 60
+        )
 
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-
-        try task.run()
-        let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        let output = String(data: outputData, encoding: .utf8) ?? ""
-        if task.terminationStatus != 0 {
-            throw RetinaModeServiceError.commandFailed(output)
+        if result.exitCode != 0 {
+            throw RetinaModeServiceError.commandFailed(result.combinedOutput)
         }
     }
 

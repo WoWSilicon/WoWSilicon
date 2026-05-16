@@ -62,35 +62,29 @@ enum VanillaTweaksService {
         let workingTweaksURL = gameURL.appendingPathComponent("vanilla-tweaks.exe")
         try? fileManager.removeItem(at: workingTweaksURL)
         try fileManager.copyItem(at: tweaksURL, to: workingTweaksURL)
-        try fileManager.setAttributes([.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: workingTweaksURL.path)
+        try fileManager.setAttributes([.posixPermissions: NSNumber(value: Int(0o755))], ofItemAtPath: workingTweaksURL.path)
 
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: wineloaderPath)
-        task.arguments = try makeArguments(for: version.settings)
-        task.currentDirectoryURL = gameURL
-        task.environment = makeWineEnvironment(wineloaderPath: wineloaderPath)
-
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-
-        try task.run()
-        let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        let output = String(data: outputData, encoding: .utf8) ?? ""
+        let result = try ProcessRunner.run(
+            executablePath: wineloaderPath,
+            arguments: try makeArguments(for: version.settings),
+            environment: makeWineEnvironment(wineloaderPath: wineloaderPath),
+            currentDirectory: gameURL,
+            timeout: 300
+        )
+        let output = result.combinedOutput
 
         try? fileManager.removeItem(at: workingTweaksURL)
 
         let tweakedPath = gameURL.appendingPathComponent("WoW_tweaked.exe")
         if !fileManager.fileExists(atPath: tweakedPath.path) {
-            if task.terminationStatus == 0 {
+            if result.exitCode == 0 {
                 throw VanillaTweaksError.outputMissing(output)
             }
-            throw VanillaTweaksError.executionFailed(output.isEmpty ? "vanilla-tweaks exited with code \(task.terminationStatus)" : output)
+            throw VanillaTweaksError.executionFailed(output.isEmpty ? "vanilla-tweaks exited with code \(result.exitCode)" : output)
         }
 
-        if task.terminationStatus != 0 {
-            throw VanillaTweaksError.executionFailed(output.isEmpty ? "vanilla-tweaks exited with code \(task.terminationStatus)" : output)
+        if result.exitCode != 0 {
+            throw VanillaTweaksError.executionFailed(output.isEmpty ? "vanilla-tweaks exited with code \(result.exitCode)" : output)
         }
     }
 
@@ -144,7 +138,6 @@ enum VanillaTweaksService {
             environment["PATH"] = wineDirectory
         }
         
-        // vanilla-tweaks is a console app, so we might not need X11 or Mac Driver settings.
         return environment
     }
 }

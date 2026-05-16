@@ -74,22 +74,14 @@ enum DependencyService {
 
     static func isGitInstalled() -> Bool {
         guard let gitURL = gitExecutableURL() else { return false }
-        let task = Process()
-        task.executableURL = gitURL
-        task.arguments = ["--version"]
-
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-
-        do {
-            try task.run()
-            _ = pipe.fileHandleForReading.readDataToEndOfFile()
-            task.waitUntilExit()
-            return task.terminationStatus == 0
-        } catch {
+        guard let result = try? ProcessRunner.run(
+            executablePath: gitURL.path,
+            arguments: ["--version"],
+            timeout: 30
+        ) else {
             return false
         }
+        return result.exitCode == 0
     }
 
     static func gitExecutableURL() -> URL? {
@@ -111,25 +103,19 @@ enum DependencyService {
     }
 
     static func installGit() throws {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
-        task.arguments = ["--install"]
-
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-
+        let result: ProcessRunResult
         do {
-            try task.run()
+            result = try ProcessRunner.run(
+                executablePath: "/usr/bin/xcode-select",
+                arguments: ["--install"],
+                timeout: 30
+            )
         } catch {
             throw DependencyServiceError.gitInstallFailed("Failed to open Apple's Git installer: \(error.localizedDescription)")
         }
 
-        let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-
-        if task.terminationStatus != 0 {
-            let output = String(data: outputData, encoding: .utf8) ?? ""
+        if result.exitCode != 0 {
+            let output = result.combinedOutput
             if output.localizedCaseInsensitiveContains("already installed") || isGitInstalled() {
                 return
             }
@@ -191,30 +177,23 @@ enum DependencyService {
     }
 
     private static func runInstaller(installerURL: URL, prefixURL: URL, wineExecutable: String) throws {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: wineExecutable)
-        task.arguments = [installerURL.path, "/install", "/quiet", "/norestart"]
-
         var environment = WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable)
         environment["WINEDLLOVERRIDES"] = "winemenubuilder.exe=d;mscoree=d;mshtml=d"
-        task.environment = environment
 
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-
+        let result: ProcessRunResult
         do {
-            try task.run()
+            result = try ProcessRunner.run(
+                executablePath: wineExecutable,
+                arguments: [installerURL.path, "/install", "/quiet", "/norestart"],
+                environment: environment,
+                timeout: 300
+            )
         } catch {
             throw DependencyServiceError.installFailed(error.localizedDescription)
         }
 
-        let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-
-        guard task.terminationStatus == 0 else {
-            let output = String(data: outputData, encoding: .utf8) ?? ""
-            throw DependencyServiceError.installFailed(output)
+        guard result.exitCode == 0 else {
+            throw DependencyServiceError.installFailed(result.combinedOutput)
         }
     }
 
@@ -234,27 +213,20 @@ enum DependencyService {
         try regContent.write(to: regURL, atomically: true, encoding: .unicode)
         defer { try? FileManager.default.removeItem(at: regURL) }
 
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: wineExecutable)
-        task.arguments = ["regedit", regURL.path]
-        task.environment = WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable)
-
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-
+        let result: ProcessRunResult
         do {
-            try task.run()
+            result = try ProcessRunner.run(
+                executablePath: wineExecutable,
+                arguments: ["regedit", regURL.path],
+                environment: WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable),
+                timeout: 30
+            )
         } catch {
             throw DependencyServiceError.installFailed(error.localizedDescription)
         }
 
-        let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-
-        guard task.terminationStatus == 0 else {
-            let output = String(data: outputData, encoding: .utf8) ?? ""
-            throw DependencyServiceError.installFailed(output)
+        guard result.exitCode == 0 else {
+            throw DependencyServiceError.installFailed(result.combinedOutput)
         }
     }
 
@@ -287,21 +259,13 @@ enum DependencyService {
     }
 
     private static func commandLineToolsInstalled() -> Bool {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
-        task.arguments = ["-p"]
-
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-
-        do {
-            try task.run()
-            _ = pipe.fileHandleForReading.readDataToEndOfFile()
-            task.waitUntilExit()
-            return task.terminationStatus == 0
-        } catch {
+        guard let result = try? ProcessRunner.run(
+            executablePath: "/usr/bin/xcode-select",
+            arguments: ["-p"],
+            timeout: 10
+        ) else {
             return false
         }
+        return result.exitCode == 0
     }
 }
