@@ -123,6 +123,7 @@ enum PatchService {
             try patchDivxDecoder(version: version, gameURL: gameURL)
         }
 
+        ensureGxResolution(in: gameURL)
     }
 
     private static func patchDivxDecoder(version: GameVersion, gameURL: URL) throws {
@@ -423,6 +424,23 @@ enum PatchService {
         }
         let hash = SHA256.hash(data: data)
         return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func ensureGxResolution(in gameURL: URL) {
+        let configURL = gameURL
+            .appendingPathComponent("WTF", isDirectory: true)
+            .appendingPathComponent("Config.wtf", isDirectory: false)
+
+        var content = (try? String(contentsOf: configURL)) ?? ""
+        let hasResolution = content.range(of: "SET\\s+gxResolution\\s+\"", options: [.regularExpression, .caseInsensitive]) != nil
+        guard !hasResolution else { return }
+
+        if !content.isEmpty && !content.hasSuffix("\n") { content += "\n" }
+        content += "SET gxResolution \"2560x1600\"\n"
+
+        let wtfDir = configURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: wtfDir, withIntermediateDirectories: true)
+        try? content.write(to: configURL, atomically: true, encoding: .utf8)
     }
 
     private static func updateDllsTxt(in gameDirectory: URL, enableLibSiliconPatch: Bool) throws {
