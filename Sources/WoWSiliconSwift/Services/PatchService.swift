@@ -431,16 +431,32 @@ enum PatchService {
             .appendingPathComponent("WTF", isDirectory: true)
             .appendingPathComponent("Config.wtf", isDirectory: false)
 
-        var content = (try? String(contentsOf: configURL)) ?? ""
-        let hasResolution = content.range(of: "SET\\s+gxResolution\\s+\"", options: [.regularExpression, .caseInsensitive]) != nil
-        guard !hasResolution else { return }
+        let fm = FileManager.default
+        let configExists = fm.fileExists(atPath: configURL.path)
 
-        if !content.isEmpty && !content.hasSuffix("\n") { content += "\n" }
-        content += "SET gxResolution \"2560x1600\"\n"
+        if configExists {
+            // WoW has historically written Config.wtf in non-UTF-8 encodings on some
+            // platforms. If the read fails, do NOT fall back to empty-string —
+            // that would clobber the user's entire config with a single SET line.
+            var usedEncoding: UInt = 0
+            guard var text = try? NSString(contentsOf: configURL, usedEncoding: &usedEncoding) as String else {
+                return
+            }
 
-        let wtfDir = configURL.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: wtfDir, withIntermediateDirectories: true)
-        try? content.write(to: configURL, atomically: true, encoding: .utf8)
+            let hasResolution = text.range(of: "SET\\s+gxResolution\\s+\"", options: [.regularExpression, .caseInsensitive]) != nil
+            if hasResolution { return }
+
+            if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
+            text += "SET gxResolution \"2560x1600\"\n"
+            let encoding = String.Encoding(rawValue: usedEncoding == 0 ? String.Encoding.utf8.rawValue : usedEncoding)
+            try? text.write(to: configURL, atomically: true, encoding: encoding)
+        } else {
+            // Fresh install: create WTF/ and seed a minimal Config.wtf.
+            let wtfDir = configURL.deletingLastPathComponent()
+            try? fm.createDirectory(at: wtfDir, withIntermediateDirectories: true)
+            let seed = "SET gxResolution \"2560x1600\"\n"
+            try? seed.write(to: configURL, atomically: true, encoding: .utf8)
+        }
     }
 
     private static func updateDllsTxt(in gameDirectory: URL, enableLibSiliconPatch: Bool) throws {
