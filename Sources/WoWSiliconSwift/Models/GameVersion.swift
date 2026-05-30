@@ -435,7 +435,7 @@ struct VersionManager: Codable, Sendable {
             supportsDLLLoading: true,
             usesRosettaPatching: true,
             usesDivxDecoderPatch: false,
-            optimizationLevel: .mid,
+            optimizationLevel: .high,
             settings: VersionSettings(autoDeleteWdb: true, enableLibSiliconPatch: true)
         )
     ]
