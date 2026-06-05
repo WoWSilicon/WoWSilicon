@@ -96,7 +96,8 @@ enum TroubleshootingService {
         var baseLog = "=== WoWSilicon Debug Log ===\n"
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        baseLog += "Generated: \(formatter.string(from: Date()))\n\n"
+        baseLog += "Generated: \(formatter.string(from: Date()))\n"
+        baseLog += "WoWSilicon Version: \(appVersion)\n\n"
 
         baseLog += "=== System Information ===\n"
         baseLog += "OS: macOS\n"
