@@ -9,14 +9,10 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var subtitleText: String = "Launch World Of Warcraft from 2006-2010 on Apple Silicon Macs"
 
     @Published private(set) var gamePathStatus = StatusValue(text: "Not set", level: .error)
-    @Published private(set) var crossOverPathStatus = StatusValue(text: "Not set", level: .error)
 
     @Published private(set) var gamePatchStatus = StatusValue(text: "Not Applied", level: .error)
     @Published private(set) var isGamePatched: Bool = false
     @Published private(set) var isGamePatchActionable: Bool = false
-    @Published private(set) var crossOverPatchStatus = StatusValue(text: "Not Applied", level: .error)
-    @Published private(set) var isCrossOverPatched: Bool = false
-    @Published private(set) var isCrossOverPatchActionable: Bool = false
     @Published private(set) var isGameOperationInProgress: Bool = false
     @Published private(set) var isUnpatchingOperation: Bool = false
     @Published private(set) var patchFeedback: PatchFeedback?
@@ -229,24 +225,6 @@ final class MainDashboardViewModel: ObservableObject {
         if panel.runModal() == .OK, let url = panel.url {
             updateCurrentVersion { version in
                 version.gamePath = url.path
-            }
-        }
-    }
-
-    func selectCrossOverPath() {
-        let panel = NSOpenPanel()
-        panel.title = "Select CrossOver Application"
-        panel.prompt = "Choose"
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.treatsFilePackagesAsDirectories = true
-        panel.level = .modalPanel
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-
-        if panel.runModal() == .OK, let url = panel.url {
-            updateCurrentVersion { version in
-                version.crossOverPath = url.path
             }
         }
     }
@@ -794,9 +772,9 @@ final class MainDashboardViewModel: ObservableObject {
         Task.detached { [weak self] in
             do {
                 try PatchService.applyGamePatch(for: versionSnapshot)
-                await self?.handlePatchCompletion(successTitle: "Game Patch", message: "Game patch applied successfully.", isGame: true)
+                await self?.handlePatchCompletion(successTitle: "Game Patch", message: "Game patch applied successfully.")
             } catch {
-                await self?.handlePatchError(error, title: "Game Patch Failed", isGame: true)
+                await self?.handlePatchError(error, title: "Game Patch Failed")
             }
         }
     }
@@ -813,53 +791,9 @@ final class MainDashboardViewModel: ObservableObject {
         Task.detached { [weak self] in
             do {
                 try PatchService.removeGamePatch(for: versionSnapshot)
-                await self?.handlePatchCompletion(successTitle: "Game Unpatch", message: "Game unpatched successfully.", isGame: true)
+                await self?.handlePatchCompletion(successTitle: "Game Unpatch", message: "Game unpatched successfully.")
             } catch {
-                await self?.handlePatchError(error, title: "Game Unpatch Failed", isGame: true)
-            }
-        }
-    }
-
-    func patchCrossOver() {
-        guard !isGameOperationInProgress, let version = versionManager.currentVersion else {
-            return
-        }
-
-        isGameOperationInProgress = true
-        isUnpatchingOperation = false
-
-        Task.detached { [weak self] in
-            do {
-                let crossOverPath = version.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !crossOverPath.isEmpty else {
-                    throw PatchServiceError.crossOverNotFound
-                }
-                try PatchService.applyCrossOverPatch(crossOverPath: crossOverPath)
-                await self?.handlePatchCompletion(successTitle: "CrossOver Patch", message: "CrossOver patch applied successfully.", isGame: false)
-            } catch {
-                await self?.handlePatchError(error, title: "CrossOver Patch Failed", isGame: false)
-            }
-        }
-    }
-
-    func unpatchCrossOver() {
-        guard !isGameOperationInProgress, let version = versionManager.currentVersion else {
-            return
-        }
-
-        isGameOperationInProgress = true
-        isUnpatchingOperation = true
-
-        Task.detached { [weak self] in
-            do {
-                let crossOverPath = version.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !crossOverPath.isEmpty else {
-                    throw PatchServiceError.crossOverNotFound
-                }
-                try PatchService.removeCrossOverPatch(crossOverPath: crossOverPath)
-                await self?.handlePatchCompletion(successTitle: "CrossOver Unpatch", message: "CrossOver unpatched successfully.", isGame: false)
-            } catch {
-                await self?.handlePatchError(error, title: "CrossOver Unpatch Failed", isGame: false)
+                await self?.handlePatchError(error, title: "Game Unpatch Failed")
             }
         }
     }
@@ -869,7 +803,7 @@ final class MainDashboardViewModel: ObservableObject {
         patchFeedback = nil
     }
 
-    private func handlePatchCompletion(successTitle: String, message: String, isGame: Bool) async {
+    private func handlePatchCompletion(successTitle: String, message: String) async {
         await MainActor.run {
             isGameOperationInProgress = false
             isUnpatchingOperation = false
@@ -878,7 +812,7 @@ final class MainDashboardViewModel: ObservableObject {
         }
     }
 
-    private func handlePatchError(_ error: Error, title: String, isGame: Bool) async {
+    private func handlePatchError(_ error: Error, title: String) async {
         await MainActor.run {
             isGameOperationInProgress = false
             isUnpatchingOperation = false
@@ -893,16 +827,12 @@ final class MainDashboardViewModel: ObservableObject {
             supportsMods = false
             self.currentVersion = nil
             gamePathStatus = StatusValue(text: "Not set", level: .error)
-            crossOverPathStatus = StatusValue(text: "Not set", level: .error)
             gamePatchStatus = StatusValue(text: "Not Applied", level: .error)
-            crossOverPatchStatus = StatusValue(text: "Not Applied", level: .error)
             versions = versionManager.orderedVersions()
             currentVersionID = versionManager.currentVersionID
             patchStatusRefreshID += 1
             isGamePatched = false
             isGamePatchActionable = false
-            isCrossOverPatched = false
-            isCrossOverPatchActionable = false
             canLaunch = false
             currentVersionHasLauncher = false
             currentVersionWantsLauncher = false
@@ -919,14 +849,10 @@ final class MainDashboardViewModel: ObservableObject {
         versions = versionManager.orderedVersions()
         currentVersionID = versionManager.currentVersionID
         gamePathStatus = makePathStatus(for: currentVersion.gamePath)
-        crossOverPathStatus = makePathStatus(for: currentVersion.crossOverPath)
 
         gamePatchStatus = StatusValue(text: "Checking...", level: .info)
-        crossOverPatchStatus = StatusValue(text: "Not Required", level: .success)
         isGamePatched = false
         isGamePatchActionable = false
-        isCrossOverPatched = true
-        isCrossOverPatchActionable = false
         canLaunch = false
         refreshPatchStatuses(for: currentVersion)
 

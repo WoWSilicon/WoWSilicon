@@ -279,10 +279,7 @@ struct OptionsView: View {
     }
 
     private var dependenciesHelpText: String {
-        if viewModel.isCrossOverPatched {
-            return "Installs Microsoft's x86 Visual C++ Runtime into ~/.wine using the patched CrossOver wineloader."
-        }
-        return "Set and patch CrossOver before installing dependencies."
+        "Installs Microsoft's x86 Visual C++ Runtime into ~/.wine using the bundled Wine runtime."
     }
 
     private var visualCppRuntimeStatusColor: Color {
