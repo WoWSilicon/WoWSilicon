@@ -50,7 +50,7 @@ done
 
 [[ -n "$wine_root" && -n "$mtld3d_root" && -n "$external_root" && -n "$output" ]] || usage
 
-for command in jq rsync shasum; do
+for command in install_name_tool jq rsync shasum; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "Required command not found: $command" >&2
     exit 1
@@ -106,6 +106,17 @@ copy_group() {
     done
 }
 
+relocate_group() {
+  local group="$1"
+
+  jq -r --arg group "$group" \
+    '.overlays[$group][] | .destination as $destination | (.deleteRpaths // [])[] | [$destination, .] | @tsv' \
+    "$manifest" |
+    while IFS=$'\t' read -r destination rpath; do
+      install_name_tool -delete_rpath "$rpath" "$output/$destination"
+    done
+}
+
 verify_group "winerosetta" "$repo_root"
 verify_group "mtld3d" "$mtld3d_root"
 verify_group "external" "$external_root"
@@ -116,6 +127,10 @@ rsync -a --exclude='.DS_Store' "$wine_root/" "$output/"
 copy_group "winerosetta" "$repo_root"
 copy_group "mtld3d" "$mtld3d_root"
 copy_group "external" "$external_root"
+
+relocate_group "winerosetta"
+relocate_group "mtld3d"
+relocate_group "external"
 
 mkdir -p "$output/share/wowsilicon"
 cp -X "$manifest" "$output/share/wowsilicon/runtime-lock.json"
