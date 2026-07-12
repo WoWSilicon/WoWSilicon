@@ -132,6 +132,11 @@ relocate_group "winerosetta"
 relocate_group "mtld3d"
 relocate_group "external"
 
+if [[ -f "$output/lib/external/libMoltenVK.dylib" ]]; then
+  mkdir -p "$output/lib/wine/x86_64-unix"
+  ln -sf "../../external/libMoltenVK.dylib" "$output/lib/wine/x86_64-unix/libvulkan.1.dylib"
+fi
+
 mkdir -p "$output/share/wowsilicon"
 cp -X "$manifest" "$output/share/wowsilicon/runtime-lock.json"
 
