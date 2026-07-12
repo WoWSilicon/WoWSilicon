@@ -921,15 +921,14 @@ final class MainDashboardViewModel: ObservableObject {
         gamePathStatus = makePathStatus(for: currentVersion.gamePath)
         crossOverPathStatus = makePathStatus(for: currentVersion.crossOverPath)
 
-        let crossOverPathSet = !currentVersion.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         gamePatchStatus = StatusValue(text: "Checking...", level: .info)
-        crossOverPatchStatus = StatusValue(text: crossOverPathSet ? "Checking..." : "Not Applied", level: crossOverPathSet ? .info : .error)
+        crossOverPatchStatus = StatusValue(text: "Not Required", level: .success)
         isGamePatched = false
         isGamePatchActionable = false
-        isCrossOverPatched = false
+        isCrossOverPatched = true
         isCrossOverPatchActionable = false
         canLaunch = false
-        refreshPatchStatuses(for: currentVersion, crossOverPathSet: crossOverPathSet)
+        refreshPatchStatuses(for: currentVersion)
 
         if currentVersion.hasLauncher && !FileManager.default.fileExists(atPath: currentVersion.launcherExePath) {
             versionManager.updateCurrentVersion { $0.launcherExePath = "" }
@@ -948,15 +947,12 @@ final class MainDashboardViewModel: ObservableObject {
         }
     }
 
-    private func refreshPatchStatuses(for version: GameVersion, crossOverPathSet: Bool) {
+    private func refreshPatchStatuses(for version: GameVersion) {
         patchStatusRefreshID += 1
         let refreshID = patchStatusRefreshID
 
-        Task.detached { [version, crossOverPathSet] in
+        Task.detached { [version] in
             let gamePatchDescriptor = PatchingStatusChecker.evaluateGamePatch(for: version)
-            let crossOverPatchDescriptor = PatchingStatusChecker.evaluateCrossOverPatch(
-                crossOverPath: crossOverPathSet ? version.crossOverPath : nil
-            )
 
             await MainActor.run { [weak self] in
                 guard let self else { return }
@@ -967,12 +963,8 @@ final class MainDashboardViewModel: ObservableObject {
                 self.isGamePatched = gamePatchDescriptor.applied
                 self.isGamePatchActionable = gamePatchDescriptor.actionable
 
-                self.crossOverPatchStatus = StatusValue(text: crossOverPatchDescriptor.text, level: crossOverPatchDescriptor.level)
-                self.isCrossOverPatched = crossOverPatchDescriptor.applied
-                self.isCrossOverPatchActionable = crossOverPatchDescriptor.actionable && crossOverPathSet
-
                 let gamePathReady = !version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                self.canLaunch = gamePathReady && gamePatchDescriptor.applied && crossOverPatchDescriptor.applied && crossOverPathSet
+                self.canLaunch = gamePathReady && gamePatchDescriptor.applied
             }
         }
     }
