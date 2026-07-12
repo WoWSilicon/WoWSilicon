@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "runtimeRevision": 1,
+  "runtimeRevision": 2,
   "wine": {
     "version": "11.13",
     "repository": "https://github.com/WineAndAqua/wine.git",
@@ -8,17 +8,7 @@
     "commit": "37540b5d94ac1c86e2599ef55d7f3a15e3237ce8"
   },
   "overlays": {
-    "winerosetta": [
-      {
-        "source": "Sources/WoWSiliconSwift/Resources/Patching/winerosetta/ntdll.so",
-        "destination": "lib/wine/x86_64-unix/ntdll.so",
-        "sha256": "74682e47d94b8d760064c4dff7ab0fe4872090419f585ea20c7dd60db021a6cd",
-        "deleteRpaths": [
-          "/opt/stuff/wine/libs/target/lib"
-        ],
-        "assembledSha256": "7439e7efd802a55a46c2e3dfdf92bf37b53b730b2e79f4385fa30b155b5f3ebd"
-      }
-    ],
+    "winerosetta": [],
     "mtld3d": [
       {
         "source": "mtld3d.conf",

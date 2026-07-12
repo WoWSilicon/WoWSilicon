@@ -147,7 +147,24 @@ mkdir -p "$build_root"
 )
 
 make -C "$build_root" -j "$jobs"
+
+preserve_root="$(mktemp -d "${TMPDIR:-/tmp}/wowsilicon-wine-preserve.XXXXXX")"
+cleanup_preserved_binaries() {
+  rm -rf "$preserve_root"
+}
+trap cleanup_preserved_binaries EXIT
+
+cp "$build_root/tools/wine/wine" "$preserve_root/wine-wrapper"
+cp "$build_root/loader/wine" "$preserve_root/wine-loader"
+cp "$build_root/dlls/ntdll/ntdll.so" "$preserve_root/ntdll.so"
+
 make -C "$build_root" install-lib INSTALL_PROGRAM_FLAGS=--strip
+install -m 755 "$preserve_root/wine-wrapper" "$install_root/bin/wine"
+install -m 755 "$preserve_root/wine-loader" "$install_root/lib/wine/x86_64-unix/wine"
+install -m 755 "$preserve_root/ntdll.so" "$install_root/lib/wine/x86_64-unix/ntdll.so"
+
+cleanup_preserved_binaries
+trap - EXIT
 
 [[ -x "$install_root/bin/wine" && -x "$install_root/bin/wineserver" ]] || {
   echo "Wine installation did not produce the expected executables." >&2
