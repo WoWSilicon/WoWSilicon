@@ -23,7 +23,7 @@ ICON_SCRIPT := $(BUILD_DIR)/make_icns.py
 SWIFT_ENV := SWIFT_MODULECACHE_PATH="$(BUILD_DIR)/swift-module-cache" CLANG_MODULE_CACHE_PATH="$(BUILD_DIR)/clang-module-cache"
 SWIFT_BUILD := $(SWIFT_ENV) swift build --arch arm64 --disable-sandbox --build-path "$(BUILD_DIR)" --cache-path "$(BUILD_DIR)/spm-cache" --manifest-cache none
 RESOURCE_BUNDLE := $(BUILD_DIR)/arm64-apple-macosx/release/WoWSilicon-swift_WoWSiliconSwift.bundle
-WINE_RUNTIME_DIR ?= $(BUILD_DIR)/wine-runtime
+WINE_RUNTIME_DIR ?= $(CURDIR)/.wine-runtime
 
 .PHONY: all build debug run bundle dmg appcast clean app_icon validate_wine_runtime
 

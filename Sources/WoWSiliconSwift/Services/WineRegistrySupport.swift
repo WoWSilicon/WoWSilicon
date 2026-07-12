@@ -19,13 +19,8 @@ enum WineRegistrySupport {
         return trimmed.hasPrefix(macDriverSection) || trimmed.hasPrefix(legacyMacDriverSection)
     }
 
-    static func wineloaderPath(from crossOverPath: String?) -> String? {
-        let resolvedPath = crossOverPath ?? "/Applications/CrossOver.app"
-        let wineloader2Path = resolvedPath + "/Contents/SharedSupport/CrossOver/CrossOver-Hosted Application/wineloader2"
-        guard FileManager.default.fileExists(atPath: wineloader2Path) else {
-            return nil
-        }
-        return wineloader2Path
+    static func wineExecutablePath() -> String? {
+        BundledWineRuntime.wineExecutableURL()?.path
     }
 
     static func makeWineEnvironment(prefixURL: URL, wineExecutable: String) -> [String: String] {

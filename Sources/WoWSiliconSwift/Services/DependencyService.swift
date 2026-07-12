@@ -33,7 +33,7 @@ enum DependencyServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .wineMissing:
-            return "CrossOver wineloader not found. Please ensure you have applied the CrossOver patch."
+            return "Bundled Wine executable not found. Reinstall WoWSilicon and try again."
         case .downloadFailed(let reason):
             return "Failed to download Microsoft Visual C++ Redistributable: \(reason)"
         case .installFailed(let output):
@@ -139,8 +139,8 @@ enum DependencyService {
         return hasX86Runtime && (!needsX64Runtime || hasX64Runtime) && hasVisualCppOverrides()
     }
 
-    static func installVisualCppRuntime(crossOverPath: String?) throws {
-        guard let wineExecutable = WineRegistrySupport.wineloaderPath(from: crossOverPath) else {
+    static func installVisualCppRuntime() throws {
+        guard let wineExecutable = WineRegistrySupport.wineExecutablePath() else {
             throw DependencyServiceError.wineMissing
         }
 

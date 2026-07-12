@@ -3,7 +3,7 @@ import Foundation
 enum VanillaTweaksError: LocalizedError {
     case resourcesMissing
     case wowExecutableMissing(String)
-    case crossOverWineloaderMissing(String)
+    case wineMissing(String)
     case executionFailed(String)
     case outputMissing(String)
     case invalidParameterFormat(String)
@@ -14,8 +14,8 @@ enum VanillaTweaksError: LocalizedError {
             return "Could not locate vanilla-tweaks.exe in the app bundle."
         case .wowExecutableMissing(let path):
             return "WoW.exe not found at \(path)."
-        case .crossOverWineloaderMissing(let path):
-            return "CrossOver wineloader not found at \(path). Please ensure you have applied the CrossOver patch."
+        case .wineMissing(let path):
+            return "Bundled Wine executable not found at \(path). Reinstall WoWSilicon and try again."
         case .executionFailed(let message):
             return message
         case .outputMissing(let output):
@@ -39,14 +39,10 @@ enum VanillaTweaksService {
             throw VanillaTweaksError.resourcesMissing
         }
 
-        let crossOverPath = version.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty 
-            ? "/Applications/CrossOver.app" 
-            : version.crossOverPath
-            
-        let wineloaderPath = crossOverPath + "/Contents/SharedSupport/CrossOver/CrossOver-Hosted Application/wineloader2"
-        
-        guard fileManager.fileExists(atPath: wineloaderPath) else {
-            throw VanillaTweaksError.crossOverWineloaderMissing(wineloaderPath)
+        guard let wineExecutable = BundledWineRuntime.wineExecutableURL() else {
+            let expectedPath = BundledWineRuntime.rootURL()?
+                .appendingPathComponent("bin/wine", isDirectory: false).path ?? "Contents/Resources/Wine/bin/wine"
+            throw VanillaTweaksError.wineMissing(expectedPath)
         }
 
         let gameURL = URL(fileURLWithPath: trimmedGame, isDirectory: true)
@@ -65,9 +61,9 @@ enum VanillaTweaksService {
         try fileManager.setAttributes([.posixPermissions: NSNumber(value: Int(0o755))], ofItemAtPath: workingTweaksURL.path)
 
         let result = try ProcessRunner.run(
-            executablePath: wineloaderPath,
+            executablePath: wineExecutable.path,
             arguments: try makeArguments(for: version.settings),
-            environment: makeWineEnvironment(wineloaderPath: wineloaderPath),
+            environment: makeWineEnvironment(wineExecutable: wineExecutable, gameURL: gameURL),
             currentDirectory: gameURL,
             timeout: 300
         )
@@ -124,10 +120,14 @@ enum VanillaTweaksService {
         return arguments
     }
     
-    private static func makeWineEnvironment(wineloaderPath: String) -> [String: String] {
+    private static func makeWineEnvironment(wineExecutable: URL, gameURL: URL) -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
-        
-        let wineDirectory = (wineloaderPath as NSString).deletingLastPathComponent
+        environment["WINE_LARGE_ADDRESS_AWARE"] = "1"
+        environment["ROSETTA_X87_PATH"] = gameURL
+            .appendingPathComponent("rosettax87", isDirectory: true)
+            .appendingPathComponent("rosettax87", isDirectory: false).path
+
+        let wineDirectory = wineExecutable.deletingLastPathComponent().path
         if var path = environment["PATH"] {
             let components = path.split(separator: ":").map(String.init)
             if !components.contains(wineDirectory) {

@@ -120,21 +120,26 @@ enum PatchService {
         try updateDllsTxt(in: gameURL, enableLibSiliconPatch: version.settings.enableLibSiliconPatch && version.libSiliconPatchSubdirectory != nil)
 
         if version.usesRosettaPatching && version.supportsDLLLoading {
-            try patchDivxDecoder(version: version, gameURL: gameURL)
+            try patchDivxDecoder(gameURL: gameURL)
         }
 
         ensureGxResolution(in: gameURL)
     }
 
-    private static func patchDivxDecoder(version: GameVersion, gameURL: URL) throws {
-        let wineloaderPath = resolveWineloaderPath(for: version)
-        guard FileManager.default.fileExists(atPath: wineloaderPath) else {
-            throw PatchServiceError.crossOverWineloaderMissing(wineloaderPath)
+    private static func patchDivxDecoder(gameURL: URL) throws {
+        guard let wineExecutable = BundledWineRuntime.wineExecutableURL() else {
+            let expectedPath = BundledWineRuntime.rootURL()?
+                .appendingPathComponent("bin/wine", isDirectory: false).path ?? "Contents/Resources/Wine/bin/wine"
+            throw PatchServiceError.crossOverWineloaderMissing(expectedPath)
         }
 
         var env = ProcessInfo.processInfo.environment
         env["WINEDLLOVERRIDES"] = "winemenubuilder.exe=d;mscoree=d;mshtml=d"
         env["WINEDEBUG"] = "-all"
+        env["WINE_LARGE_ADDRESS_AWARE"] = "1"
+        env["ROSETTA_X87_PATH"] = gameURL
+            .appendingPathComponent("rosettax87", isDirectory: true)
+            .appendingPathComponent("rosettax87", isDirectory: false).path
 
         let patches: [(entry: String, file: String)] = [
             ("PatchDivxDecoder", "DivxDecoder.dll"),
@@ -147,7 +152,7 @@ enum PatchService {
             }
 
             let result = try ProcessRunner.run(
-                executablePath: wineloaderPath,
+                executablePath: wineExecutable.path,
                 arguments: ["rundll32", "libDllLdr.dll,\(patch.entry)", gameURL.path],
                 environment: env,
                 currentDirectory: gameURL,
@@ -172,13 +177,6 @@ enum PatchService {
                 throw PatchServiceError.fileOperationFailed("Failed to restore \(name) from backup: \(error.localizedDescription)")
             }
         }
-    }
-
-    private static func resolveWineloaderPath(for version: GameVersion) -> String {
-        let crossOverPath = version.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "/Applications/CrossOver.app"
-            : version.crossOverPath
-        return crossOverPath + "/Contents/SharedSupport/CrossOver/CrossOver-Hosted Application/wineloader2"
     }
 
     static func isSupportedGameClient(at gameURL: URL) -> Bool {
