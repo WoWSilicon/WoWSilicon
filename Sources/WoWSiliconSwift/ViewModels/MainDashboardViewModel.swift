@@ -428,7 +428,11 @@ final class MainDashboardViewModel: ObservableObject {
             },
             set: { newValue in
                 guard var version = self.versionManager.currentVersion else { return }
-                version.settings.graphicsSettings = newValue
+                var normalizedValue = newValue
+                if normalizedValue.backend != .d9mt {
+                    normalizedValue.hdrEnabled = false
+                }
+                version.settings.graphicsSettings = normalizedValue
                 self.updateCurrentVersion { current in current = version }
                 let versionForWork = version
                 DispatchQueue.global(qos: .userInitiated).async {

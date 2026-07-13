@@ -48,6 +48,11 @@ enum PatchService {
             throw PatchServiceError.resourceMissing("mtld3d.conf")
         }
         try copyItem(from: mtld3dConfigurationURL, to: gameURL.appendingPathComponent("mtld3d.conf"))
+        try ConfigService.applyMtld3dSettings(for: version)
+        try DXVKConfigService.setCursorSizeMultiplier(
+            gamePath: version.gamePath,
+            multiplier: version.settings.cursorSizeMultiplier
+        )
 
         // Remove legacy exe-patching artifacts
         try removeIfExists(gameURL.appendingPathComponent("Wow_patched.exe"))

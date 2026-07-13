@@ -15,10 +15,19 @@ struct GraphicsSectionView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
+                    .onChange(of: settings.backend) { _, backend in
+                        if backend == .d9vk {
+                            settings.hdrEnabled = false
+                        }
+                    }
+
+                    Toggle("HDR Mode", isOn: $settings.hdrEnabled)
+                        .toggleStyle(.switch)
+                        .disabled(settings.backend != .d9mt)
 
                     Text(settings.backend == .d9mt
                          ? "Experimental Metal backend. Some WoW clients or configurations may have rendering issues or crashes."
-                         : "Default Vulkan-based backend with broad compatibility.")
+                         : "Default Vulkan-based backend with broad compatibility. D9MT is required for HDR mode.")
                         .font(.caption)
                         .foregroundStyle(settings.backend == .d9mt ? .orange : .secondary)
                         .fixedSize(horizontal: false, vertical: true)

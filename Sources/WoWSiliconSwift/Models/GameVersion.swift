@@ -88,6 +88,7 @@ enum ShadowQuality: String, Codable, CaseIterable, Sendable {
 
 struct GraphicsSettings: Codable, Equatable, Sendable {
     var backend: GraphicsBackend
+    var hdrEnabled: Bool
     var windowMode: WindowMode
     var resolution: String
     var refreshRate: Int
@@ -104,6 +105,7 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
 
     static let `default` = GraphicsSettings(
         backend: .d9vk,
+        hdrEnabled: false,
         windowMode: .windowed,
         resolution: "",
         refreshRate: 60,
@@ -127,13 +129,14 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
     static let commonRefreshRates = [30, 60, 120, 144, 165, 240]
 
     enum CodingKeys: String, CodingKey {
-        case backend, windowMode, resolution, refreshRate, vsync, multisampling
+        case backend, hdrEnabled, windowMode, resolution, refreshRate, vsync, multisampling
         case textureFiltering, specular, projectedTextures
         case viewDistance, groundEffectDensity, weatherDensity, particleDensity, shadowQuality
     }
 
     init(
         backend: GraphicsBackend = .d9vk,
+        hdrEnabled: Bool = false,
         windowMode: WindowMode = .windowed,
         resolution: String = "",
         refreshRate: Int = 60,
@@ -149,6 +152,7 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
         shadowQuality: ShadowQuality = .off
     ) {
         self.backend = backend
+        self.hdrEnabled = hdrEnabled
         self.windowMode = windowMode
         self.resolution = resolution
         self.refreshRate = refreshRate
@@ -167,6 +171,7 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         backend = try c.decodeIfPresent(GraphicsBackend.self, forKey: .backend) ?? .d9vk
+        hdrEnabled = try c.decodeIfPresent(Bool.self, forKey: .hdrEnabled) ?? false
         windowMode = try c.decodeIfPresent(WindowMode.self, forKey: .windowMode) ?? .windowed
         resolution = try c.decodeIfPresent(String.self, forKey: .resolution) ?? ""
         refreshRate = try c.decodeIfPresent(Int.self, forKey: .refreshRate) ?? 60

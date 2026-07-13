@@ -9,7 +9,7 @@ enum DXVKConfigServiceError: LocalizedError {
         case .gamePathMissing:
             return "Game path is not set. Configure it before adjusting the cursor size."
         case .writeFailed(let details):
-            return "Failed to update dxvk.conf: \(details)"
+            return "Failed to update cursor configuration: \(details)"
         }
     }
 }
@@ -43,9 +43,23 @@ enum DXVKConfigService {
         content = updateCursorSizeLine(content: content, multiplier: multiplier)
         do {
             try content.write(to: url, atomically: true, encoding: .utf8)
+            try updateMtld3dCursorSize(gameURL: URL(fileURLWithPath: trimmed, isDirectory: true), multiplier: multiplier)
         } catch {
             throw DXVKConfigServiceError.writeFailed(error.localizedDescription)
         }
+    }
+
+    private static func updateMtld3dCursorSize(gameURL: URL, multiplier: Int) throws {
+        let configURL = gameURL.appendingPathComponent("mtld3d.conf", isDirectory: false)
+        guard FileManager.default.fileExists(atPath: configURL.path) else { return }
+
+        let content = try String(contentsOf: configURL, encoding: .utf8)
+        let updated = ConfigService.updateMtld3dSetting(
+            content: content,
+            key: "cursor.scale",
+            value: String(max(1, multiplier))
+        )
+        try updated.write(to: configURL, atomically: true, encoding: .utf8)
     }
 
     private static func updateCursorSizeLine(content: String, multiplier: Int) -> String {

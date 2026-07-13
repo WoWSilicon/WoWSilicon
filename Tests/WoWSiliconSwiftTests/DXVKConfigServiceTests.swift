@@ -26,11 +26,16 @@ final class DXVKConfigServiceTests: XCTestCase {
     func testSetCursorSizeMultiplierUpdatesExistingLine() throws {
         let gameURL = try makeTemporaryDirectory()
         let configURL = gameURL.appendingPathComponent("dxvk.conf")
+        let mtld3dURL = gameURL.appendingPathComponent("mtld3d.conf")
         try """
         dxvk.enableAsync = True
           d3d9.enlargeHardwareCursor = 2
         d3d9.presentInterval = 1
         """.write(to: configURL, atomically: true, encoding: .utf8)
+        try """
+        # mtld3d configuration
+        # cursor.scale = auto
+        """.write(to: mtld3dURL, atomically: true, encoding: .utf8)
 
         try DXVKConfigService.setCursorSizeMultiplier(gamePath: gameURL.path, multiplier: 4)
 
@@ -39,16 +44,22 @@ final class DXVKConfigServiceTests: XCTestCase {
         XCTAssertTrue(content.contains("d3d9.enlargeHardwareCursor = 4"))
         XCTAssertTrue(content.contains("d3d9.presentInterval = 1"))
         XCTAssertFalse(content.contains("d3d9.enlargeHardwareCursor = 2"))
+
+        let mtld3dContent = try String(contentsOf: mtld3dURL, encoding: .utf8)
+        XCTAssertTrue(mtld3dContent.contains("cursor.scale = 4"))
+        XCTAssertFalse(mtld3dContent.contains("# cursor.scale = auto"))
     }
 
     func testSetCursorSizeMultiplierRemovesLineForDefaultSize() throws {
         let gameURL = try makeTemporaryDirectory()
         let configURL = gameURL.appendingPathComponent("dxvk.conf")
+        let mtld3dURL = gameURL.appendingPathComponent("mtld3d.conf")
         try """
         dxvk.enableAsync = True
         d3d9.enlargeHardwareCursor = 4
         d3d9.presentInterval = 1
         """.write(to: configURL, atomically: true, encoding: .utf8)
+        try "cursor.scale = 4\n".write(to: mtld3dURL, atomically: true, encoding: .utf8)
 
         try DXVKConfigService.setCursorSizeMultiplier(gamePath: gameURL.path, multiplier: 1)
 
@@ -56,6 +67,9 @@ final class DXVKConfigServiceTests: XCTestCase {
         XCTAssertFalse(content.contains("d3d9.enlargeHardwareCursor"))
         XCTAssertTrue(content.contains("dxvk.enableAsync = True"))
         XCTAssertTrue(content.contains("d3d9.presentInterval = 1"))
+
+        let mtld3dContent = try String(contentsOf: mtld3dURL, encoding: .utf8)
+        XCTAssertEqual(mtld3dContent, "cursor.scale = 1\n")
     }
 
     private func makeTemporaryDirectory() throws -> URL {
