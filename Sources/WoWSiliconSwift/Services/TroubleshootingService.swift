@@ -48,28 +48,16 @@ enum TroubleshootingService {
         return deleted
     }
 
-    static func deleteWinePrefixes(gamePath: String?) throws -> [String] {
-        guard let path = gamePath?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else {
-            throw TroubleshootingServiceError.gamePathMissing
-        }
+    static func deleteDefaultWineBottle(
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) throws -> String {
         let fm = FileManager.default
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let userWine = home.appendingPathComponent(".wine", isDirectory: true)
-        let gameWine = URL(fileURLWithPath: path, isDirectory: true).appendingPathComponent(".wine", isDirectory: true)
-
-        var deleted: [String] = []
-        if fm.fileExists(atPath: userWine.path) {
-            try fm.removeItem(at: userWine)
-            deleted.append(userWine.path)
-        }
-        if fm.fileExists(atPath: gameWine.path) {
-            try fm.removeItem(at: gameWine)
-            deleted.append(gameWine.path)
-        }
-        if deleted.isEmpty {
+        let wineBottle = homeDirectory.appendingPathComponent(".wine", isDirectory: true)
+        guard fm.fileExists(atPath: wineBottle.path) else {
             throw TroubleshootingServiceError.nothingToDelete
         }
-        return deleted
+        try fm.removeItem(at: wineBottle)
+        return wineBottle.path
     }
 
     static func deleteVanillaTweaks(gamePath: String?) throws {

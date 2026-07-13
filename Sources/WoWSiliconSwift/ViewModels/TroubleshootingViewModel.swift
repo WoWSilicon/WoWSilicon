@@ -66,11 +66,10 @@ final class TroubleshootingViewModel: ObservableObject, Identifiable {
         }
     }
 
-    func deleteWinePrefixes() {
-        let gamePath = context.gamePath
-        perform(action: "Deleting Wine prefixes…") {
-            let deleted = try TroubleshootingService.deleteWinePrefixes(gamePath: gamePath)
-            return "Deleted:\n" + deleted.joined(separator: "\n")
+    func deleteDefaultWineBottle() {
+        perform(action: "Deleting default Wine bottle…") {
+            let deleted = try TroubleshootingService.deleteDefaultWineBottle()
+            return "Deleted:\n" + deleted
         }
     }
 
