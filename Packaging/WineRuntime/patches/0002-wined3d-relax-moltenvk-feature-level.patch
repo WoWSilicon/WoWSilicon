@@ -1,0 +1,17 @@
+diff --git a/dlls/wined3d/adapter_vk.c b/dlls/wined3d/adapter_vk.c
+index 79014b4..9c2fb6c 100644
+--- a/dlls/wined3d/adapter_vk.c
++++ b/dlls/wined3d/adapter_vk.c
+@@ -2217,12 +2217,9 @@ static bool feature_level_10_supported(const struct wined3d_physical_device_info
+ {
+     return shader_model >= 4
+             && info->features2.features.multiViewport
+-            && info->features2.features.geometryShader
+             && info->features2.features.depthClamp
+             && info->features2.features.depthBiasClamp
+-            && info->features2.features.pipelineStatisticsQuery
+             && info->features2.features.shaderClipDistance
+-            && info->features2.features.shaderCullDistance
+             && info->draw_parameters_features.shaderDrawParameters
+             && info->vertex_divisor_features.vertexAttributeInstanceRateDivisor
+             && info->vertex_divisor_features.vertexAttributeInstanceRateZeroDivisor;
