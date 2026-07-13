@@ -19,6 +19,13 @@ enum GraphicsBackend: String, Codable, CaseIterable, Sendable {
         case .d9mt: return "d3d9=b"
         }
     }
+
+    var wineDLLOverrideWithBuiltinFallback: String {
+        switch self {
+        case .d9vk: return "d3d9=n,b"
+        case .d9mt: return "d3d9=b"
+        }
+    }
 }
 
 enum WindowMode: String, Codable, CaseIterable, Sendable {

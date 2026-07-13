@@ -28,6 +28,7 @@ enum DependencyServiceError: LocalizedError {
     case downloadFailed(String)
     case installFailed(String)
     case verificationFailed
+    case monoInstallFailed(String)
     case gitInstallFailed(String)
 
     var errorDescription: String? {
@@ -40,6 +41,8 @@ enum DependencyServiceError: LocalizedError {
             return output.isEmpty ? "Failed to install Microsoft Visual C++ Redistributable." : output
         case .verificationFailed:
             return "The installer finished, but the Visual C++ Runtime files were not found in the Wine prefix."
+        case .monoInstallFailed(let reason):
+            return reason.isEmpty ? "Wine Mono was not installed." : reason
         case .gitInstallFailed(let reason):
             return reason
         }
@@ -161,6 +164,54 @@ enum DependencyService {
 
         guard waitForVisualCppRuntimeInstalled() else {
             throw DependencyServiceError.verificationFailed
+        }
+    }
+
+    static func isWineMonoInstalled() -> Bool {
+        let monoRootURL = WineRegistrySupport.winePrefixURL()
+            .appendingPathComponent("drive_c/windows/mono", isDirectory: true)
+        guard let enumerator = FileManager.default.enumerator(
+            at: monoRootURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return false
+        }
+
+        return enumerator.contains { item in
+            guard let url = item as? URL else { return false }
+            return url.lastPathComponent.caseInsensitiveCompare("mscorlib.dll") == .orderedSame
+        }
+    }
+
+    static func installWineMono() throws {
+        guard let wineExecutable = WineRegistrySupport.wineExecutablePath() else {
+            throw DependencyServiceError.wineMissing
+        }
+
+        let prefixURL = WineRegistrySupport.winePrefixURL()
+        try FileManager.default.createDirectory(at: prefixURL, withIntermediateDirectories: true)
+
+        var environment = WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable)
+        environment["WINEDLLOVERRIDES"] = "winemenubuilder.exe=d;mshtml=d"
+
+        let result: ProcessRunResult
+        do {
+            result = try ProcessRunner.run(
+                executablePath: wineExecutable,
+                arguments: ["wineboot", "--update"],
+                environment: environment,
+                timeout: 600
+            )
+        } catch {
+            throw DependencyServiceError.monoInstallFailed(error.localizedDescription)
+        }
+
+        guard result.exitCode == 0 else {
+            throw DependencyServiceError.monoInstallFailed(result.combinedOutput)
+        }
+        guard isWineMonoInstalled() else {
+            throw DependencyServiceError.monoInstallFailed("The Wine Mono installer closed without installing Wine Mono.")
         }
     }
 

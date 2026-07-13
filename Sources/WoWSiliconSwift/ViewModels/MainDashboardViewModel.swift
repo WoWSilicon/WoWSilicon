@@ -34,6 +34,8 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var retinaModeStatus: OptionAsAltStatus = .unknown
     @Published private(set) var isDependencyInstallInProgress: Bool = false
     @Published private(set) var visualCppRuntimeStatus: DependencyInstallStatus = .unknown
+    @Published private(set) var isWineMonoInstallInProgress: Bool = false
+    @Published private(set) var wineMonoStatus: DependencyInstallStatus = .unknown
     @Published private(set) var isGitInstallInProgress: Bool = false
     @Published private(set) var gitStatus: DependencyInstallStatus = .unknown
     @Published private(set) var currentVersion: GameVersion?
@@ -93,6 +95,7 @@ final class MainDashboardViewModel: ObservableObject {
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
         refreshVisualCppRuntimeStatus()
+        refreshWineMonoStatus()
         refreshGitStatus()
     }
 
@@ -106,6 +109,7 @@ final class MainDashboardViewModel: ObservableObject {
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
         refreshVisualCppRuntimeStatus()
+        refreshWineMonoStatus()
         refreshGitStatus()
     }
 
@@ -548,6 +552,46 @@ final class MainDashboardViewModel: ObservableObject {
             let installed = DependencyService.isVisualCppRuntimeInstalled()
             DispatchQueue.main.async {
                 self?.visualCppRuntimeStatus = installed ? .installed : .missing
+            }
+        }
+    }
+
+    var canInstallWineMono: Bool {
+        BundledWineRuntime.wineExecutableURL() != nil && !isWineMonoInstallInProgress
+    }
+
+    func installWineMono() {
+        guard canInstallWineMono else { return }
+        isWineMonoInstallInProgress = true
+        wineMonoStatus = .inProgress("Waiting for installer...")
+        patchFeedback = nil
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                try DependencyService.installWineMono()
+                DispatchQueue.main.async {
+                    self?.isWineMonoInstallInProgress = false
+                    self?.wineMonoStatus = .installed
+                    self?.patchFeedback = PatchFeedback(title: "Dependencies", message: "Wine Mono installed successfully.", isError: false)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.isWineMonoInstallInProgress = false
+                    self?.wineMonoStatus = .error(error.localizedDescription)
+                    self?.patchFeedback = PatchFeedback(title: "Wine Mono Install Failed", message: error.localizedDescription, isError: true)
+                    self?.refreshWineMonoStatus()
+                }
+            }
+        }
+    }
+
+    func refreshWineMonoStatus() {
+        guard !isWineMonoInstallInProgress else { return }
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let installed = DependencyService.isWineMonoInstalled()
+            DispatchQueue.main.async {
+                self?.wineMonoStatus = installed ? .installed : .missing
             }
         }
     }

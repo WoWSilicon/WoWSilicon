@@ -13,6 +13,11 @@ final class GraphicsBackendTests: XCTestCase {
         XCTAssertEqual(GraphicsBackend.d9mt.wineDLLOverride, "d3d9=b")
     }
 
+    func testLaunchersKeepBuiltinD3D9AsFallback() {
+        XCTAssertEqual(GraphicsBackend.d9vk.wineDLLOverrideWithBuiltinFallback, "d3d9=n,b")
+        XCTAssertEqual(GraphicsBackend.d9mt.wineDLLOverrideWithBuiltinFallback, "d3d9=b")
+    }
+
     func testTelemetryReportsSelectedRenderer() throws {
         var version = try XCTUnwrap(VersionManager.defaultVersions["wrathsilicon"])
 

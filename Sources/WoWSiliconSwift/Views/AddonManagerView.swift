@@ -79,8 +79,20 @@ struct AddonManagerView: View {
                 .toggleStyle(.switch)
             Button("Update All") { viewModel.updateAll() }
                 .disabled(viewModel.isPerformingAction || viewModel.filteredAddons.filter { $0.hasGitRepo && $0.needsUpdate }.isEmpty)
-            Button("Refresh") { viewModel.refresh(checkUpdates: true) }
+            Button(action: viewModel.openAddonsDirectory) {
+                Image(systemName: "folder")
+            }
+                .buttonStyle(.bordered)
+                .disabled(!viewModel.canOpenAddonsDirectory)
+                .help("Open AddOns folder in Finder")
+                .accessibilityLabel("Open AddOns folder in Finder")
+            Button { viewModel.refresh(checkUpdates: true) } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+                .buttonStyle(.bordered)
                 .disabled(viewModel.isPerformingAction)
+                .help("Refresh addons")
+                .accessibilityLabel("Refresh addons")
             Button("Close", action: onClose)
         }
     }

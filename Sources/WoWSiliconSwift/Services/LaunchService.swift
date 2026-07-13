@@ -263,7 +263,7 @@ final class LaunchService: @unchecked Sendable {
 
         let installer = doubleQuote(installerURL.path)
         let wine = doubleQuote(wineExecutableURL.path)
-        let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverride
+        let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverrideWithBuiltinFallback
         let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let shellCommand = "DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINEDLLOVERRIDES=\"\(dllOverride)\" \(wine) \(installer)"
 
@@ -309,7 +309,7 @@ final class LaunchService: @unchecked Sendable {
         let wine = doubleQuote(wineExecutableURL.path)
 
         let mtlValue = version.settings.enableMetalHud ? "1" : "0"
-        let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverride
+        let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverrideWithBuiltinFallback
         let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let baseEnv = "DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = version.settings.environmentVariables

@@ -252,6 +252,26 @@ struct OptionsView: View {
                 .padding(.vertical, 4)
 
             dependencyStatusRow(
+                title: "Wine Mono",
+                status: viewModel.wineMonoStatus,
+                isBusy: viewModel.isWineMonoInstallInProgress
+            )
+
+            Button("Install Wine Mono") {
+                viewModel.installWineMono()
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!viewModel.canInstallWineMono || viewModel.wineMonoStatus == .installed)
+
+            Text("Provides .NET support for third-party launchers. Wine downloads the compatible package and opens its installer.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+                .padding(.vertical, 4)
+
+            dependencyStatusRow(
                 title: "Git",
                 status: viewModel.gitStatus,
                 isBusy: viewModel.isGitInstallInProgress
