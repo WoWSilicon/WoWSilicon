@@ -69,7 +69,8 @@ bundle: build validate_wine_runtime
 		rsync -a Sources/WoWSiliconSwift/Resources/ "$(APP_BUNDLE)/Contents/Resources/"; \
 	fi
 	@mkdir -p "$(APP_BUNDLE)/Contents/Resources/Wine"
-	@rsync -a --exclude='.DS_Store' "$(WINE_RUNTIME_DIR)/" "$(APP_BUNDLE)/Contents/Resources/Wine/"
+	@cp -R "$(WINE_RUNTIME_DIR)/." "$(APP_BUNDLE)/Contents/Resources/Wine/"
+	@find "$(APP_BUNDLE)/Contents/Resources/Wine" -name '.DS_Store' -delete
 	@cp "$(APP_ICON)" "$(APP_BUNDLE)/Contents/Resources/turtle.icns"
 	@xattr -cr "$(APP_BUNDLE)"
 	@if [ -n "$(CODESIGN_IDENTITY)" ]; then \
