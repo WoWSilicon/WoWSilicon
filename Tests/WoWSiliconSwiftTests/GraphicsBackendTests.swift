@@ -13,6 +13,16 @@ final class GraphicsBackendTests: XCTestCase {
         XCTAssertEqual(GraphicsBackend.d9mt.wineDLLOverride, "d3d9=b")
     }
 
+    func testTelemetryReportsSelectedRenderer() throws {
+        var version = try XCTUnwrap(VersionManager.defaultVersions["wrathsilicon"])
+
+        version.settings.graphicsSettings.backend = .d9vk
+        XCTAssertEqual(TelemetryEventContext(version: version).renderer, "d9vk")
+
+        version.settings.graphicsSettings.backend = .d9mt
+        XCTAssertEqual(TelemetryEventContext(version: version).renderer, "d9mt")
+    }
+
     func testMtld3dHDRSettingReplacesCommentedDefault() {
         let content = "# Color\n# color.hdr.enable = false\n# Cursor\n"
         let updated = ConfigService.updateMtld3dSetting(

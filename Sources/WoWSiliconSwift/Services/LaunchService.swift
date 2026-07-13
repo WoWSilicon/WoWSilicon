@@ -151,7 +151,7 @@ final class LaunchService: @unchecked Sendable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", configuration.shellCommand]
-        process.environment = ProcessInfo.processInfo.environment
+        process.environment = BundledWineRuntime.makeEnvironment()
 
         let stdout = Pipe()
         let stderr = Pipe()
@@ -238,7 +238,8 @@ final class LaunchService: @unchecked Sendable {
 
         let mtlValue = settings.enableMetalHud ? "1" : "0"
         let dllOverride = settings.graphicsSettings.backend.wineDLLOverride
-        let baseEnv = "WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
+        let baseEnv = "DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = settings.environmentVariables
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: ";", with: " ")
@@ -263,12 +264,13 @@ final class LaunchService: @unchecked Sendable {
         let installer = doubleQuote(installerURL.path)
         let wine = doubleQuote(wineExecutableURL.path)
         let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverride
-        let shellCommand = "WINEDLLOVERRIDES=\"\(dllOverride)\" \(wine) \(installer)"
+        let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
+        let shellCommand = "DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINEDLLOVERRIDES=\"\(dllOverride)\" \(wine) \(installer)"
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", shellCommand]
-        process.environment = ProcessInfo.processInfo.environment
+        process.environment = BundledWineRuntime.makeEnvironment()
 
         process.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async { [weak self] in
@@ -308,7 +310,8 @@ final class LaunchService: @unchecked Sendable {
 
         let mtlValue = version.settings.enableMetalHud ? "1" : "0"
         let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverride
-        let baseEnv = "WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
+        let baseEnv = "DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = version.settings.environmentVariables
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: ";", with: " ")
@@ -333,7 +336,7 @@ final class LaunchService: @unchecked Sendable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", shellCommand]
-        process.environment = ProcessInfo.processInfo.environment
+        process.environment = BundledWineRuntime.makeEnvironment()
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
 

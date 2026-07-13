@@ -24,7 +24,7 @@ enum WineRegistrySupport {
     }
 
     static func makeWineEnvironment(prefixURL: URL, wineExecutable: String) -> [String: String] {
-        var environment = ProcessInfo.processInfo.environment
+        var environment = BundledWineRuntime.makeEnvironment()
         environment["WINEPREFIX"] = prefixURL.path
         environment["__COMPAT_LAYER"] = "RunAsInvoker"
 

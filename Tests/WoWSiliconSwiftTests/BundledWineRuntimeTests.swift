@@ -21,6 +21,21 @@ final class BundledWineRuntimeTests: XCTestCase {
         XCTAssertEqual(result?.path, "/tmp/custom-wine")
     }
 
+    func testEnvironmentIncludesBundledExternalLibrariesAndPreservesExistingPath() {
+        let environment = BundledWineRuntime.makeEnvironment(
+            resourceURL: nil,
+            environment: [
+                BundledWineRuntime.environmentOverride: "/tmp/custom-wine",
+                "DYLD_LIBRARY_PATH": "/tmp/existing"
+            ]
+        )
+
+        XCTAssertEqual(
+            environment["DYLD_LIBRARY_PATH"],
+            "/tmp/custom-wine/lib/external:/tmp/existing"
+        )
+    }
+
     func testWineExecutableRequiresExecutableFile() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

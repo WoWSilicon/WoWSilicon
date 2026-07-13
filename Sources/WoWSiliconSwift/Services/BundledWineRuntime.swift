@@ -29,6 +29,37 @@ enum BundledWineRuntime {
         return fileManager.isExecutableFile(atPath: executableURL.path) ? executableURL : nil
     }
 
+    static func externalLibraryDirectoryURL(
+        resourceURL: URL? = Bundle.main.resourceURL,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL? {
+        rootURL(resourceURL: resourceURL, environment: environment)?
+            .appendingPathComponent("lib", isDirectory: true)
+            .appendingPathComponent("external", isDirectory: true)
+    }
+
+    static func makeEnvironment(
+        resourceURL: URL? = Bundle.main.resourceURL,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String: String] {
+        guard let externalURL = externalLibraryDirectoryURL(
+            resourceURL: resourceURL,
+            environment: environment
+        ) else {
+            return environment
+        }
+
+        var result = environment
+        let existing = environment["DYLD_LIBRARY_PATH"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let existing, !existing.isEmpty {
+            result["DYLD_LIBRARY_PATH"] = "\(externalURL.path):\(existing)"
+        } else {
+            result["DYLD_LIBRARY_PATH"] = externalURL.path
+        }
+        return result
+    }
+
     static func mtld3dConfigurationURL(
         resourceURL: URL? = Bundle.main.resourceURL,
         environment: [String: String] = ProcessInfo.processInfo.environment,

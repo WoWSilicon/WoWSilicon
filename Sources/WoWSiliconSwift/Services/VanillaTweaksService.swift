@@ -124,7 +124,7 @@ enum VanillaTweaksService {
     }
     
     private static func makeWineEnvironment(wineExecutable: URL) throws -> [String: String] {
-        var environment = ProcessInfo.processInfo.environment
+        var environment = BundledWineRuntime.makeEnvironment()
         environment["WINE_LARGE_ADDRESS_AWARE"] = "1"
         guard let rosettaExecutable = BundledRosettaRuntime.executableURL() else {
             throw VanillaTweaksError.rosettaMissing

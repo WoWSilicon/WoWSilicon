@@ -94,7 +94,7 @@ enum PatchService {
             throw PatchServiceError.bundledWineMissing(expectedPath)
         }
 
-        var env = ProcessInfo.processInfo.environment
+        var env = BundledWineRuntime.makeEnvironment()
         env["WINEDLLOVERRIDES"] = "winemenubuilder.exe=d;mscoree=d;mshtml=d"
         env["WINEDEBUG"] = "-all"
         env["WINE_LARGE_ADDRESS_AWARE"] = "1"
