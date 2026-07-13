@@ -44,6 +44,8 @@ struct MainDashboardView: View {
                     onSelectGamePath: viewModel.selectGamePath,
                     onOpenGamePath: viewModel.openGameDirectory,
                     canOpenGamePath: viewModel.canOpenGameDirectory,
+                    onClearGamePath: viewModel.clearGamePath,
+                    canClearGamePath: viewModel.canClearGamePath,
                     isGamePatched: viewModel.isGamePatched,
                     isGamePatchActionable: viewModel.isGamePatchActionable,
                     isGameOperationInProgress: viewModel.isGameOperationInProgress,
@@ -53,7 +55,9 @@ struct MainDashboardView: View {
                     launcherPathStatus: viewModel.launcherPathStatus,
                     onSelectLauncherPath: viewModel.selectLauncherPath,
                     onOpenLauncherPath: viewModel.openLauncherDirectory,
-                    canOpenLauncherPath: viewModel.canOpenLauncherDirectory
+                    canOpenLauncherPath: viewModel.canOpenLauncherDirectory,
+                    onClearLauncherPath: viewModel.clearLauncherPath,
+                    canClearLauncherPath: viewModel.canClearLauncherPath
                 )
                 .padding(.horizontal, 32)
                 .padding(.vertical, 24)
@@ -341,6 +345,8 @@ struct MainContentView: View {
     let onSelectGamePath: () -> Void
     let onOpenGamePath: () -> Void
     let canOpenGamePath: Bool
+    let onClearGamePath: () -> Void
+    let canClearGamePath: Bool
     let isGamePatched: Bool
     let isGamePatchActionable: Bool
     let isGameOperationInProgress: Bool
@@ -351,6 +357,8 @@ struct MainContentView: View {
     let onSelectLauncherPath: () -> Void
     let onOpenLauncherPath: () -> Void
     let canOpenLauncherPath: Bool
+    let onClearLauncherPath: () -> Void
+    let canClearLauncherPath: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -363,6 +371,8 @@ struct MainContentView: View {
                         buttonTitle: "Set/Change",
                         onOpen: onOpenLauncherPath,
                         canOpen: canOpenLauncherPath,
+                        onClear: onClearLauncherPath,
+                        canClear: canClearLauncherPath,
                         action: onSelectLauncherPath
                     )
                 }
@@ -372,6 +382,8 @@ struct MainContentView: View {
                     buttonTitle: "Set/Change",
                     onOpen: onOpenGamePath,
                     canOpen: canOpenGamePath,
+                    onClear: onClearGamePath,
+                    canClear: canClearGamePath,
                     action: onSelectGamePath
                 )
             }
@@ -435,6 +447,8 @@ struct PathRow: View {
     let buttonTitle: String
     let onOpen: () -> Void
     let canOpen: Bool
+    let onClear: () -> Void
+    let canClear: Bool
     let action: () -> Void
 
     var body: some View {
@@ -456,6 +470,16 @@ struct PathRow: View {
                 .disabled(!canOpen)
                 .help("Open in Finder")
                 .accessibilityLabel("Open in Finder")
+
+                Button(role: .destructive, action: onClear) {
+                    Image(systemName: "trash")
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!canClear)
+                .help("Clear selected path (files are not deleted)")
+                .accessibilityLabel("Clear selected path")
 
                 Button(buttonTitle, action: action)
                     .buttonStyle(.bordered)

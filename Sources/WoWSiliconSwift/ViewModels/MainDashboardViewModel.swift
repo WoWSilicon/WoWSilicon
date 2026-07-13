@@ -198,10 +198,20 @@ final class MainDashboardViewModel: ObservableObject {
             && isDirectory.boolValue
     }
 
+    var canClearLauncherPath: Bool {
+        !(versionManager.currentVersion?.launcherExePath
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+    }
+
     func openLauncherDirectory() {
         guard canOpenLauncherDirectory,
               let path = versionManager.currentVersion?.launcherExePath else { return }
         NSWorkspace.shared.open(URL(fileURLWithPath: path).deletingLastPathComponent())
+    }
+
+    func clearLauncherPath() {
+        guard canClearLauncherPath else { return }
+        updateCurrentVersion { $0.launcherExePath = "" }
     }
 
     func launchThirdPartyLauncher() {
@@ -257,10 +267,20 @@ final class MainDashboardViewModel: ObservableObject {
             && isDirectory.boolValue
     }
 
+    var canClearGamePath: Bool {
+        !(versionManager.currentVersion?.gamePath
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+    }
+
     func openGameDirectory() {
         guard canOpenGameDirectory,
               let path = versionManager.currentVersion?.gamePath else { return }
         NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true))
+    }
+
+    func clearGamePath() {
+        guard canClearGamePath else { return }
+        updateCurrentVersion { $0.gamePath = "" }
     }
 
     func beginOptionsSession() {
