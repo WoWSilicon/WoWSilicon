@@ -179,8 +179,17 @@ struct AddonManagerView: View {
                                 Button("Update") { viewModel.update(addon: addon) }
                                     .disabled(viewModel.isPerformingAction)
                             }
-                            Button("Delete") { addonPendingDeletion = addon }
+                            Button(role: .destructive) {
+                                addonPendingDeletion = addon
+                            } label: {
+                                Image(systemName: "trash")
+                                    .frame(width: 16, height: 16)
+                            }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
                                 .disabled(viewModel.isPerformingAction)
+                                .help("Delete addon")
+                                .accessibilityLabel("Delete addon")
                         }
                     }
                 }

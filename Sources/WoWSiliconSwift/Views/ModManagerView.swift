@@ -70,8 +70,17 @@ struct ModManagerView: View {
                             .disabled(mod.required || viewModel.isPerformingAction)
 
                             Spacer()
-                            Button("Delete") { modPendingDeletion = mod }
+                            Button(role: .destructive) {
+                                modPendingDeletion = mod
+                            } label: {
+                                Image(systemName: "trash")
+                                    .frame(width: 16, height: 16)
+                            }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
                                 .disabled(mod.required || viewModel.isPerformingAction)
+                                .help("Delete mod")
+                                .accessibilityLabel("Delete mod")
                         }
                     }
                 }
