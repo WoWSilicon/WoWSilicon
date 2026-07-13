@@ -37,8 +37,6 @@ enum PatchingStatusChecker {
             var requiredFiles = [
                 gamePath.appendingPathComponent("mods/winerosetta.dll"),
                 gamePath.appendingPathComponent("d3d9.dll"),
-                gamePath.appendingPathComponent("rosettax87/rosettax87"),
-                gamePath.appendingPathComponent("rosettax87/libRuntimeRosettax87")
             ]
 
             if version.supportsDLLLoading {
@@ -176,20 +174,6 @@ enum PatchingStatusChecker {
                 resourceSubdirectory: "Patching/d9vk",
                 displayName: "d3d9.dll"
             ),
-            ResourceExpectation(
-                relativePath: "rosettax87/rosettax87",
-                resourceName: "rosettax87",
-                resourceExtension: nil,
-                resourceSubdirectory: "Patching/rosettax87",
-                displayName: "rosettax87"
-            ),
-            ResourceExpectation(
-                relativePath: "rosettax87/libRuntimeRosettax87",
-                resourceName: "libRuntimeRosettax87",
-                resourceExtension: nil,
-                resourceSubdirectory: "Patching/rosettax87",
-                displayName: "libRuntimeRosettax87"
-            )
         ]
 
         if version.usesRosettaPatching && version.supportsDLLLoading {

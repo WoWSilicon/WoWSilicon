@@ -67,13 +67,7 @@ enum PatchService {
             try copyItem(from: vanillaTweaksURL, to: destination)
         }
 
-        let rosettaURL = gameURL.appendingPathComponent("rosettax87", isDirectory: true)
-        if FileManager.default.fileExists(atPath: rosettaURL.path) {
-            try FileManager.default.removeItem(at: rosettaURL)
-        }
-        try FileManager.default.createDirectory(at: rosettaURL, withIntermediateDirectories: true)
-        try copyResource(named: "rosettax87", extension: nil, subdirectory: "Patching/rosettax87", to: rosettaURL.appendingPathComponent("rosettax87"), makeExecutable: true)
-        try copyResource(named: "libRuntimeRosettax87", extension: nil, subdirectory: "Patching/rosettax87", to: rosettaURL.appendingPathComponent("libRuntimeRosettax87"), makeExecutable: true)
+        try removeIfExists(gameURL.appendingPathComponent("rosettax87", isDirectory: true))
 
         try updateDllsTxt(in: gameURL, enableLibSiliconPatch: version.settings.enableLibSiliconPatch && version.libSiliconPatchSubdirectory != nil)
 
@@ -95,9 +89,10 @@ enum PatchService {
         env["WINEDLLOVERRIDES"] = "winemenubuilder.exe=d;mscoree=d;mshtml=d"
         env["WINEDEBUG"] = "-all"
         env["WINE_LARGE_ADDRESS_AWARE"] = "1"
-        env["ROSETTA_X87_PATH"] = gameURL
-            .appendingPathComponent("rosettax87", isDirectory: true)
-            .appendingPathComponent("rosettax87", isDirectory: false).path
+        guard let rosettaExecutable = BundledRosettaRuntime.executableURL() else {
+            throw PatchServiceError.resourceMissing("rosettax87 runtime")
+        }
+        env["ROSETTA_X87_PATH"] = rosettaExecutable.path
 
         let patches: [(entry: String, file: String)] = [
             ("PatchDivxDecoder", "DivxDecoder.dll"),
@@ -159,7 +154,7 @@ enum PatchService {
         try removeIfExists(gameURL.appendingPathComponent("Wow_patched.exe"))
         try removeIfExists(gameURL.appendingPathComponent("d3d9.dll"))
         try removeIfExists(gameURL.appendingPathComponent("vanilla-tweaks.exe"))
-        try removeIfExists(gameURL.appendingPathComponent("rosettax87"))
+        try removeIfExists(gameURL.appendingPathComponent("rosettax87", isDirectory: true))
         try revertDivxDecoder(gameURL: gameURL)
 
         try removeDllEntries(in: gameURL)
@@ -175,16 +170,12 @@ enum PatchService {
         }
     }
 
-    private static func copyResource(named name: String, extension ext: String?, subdirectory: String, to destination: URL, makeExecutable: Bool = false) throws {
+    private static func copyResource(named name: String, extension ext: String?, subdirectory: String, to destination: URL) throws {
         guard let source = resourceURL(named: name, extension: ext, subdirectory: subdirectory) else {
             let resourceName = ext == nil ? name : "\(name).\(ext!)"
             throw PatchServiceError.resourceMissing(resourceName)
         }
         try copyItem(from: source, to: destination)
-
-        if makeExecutable {
-            try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: Int(0o755))], ofItemAtPath: destination.path)
-        }
     }
 
     private static func copyItem(from source: URL, to destination: URL) throws {

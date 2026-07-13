@@ -20,7 +20,7 @@ enum LaunchServiceError: LocalizedError {
         case .gamePathMissing:
             return "Game path is not set. Please configure it before launching."
         case .rosettaMissing(let path):
-            return "rosettax87 executable not found at \(path). Re-apply the game patch and try again."
+            return "Bundled rosettax87 runtime not found at \(path). Reinstall WoWSilicon and try again."
         case .wineMissing(let path):
             return "Bundled Wine executable not found at \(path). Reinstall WoWSilicon and try again."
         case .executableMissing(let path):
@@ -89,11 +89,8 @@ final class LaunchService: @unchecked Sendable {
         guard !trimmedGame.isEmpty else { throw LaunchServiceError.gamePathMissing }
 
         let gameURL = URL(fileURLWithPath: trimmedGame, isDirectory: true)
-        let rosettaURL = gameURL
-            .appendingPathComponent("rosettax87", isDirectory: true)
-            .appendingPathComponent("rosettax87", isDirectory: false)
-        guard fileManager.isExecutableFile(atPath: rosettaURL.path) else {
-            throw LaunchServiceError.rosettaMissing(rosettaURL.path)
+        guard let rosettaURL = BundledRosettaRuntime.executableURL() else {
+            throw LaunchServiceError.rosettaMissing("Contents/Resources/Patching/rosettax87/rosettax87")
         }
 
         guard let wineExecutableURL = BundledWineRuntime.wineExecutableURL() else {
@@ -319,11 +316,13 @@ final class LaunchService: @unchecked Sendable {
 
         let shellCommand: String
         if gamePatched {
-            let rosettaURL = URL(fileURLWithPath: version.gamePath)
-                .appendingPathComponent("rosettax87")
-                .appendingPathComponent("rosettax87")
-            let rosettaBinary = doubleQuote(rosettaURL.path)
-            shellCommand = "cd \(launcherDir) && ROSETTA_X87_PATH=\(rosettaBinary) \(envPart) \(wine) \(exeName) --disable-gpu --in-process-gpu"
+            guard let rosettaURL = BundledRosettaRuntime.executableURL() else {
+                DispatchQueue.main.async {
+                    completion(.failure(.rosettaMissing("Contents/Resources/Patching/rosettax87/rosettax87")))
+                }
+                return
+            }
+            shellCommand = "cd \(launcherDir) && ROSETTA_X87_PATH=\(doubleQuote(rosettaURL.path)) \(envPart) \(wine) \(exeName) --disable-gpu --in-process-gpu"
         } else {
             shellCommand = "cd \(launcherDir) && \(envPart) \(wine) \(exeName) --disable-gpu --in-process-gpu"
         }

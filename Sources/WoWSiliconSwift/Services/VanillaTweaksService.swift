@@ -4,6 +4,7 @@ enum VanillaTweaksError: LocalizedError {
     case resourcesMissing
     case wowExecutableMissing(String)
     case wineMissing(String)
+    case rosettaMissing
     case executionFailed(String)
     case outputMissing(String)
     case invalidParameterFormat(String)
@@ -16,6 +17,8 @@ enum VanillaTweaksError: LocalizedError {
             return "WoW.exe not found at \(path)."
         case .wineMissing(let path):
             return "Bundled Wine executable not found at \(path). Reinstall WoWSilicon and try again."
+        case .rosettaMissing:
+            return "Bundled rosettax87 runtime is missing. Reinstall WoWSilicon and try again."
         case .executionFailed(let message):
             return message
         case .outputMissing(let output):
@@ -63,7 +66,7 @@ enum VanillaTweaksService {
         let result = try ProcessRunner.run(
             executablePath: wineExecutable.path,
             arguments: try makeArguments(for: version.settings),
-            environment: makeWineEnvironment(wineExecutable: wineExecutable, gameURL: gameURL),
+            environment: try makeWineEnvironment(wineExecutable: wineExecutable),
             currentDirectory: gameURL,
             timeout: 300
         )
@@ -120,12 +123,13 @@ enum VanillaTweaksService {
         return arguments
     }
     
-    private static func makeWineEnvironment(wineExecutable: URL, gameURL: URL) -> [String: String] {
+    private static func makeWineEnvironment(wineExecutable: URL) throws -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
         environment["WINE_LARGE_ADDRESS_AWARE"] = "1"
-        environment["ROSETTA_X87_PATH"] = gameURL
-            .appendingPathComponent("rosettax87", isDirectory: true)
-            .appendingPathComponent("rosettax87", isDirectory: false).path
+        guard let rosettaExecutable = BundledRosettaRuntime.executableURL() else {
+            throw VanillaTweaksError.rosettaMissing
+        }
+        environment["ROSETTA_X87_PATH"] = rosettaExecutable.path
 
         let wineDirectory = wineExecutable.deletingLastPathComponent().path
         if var path = environment["PATH"] {
