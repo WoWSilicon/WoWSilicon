@@ -288,7 +288,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     var displayName: String
     var wowVersion: String
     var gamePath: String
-    var crossOverPath: String
     var executableName: String
     var supportsVanillaTweaks: Bool
     var supportsDLLLoading: Bool
@@ -314,7 +313,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         displayName: String,
         wowVersion: String,
         gamePath: String = "",
-        crossOverPath: String = "",
         executableName: String,
         supportsVanillaTweaks: Bool,
         supportsDLLLoading: Bool,
@@ -329,7 +327,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         self.displayName = displayName
         self.wowVersion = wowVersion
         self.gamePath = gamePath
-        self.crossOverPath = crossOverPath
         self.executableName = executableName
         self.supportsVanillaTweaks = supportsVanillaTweaks
         self.supportsDLLLoading = supportsDLLLoading
@@ -346,7 +343,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         case displayName = "display_name"
         case wowVersion = "wow_version"
         case gamePath = "game_path"
-        case crossOverPath = "crossover_path"
         case executableName
         case supportsVanillaTweaks = "supports_vanilla_tweaks"
         case supportsDLLLoading = "supports_dll_loading"
@@ -364,7 +360,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         displayName = try container.decode(String.self, forKey: .displayName)
         wowVersion = try container.decode(String.self, forKey: .wowVersion)
         gamePath = try container.decodeIfPresent(String.self, forKey: .gamePath) ?? ""
-        crossOverPath = try container.decodeIfPresent(String.self, forKey: .crossOverPath) ?? ""
         executableName = try container.decodeIfPresent(String.self, forKey: .executableName) ?? "WoW.exe"
         supportsVanillaTweaks = try container.decodeIfPresent(Bool.self, forKey: .supportsVanillaTweaks) ?? false
         supportsDLLLoading = try container.decodeIfPresent(Bool.self, forKey: .supportsDLLLoading) ?? false

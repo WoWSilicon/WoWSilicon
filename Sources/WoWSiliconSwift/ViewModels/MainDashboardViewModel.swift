@@ -116,7 +116,6 @@ final class MainDashboardViewModel: ObservableObject {
         newVersion.id = newID
         newVersion.displayName = name
         newVersion.gamePath = ""
-        newVersion.crossOverPath = ""
         newVersion.wantsLauncher = wantsLauncher
         newVersion.launcherExePath = ""
         versionManager.versions[newID] = newVersion

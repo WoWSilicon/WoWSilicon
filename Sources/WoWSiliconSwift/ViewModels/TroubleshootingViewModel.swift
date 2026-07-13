@@ -14,8 +14,7 @@ final class TroubleshootingViewModel: ObservableObject, Identifiable {
     }
 
     @Published var status: Status = .idle
-    @Published var crossoverVersion: String = "Not found"
-    @Published var crossoverRecommended = false
+    @Published var wineRuntimeStatus: String = "Checking..."
     @Published var debugLog: String = ""
     private var fullDebugLog: String = ""
     @Published var alert: ManagerAlert?
@@ -39,13 +38,6 @@ final class TroubleshootingViewModel: ObservableObject, Identifiable {
         Task.detached { [weak self] in
             guard let self else { return }
             
-            // Get CrossOver path from current version or use default
-            let customPath = context.currentVersion?.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let crossoverPath = customPath.isEmpty ? "/Applications/CrossOver.app" : customPath
-            
-            // Read CrossOver version from Info.plist
-            let (version, recommended) = Self.getCrossOverVersion(at: crossoverPath)
-            
             // Capture current toggle states
             let hideName = await self.hideMacUserName
             let includeLog = await self.includeLatestErrorLog
@@ -58,33 +50,12 @@ final class TroubleshootingViewModel: ObservableObject, Identifiable {
             )
 
             Task { @MainActor in
-                self.crossoverVersion = version
-                self.crossoverRecommended = recommended
+                self.wineRuntimeStatus = BundledWineRuntime.wineExecutableURL() == nil ? "Missing" : "Available"
                 self.debugLog = result.preview
                 self.fullDebugLog = result.full
                 self.status = .ready
             }
         }
-    }
-
-    private nonisolated static func getCrossOverVersion(at path: String) -> (version: String, recommended: Bool) {
-        let infoPlistPath = (path as NSString).appendingPathComponent("Contents/Info.plist")
-        
-        guard FileManager.default.fileExists(atPath: path) else {
-            return ("Not found", false)
-        }
-        
-        guard let plistData = FileManager.default.contents(atPath: infoPlistPath),
-              let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any],
-              let version = plist["CFBundleShortVersionString"] as? String else {
-            return ("Unknown", false)
-        }
-        
-        let components = version.split(separator: ".").compactMap { Int($0) }
-        let majorVersion = components.first ?? 0
-        let recommended = majorVersion == 26
-        
-        return (version, recommended)
     }
 
     func deleteWDB() {

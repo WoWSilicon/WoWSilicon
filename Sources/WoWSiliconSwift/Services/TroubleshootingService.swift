@@ -155,52 +155,27 @@ enum TroubleshootingService {
         var fullLog = baseLog
         var previewLog = baseLog
         
-        baseLog = "\n=== CrossOver Information ===\n"
-        if let version = context.currentVersion {
-            let crossOverPath = version.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty 
-                ? "/Applications/CrossOver.app" 
-                : version.crossOverPath
-            baseLog += "Path: \(crossOverPath)\n"
-            
-            let crossOverURL = URL(fileURLWithPath: crossOverPath, isDirectory: true)
-            let cxVersion = PatchService.detectCrossOverVersion(at: crossOverURL)
-            let cxVersionStr: String
-            switch cxVersion {
-            case .v25OrLower:
-                cxVersionStr = "25 or older"
-            case .v26:
-                cxVersionStr = "26"
-            case .v27OrHigher:
-                cxVersionStr = "27 or newer"
-            }
-            baseLog += "Detected Version: \(cxVersionStr)\n"
-            
-            let wineloaderPath = crossOverPath + "/Contents/SharedSupport/CrossOver/CrossOver-Hosted Application/wineloader2"
-            if FileManager.default.fileExists(atPath: wineloaderPath) {
-                baseLog += "wineloader2: Found\n"
+        baseLog = "\n=== Bundled Wine Runtime ===\n"
+        if let runtimeURL = BundledWineRuntime.rootURL() {
+            baseLog += "Path: \(runtimeURL.path)\n"
+            baseLog += "Wine executable: \(BundledWineRuntime.wineExecutableURL() == nil ? "Missing" : "Found")\n"
+
+            let lockURL = runtimeURL
+                .appendingPathComponent("share", isDirectory: true)
+                .appendingPathComponent("wowsilicon", isDirectory: true)
+                .appendingPathComponent("runtime-lock.json", isDirectory: false)
+            if let data = try? Data(contentsOf: lockURL),
+               let lock = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                baseLog += "Runtime revision: \(lock["runtimeRevision"] ?? "Unknown")\n"
+                if let wine = lock["wine"] as? [String: Any] {
+                    baseLog += "Wine version: \(wine["version"] ?? "Unknown")\n"
+                    baseLog += "Wine commit: \(wine["commit"] ?? "Unknown")\n"
+                }
             } else {
-                baseLog += "wineloader2: Not found\n"
-            }
-            
-            if cxVersion == .v26 {
-                let cxUnixDir = crossOverURL
-                    .appendingPathComponent("Contents", isDirectory: true)
-                    .appendingPathComponent("SharedSupport", isDirectory: true)
-                    .appendingPathComponent("CrossOver", isDirectory: true)
-                    .appendingPathComponent("lib", isDirectory: true)
-                    .appendingPathComponent("wine", isDirectory: true)
-                    .appendingPathComponent("x86_64-unix", isDirectory: true)
-                
-                let wineBackup = cxUnixDir.appendingPathComponent("wine.bak", isDirectory: false)
-                let ntdllBackup = cxUnixDir.appendingPathComponent("ntdll.so.bak", isDirectory: false)
-                let ntdllActive = cxUnixDir.appendingPathComponent("ntdll.so", isDirectory: false)
-                
-                baseLog += "wine backup: " + (FileManager.default.fileExists(atPath: wineBackup.path) ? "✓ Found\n" : "✗ Missing\n")
-                baseLog += "ntdll.so backup: " + (FileManager.default.fileExists(atPath: ntdllBackup.path) ? "✓ Found\n" : "✗ Missing\n")
-                baseLog += "active ntdll.so: " + (FileManager.default.fileExists(atPath: ntdllActive.path) ? "✓ Found\n" : "✗ Missing\n")
+                baseLog += "Runtime lock: Missing\n"
             }
         } else {
-            baseLog += "CrossOver Path: Unknown (No version selected)\n"
+            baseLog += "Path: Missing\n"
         }
 
         baseLog += "\n=== Patch Status ===\n"

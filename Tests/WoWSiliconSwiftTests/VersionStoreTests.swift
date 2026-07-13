@@ -20,7 +20,6 @@ final class VersionStoreTests: XCTestCase {
             displayName: "Custom",
             wowVersion: "1.12.1",
             gamePath: "/Games/WoW",
-            crossOverPath: "/Applications/CrossOver.app",
             executableName: "WoW.exe",
             supportsVanillaTweaks: true,
             supportsDLLLoading: true,
@@ -68,7 +67,6 @@ final class VersionStoreTests: XCTestCase {
           "versions": {
             "wrathsilicon": {
               "game_path": "/Games/Wrath",
-              "crossover_path": "/Applications/CrossOver.app",
               "settings": {
                 "environment_variables": "FOO=BAR",
                 "enable_metal_hud": true,
@@ -85,7 +83,6 @@ final class VersionStoreTests: XCTestCase {
 
         XCTAssertEqual(result.manager.currentVersionID, "wrathsilicon")
         XCTAssertEqual(wrath.gamePath, "/Games/Wrath")
-        XCTAssertEqual(wrath.crossOverPath, "/Applications/CrossOver.app")
         XCTAssertEqual(wrath.settings.environmentVariables, "FOO=BAR")
         XCTAssertTrue(wrath.settings.enableMetalHud)
         XCTAssertTrue(wrath.settings.showTerminalNormally)

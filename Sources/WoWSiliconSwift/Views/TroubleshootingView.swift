@@ -10,7 +10,7 @@ struct TroubleshootingView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    crossoverSection
+                    wineRuntimeSection
                     actionsSection
                     debugLogSection
                 }
@@ -40,17 +40,12 @@ struct TroubleshootingView: View {
         }
     }
 
-    private var crossoverSection: some View {
+    private var wineRuntimeSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("CrossOver").font(.headline)
+            Text("Bundled Wine").font(.headline)
             HStack {
-                Text("Version: \(viewModel.crossoverVersion)")
+                Text("Runtime: \(viewModel.wineRuntimeStatus)")
                 Spacer()
-                if viewModel.crossoverRecommended {
-                    Text("Recommended").foregroundColor(.green)
-                } else {
-                    Text("Update recommended").foregroundColor(.orange)
-                }
             }
         }
     }
