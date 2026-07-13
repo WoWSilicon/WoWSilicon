@@ -237,7 +237,8 @@ final class LaunchService: @unchecked Sendable {
         let wine = doubleQuote(wineExecutablePath)
 
         let mtlValue = settings.enableMetalHud ? "1" : "0"
-        let baseEnv = "WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"d3d9=b\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let dllOverride = settings.graphicsSettings.backend.wineDLLOverride
+        let baseEnv = "WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = settings.environmentVariables
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: ";", with: " ")
@@ -261,7 +262,8 @@ final class LaunchService: @unchecked Sendable {
 
         let installer = doubleQuote(installerURL.path)
         let wine = doubleQuote(wineExecutableURL.path)
-        let shellCommand = "WINEDLLOVERRIDES=\"d3d9=b\" \(wine) \(installer)"
+        let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverride
+        let shellCommand = "WINEDLLOVERRIDES=\"\(dllOverride)\" \(wine) \(installer)"
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -305,7 +307,8 @@ final class LaunchService: @unchecked Sendable {
         let wine = doubleQuote(wineExecutableURL.path)
 
         let mtlValue = version.settings.enableMetalHud ? "1" : "0"
-        let baseEnv = "WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"d3d9=b\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverride
+        let baseEnv = "WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = version.settings.environmentVariables
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: ";", with: " ")

@@ -44,6 +44,10 @@ enum PatchService {
 
         try copyResource(named: "winerosetta", extension: "dll", subdirectory: "Patching/winerosetta", to: modsURL.appendingPathComponent("winerosetta.dll"))
         try copyResource(named: "d3d9", extension: "dll", subdirectory: "Patching/d9vk", to: gameURL.appendingPathComponent("d3d9.dll"))
+        guard let mtld3dConfigurationURL = BundledWineRuntime.mtld3dConfigurationURL() else {
+            throw PatchServiceError.resourceMissing("mtld3d.conf")
+        }
+        try copyItem(from: mtld3dConfigurationURL, to: gameURL.appendingPathComponent("mtld3d.conf"))
 
         // Remove legacy exe-patching artifacts
         try removeIfExists(gameURL.appendingPathComponent("Wow_patched.exe"))
@@ -153,6 +157,7 @@ enum PatchService {
         try removeIfExists(gameURL.appendingPathComponent("libDllLdr.dll"))
         try removeIfExists(gameURL.appendingPathComponent("Wow_patched.exe"))
         try removeIfExists(gameURL.appendingPathComponent("d3d9.dll"))
+        try removeIfExists(gameURL.appendingPathComponent("mtld3d.conf"))
         try removeIfExists(gameURL.appendingPathComponent("vanilla-tweaks.exe"))
         try removeIfExists(gameURL.appendingPathComponent("rosettax87", isDirectory: true))
         try revertDivxDecoder(gameURL: gameURL)

@@ -6,6 +6,26 @@ struct GraphicsSectionView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
 
+            GroupBox("Graphics Backend") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Picker("Graphics Backend", selection: $settings.backend) {
+                        ForEach(GraphicsBackend.allCases, id: \.self) { backend in
+                            Text(backend.displayName).tag(backend)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+
+                    Text(settings.backend == .d9mt
+                         ? "Experimental Metal backend. Some WoW clients or configurations may have rendering issues or crashes."
+                         : "Default Vulkan-based backend with broad compatibility.")
+                        .font(.caption)
+                        .foregroundStyle(settings.backend == .d9mt ? .orange : .secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(8)
+            }
+
             // Display
             GroupBox("Display") {
                 VStack(spacing: 0) {

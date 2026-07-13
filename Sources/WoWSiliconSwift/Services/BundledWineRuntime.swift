@@ -28,4 +28,23 @@ enum BundledWineRuntime {
             .appendingPathComponent("wine", isDirectory: false)
         return fileManager.isExecutableFile(atPath: executableURL.path) ? executableURL : nil
     }
+
+    static func mtld3dConfigurationURL(
+        resourceURL: URL? = Bundle.main.resourceURL,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        guard let rootURL = rootURL(resourceURL: resourceURL, environment: environment) else {
+            return nil
+        }
+        let configurationURL = rootURL
+            .appendingPathComponent("lib", isDirectory: true)
+            .appendingPathComponent("mtld3d.conf", isDirectory: false)
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: configurationURL.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else {
+            return nil
+        }
+        return configurationURL
+    }
 }

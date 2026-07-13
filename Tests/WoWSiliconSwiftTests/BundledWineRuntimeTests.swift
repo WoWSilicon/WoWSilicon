@@ -45,4 +45,20 @@ final class BundledWineRuntimeTests: XCTestCase {
             wine.path
         )
     }
+
+    func testMtld3dConfigurationUsesRuntimeLibDirectory() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let lib = root.appendingPathComponent("lib", isDirectory: true)
+        try FileManager.default.createDirectory(at: lib, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let configuration = lib.appendingPathComponent("mtld3d.conf")
+        XCTAssertTrue(FileManager.default.createFile(atPath: configuration.path, contents: Data()))
+
+        let environment = [BundledWineRuntime.environmentOverride: root.path]
+        XCTAssertEqual(
+            BundledWineRuntime.mtld3dConfigurationURL(resourceURL: nil, environment: environment),
+            configuration
+        )
+    }
 }

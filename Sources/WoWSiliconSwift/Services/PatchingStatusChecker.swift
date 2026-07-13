@@ -37,6 +37,7 @@ enum PatchingStatusChecker {
             var requiredFiles = [
                 gamePath.appendingPathComponent("mods/winerosetta.dll"),
                 gamePath.appendingPathComponent("d3d9.dll"),
+                gamePath.appendingPathComponent("mtld3d.conf"),
             ]
 
             if version.supportsDLLLoading {

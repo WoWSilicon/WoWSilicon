@@ -132,6 +132,7 @@ enum TroubleshootingService {
             baseLog += "  Show Terminal Normally: \(settings.showTerminalNormally)\n"
             baseLog += "  Environment Variables: \(settings.environmentVariables)\n"
             let gs = settings.graphicsSettings
+            baseLog += "  Graphics Backend: \(gs.backend.displayName)\n"
             baseLog += "  Window Mode: \(gs.windowMode.rawValue)\n"
             baseLog += "  Resolution: \(gs.resolution.isEmpty ? "default" : gs.resolution)\n"
             baseLog += "  Refresh Rate: \(gs.refreshRate)Hz\n"

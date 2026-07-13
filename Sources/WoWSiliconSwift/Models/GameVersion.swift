@@ -2,6 +2,25 @@ import Foundation
 
 // MARK: - Graphics settings
 
+enum GraphicsBackend: String, Codable, CaseIterable, Sendable {
+    case d9vk
+    case d9mt
+
+    var displayName: String {
+        switch self {
+        case .d9vk: return "D9VK"
+        case .d9mt: return "D9MT"
+        }
+    }
+
+    var wineDLLOverride: String {
+        switch self {
+        case .d9vk: return "d3d9=n"
+        case .d9mt: return "d3d9=b"
+        }
+    }
+}
+
 enum WindowMode: String, Codable, CaseIterable, Sendable {
     case windowed
     case fullscreen
@@ -68,6 +87,7 @@ enum ShadowQuality: String, Codable, CaseIterable, Sendable {
 }
 
 struct GraphicsSettings: Codable, Equatable, Sendable {
+    var backend: GraphicsBackend
     var windowMode: WindowMode
     var resolution: String
     var refreshRate: Int
@@ -83,6 +103,7 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
     var shadowQuality: ShadowQuality
 
     static let `default` = GraphicsSettings(
+        backend: .d9vk,
         windowMode: .windowed,
         resolution: "",
         refreshRate: 60,
@@ -106,12 +127,13 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
     static let commonRefreshRates = [30, 60, 120, 144, 165, 240]
 
     enum CodingKeys: String, CodingKey {
-        case windowMode, resolution, refreshRate, vsync, multisampling
+        case backend, windowMode, resolution, refreshRate, vsync, multisampling
         case textureFiltering, specular, projectedTextures
         case viewDistance, groundEffectDensity, weatherDensity, particleDensity, shadowQuality
     }
 
     init(
+        backend: GraphicsBackend = .d9vk,
         windowMode: WindowMode = .windowed,
         resolution: String = "",
         refreshRate: Int = 60,
@@ -126,6 +148,7 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
         particleDensity: Double = 1.0,
         shadowQuality: ShadowQuality = .off
     ) {
+        self.backend = backend
         self.windowMode = windowMode
         self.resolution = resolution
         self.refreshRate = refreshRate
@@ -143,6 +166,7 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        backend = try c.decodeIfPresent(GraphicsBackend.self, forKey: .backend) ?? .d9vk
         windowMode = try c.decodeIfPresent(WindowMode.self, forKey: .windowMode) ?? .windowed
         resolution = try c.decodeIfPresent(String.self, forKey: .resolution) ?? ""
         refreshRate = try c.decodeIfPresent(Int.self, forKey: .refreshRate) ?? 60
