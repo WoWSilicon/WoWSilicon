@@ -186,6 +186,24 @@ final class MainDashboardViewModel: ObservableObject {
         }
     }
 
+    var canOpenLauncherDirectory: Bool {
+        guard let path = versionManager.currentVersion?.launcherExePath
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else {
+            return false
+        }
+        let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
+    }
+
+    func openLauncherDirectory() {
+        guard canOpenLauncherDirectory,
+              let path = versionManager.currentVersion?.launcherExePath else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path).deletingLastPathComponent())
+    }
+
     func launchThirdPartyLauncher() {
         guard let version = versionManager.currentVersion, version.hasLauncher else { return }
         patchFeedback = nil
@@ -226,6 +244,23 @@ final class MainDashboardViewModel: ObservableObject {
                 version.gamePath = url.path
             }
         }
+    }
+
+    var canOpenGameDirectory: Bool {
+        guard let path = versionManager.currentVersion?.gamePath
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else {
+            return false
+        }
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
+    }
+
+    func openGameDirectory() {
+        guard canOpenGameDirectory,
+              let path = versionManager.currentVersion?.gamePath else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true))
     }
 
     func beginOptionsSession() {

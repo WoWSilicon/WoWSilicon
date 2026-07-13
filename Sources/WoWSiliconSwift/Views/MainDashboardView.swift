@@ -42,6 +42,8 @@ struct MainDashboardView: View {
                     gameStatus: viewModel.gamePathStatus,
                     gamePatchStatus: viewModel.gamePatchStatus,
                     onSelectGamePath: viewModel.selectGamePath,
+                    onOpenGamePath: viewModel.openGameDirectory,
+                    canOpenGamePath: viewModel.canOpenGameDirectory,
                     isGamePatched: viewModel.isGamePatched,
                     isGamePatchActionable: viewModel.isGamePatchActionable,
                     isGameOperationInProgress: viewModel.isGameOperationInProgress,
@@ -49,7 +51,9 @@ struct MainDashboardView: View {
                     onUnpatchGame: viewModel.unpatchGame,
                     wantsLauncher: viewModel.currentVersionWantsLauncher,
                     launcherPathStatus: viewModel.launcherPathStatus,
-                    onSelectLauncherPath: viewModel.selectLauncherPath
+                    onSelectLauncherPath: viewModel.selectLauncherPath,
+                    onOpenLauncherPath: viewModel.openLauncherDirectory,
+                    canOpenLauncherPath: viewModel.canOpenLauncherDirectory
                 )
                 .padding(.horizontal, 32)
                 .padding(.vertical, 24)
@@ -335,6 +339,8 @@ struct MainContentView: View {
     let gameStatus: StatusValue
     let gamePatchStatus: StatusValue
     let onSelectGamePath: () -> Void
+    let onOpenGamePath: () -> Void
+    let canOpenGamePath: Bool
     let isGamePatched: Bool
     let isGamePatchActionable: Bool
     let isGameOperationInProgress: Bool
@@ -343,6 +349,8 @@ struct MainContentView: View {
     let wantsLauncher: Bool
     let launcherPathStatus: StatusValue
     let onSelectLauncherPath: () -> Void
+    let onOpenLauncherPath: () -> Void
+    let canOpenLauncherPath: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -353,6 +361,8 @@ struct MainContentView: View {
                         label: "Launcher Path:",
                         status: launcherPathStatus,
                         buttonTitle: "Set/Change",
+                        onOpen: onOpenLauncherPath,
+                        canOpen: canOpenLauncherPath,
                         action: onSelectLauncherPath
                     )
                 }
@@ -360,6 +370,8 @@ struct MainContentView: View {
                     label: "Game Path:",
                     status: gameStatus,
                     buttonTitle: "Set/Change",
+                    onOpen: onOpenGamePath,
+                    canOpen: canOpenGamePath,
                     action: onSelectGamePath
                 )
             }
@@ -421,6 +433,8 @@ struct PathRow: View {
     let label: String
     let status: StatusValue
     let buttonTitle: String
+    let onOpen: () -> Void
+    let canOpen: Bool
     let action: () -> Void
 
     var body: some View {
@@ -432,8 +446,20 @@ struct PathRow: View {
 
             Spacer(minLength: 12)
 
-            Button(buttonTitle, action: action)
+            HStack(spacing: 8) {
+                Button(action: onOpen) {
+                    Image(systemName: "folder")
+                        .frame(width: 16, height: 16)
+                }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!canOpen)
+                .help("Open in Finder")
+                .accessibilityLabel("Open in Finder")
+
+                Button(buttonTitle, action: action)
+                    .buttonStyle(.bordered)
+            }
         }
     }
 }
