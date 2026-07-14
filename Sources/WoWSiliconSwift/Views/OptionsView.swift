@@ -94,6 +94,7 @@ struct OptionsView: View {
             }
             optionAsAltControls
             retinaModeControls
+            rosettaX87Controls
             Divider()
                 .padding(.vertical, 4)
             telemetryControls
@@ -372,6 +373,19 @@ struct OptionsView: View {
                 binding: viewModel.telemetryEnabledBinding()
             )
             Text("Shares app version, WoW version, macOS version, renderer, and configured realmlist server for public aggregate stats. No IP address, username, account name, character name, file paths, or hardware identifiers are collected.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var rosettaX87Controls: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            toggleRow(
+                "Enable Rosetta x87 translation",
+                binding: viewModel.boolBinding(\.enableRosettaX87)
+            )
+            Text("Disabling this is not recommended. It is required for correct behavior of floating-point instructions in older games under Wine on Apple Silicon.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

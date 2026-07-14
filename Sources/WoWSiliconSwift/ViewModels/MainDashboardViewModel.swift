@@ -1018,6 +1018,7 @@ final class MainDashboardViewModel: ObservableObject {
                 version.settings.environmentVariables = userPrefs.environmentVariables
             }
             version.settings.vanillaTweaksParameters = userPrefs.vanillaTweaksParameters
+            version.settings.enableRosettaX87 = userPrefs.enableRosettaX87
             if version.libSiliconPatchSubdirectory != nil {
                 if !version.settings.userDisabledLibSiliconPatch {
                     version.settings.enableLibSiliconPatch = true
@@ -1112,6 +1113,7 @@ final class MainDashboardViewModel: ObservableObject {
         updated.telemetryInstallID = userPrefs.telemetryInstallID
         updated.environmentVariables = settings.environmentVariables
         updated.vanillaTweaksParameters = settings.vanillaTweaksParameters
+        updated.enableRosettaX87 = settings.enableRosettaX87
 
         if updated != userPrefs {
             userPrefs = updated

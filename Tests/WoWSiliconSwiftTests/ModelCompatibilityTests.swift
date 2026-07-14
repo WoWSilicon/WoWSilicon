@@ -24,6 +24,7 @@ final class ModelCompatibilityTests: XCTestCase {
         XCTAssertFalse(prefs.autoDeleteWdb)
         XCTAssertEqual(prefs.environmentVariables, "A=B")
         XCTAssertEqual(prefs.vanillaTweaksParameters, "--flag")
+        XCTAssertTrue(prefs.enableRosettaX87)
     }
 
     func testVersionSettingsDecodesFilesContainingRemovedSaveSudoPasswordKey() throws {
@@ -43,5 +44,6 @@ final class ModelCompatibilityTests: XCTestCase {
         XCTAssertTrue(settings.showTerminalNormally)
         XCTAssertEqual(settings.cursorSizeMultiplier, 4)
         XCTAssertTrue(settings.enableLibSiliconPatch)
+        XCTAssertTrue(settings.enableRosettaX87)
     }
 }

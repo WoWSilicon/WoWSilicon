@@ -79,7 +79,7 @@ final class LaunchService: @unchecked Sendable {
         let version: GameVersion
         let gameURL: URL
         let wowExecutableURL: URL
-        let rosettaURL: URL
+        let rosettaURL: URL?
         let shellCommand: String
         let wineExecutablePath: String
     }
@@ -89,7 +89,8 @@ final class LaunchService: @unchecked Sendable {
         guard !trimmedGame.isEmpty else { throw LaunchServiceError.gamePathMissing }
 
         let gameURL = URL(fileURLWithPath: trimmedGame, isDirectory: true)
-        guard let rosettaURL = BundledRosettaRuntime.executableURL() else {
+        let rosettaURL = BundledRosettaRuntime.executableURL()
+        if version.settings.enableRosettaX87 && rosettaURL == nil {
             throw LaunchServiceError.rosettaMissing("Contents/Resources/Patching/rosettax87/rosettax87")
         }
 
@@ -230,9 +231,8 @@ final class LaunchService: @unchecked Sendable {
         }
     }
 
-    private func makeShellCommand(gameURL: URL, rosettaURL: URL, wowURL: URL, wineExecutablePath: String, settings: VersionSettings) -> String {
+    private func makeShellCommand(gameURL: URL, rosettaURL: URL?, wowURL: URL, wineExecutablePath: String, settings: VersionSettings) -> String {
         let game = doubleQuote(gameURL.path)
-        let rosettaBinary = doubleQuote(rosettaURL.path)
         let wow = doubleQuote(wowURL.path)
         let wine = doubleQuote(wineExecutablePath)
 
@@ -246,7 +246,12 @@ final class LaunchService: @unchecked Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
-        return "cd \(game) && ROSETTA_X87_PATH=\(rosettaBinary) \(envPart) \(wine) \(wow)"
+        if settings.enableRosettaX87, let rosettaURL = rosettaURL {
+            let rosettaBinary = doubleQuote(rosettaURL.path)
+            return "cd \(game) && ROSETTA_X87_PATH=\(rosettaBinary) \(envPart) \(wine) \(wow)"
+        } else {
+            return "cd \(game) && \(envPart) \(wine) \(wow)"
+        }
     }
 
     private func doubleQuote(_ value: String) -> String {
@@ -321,7 +326,7 @@ final class LaunchService: @unchecked Sendable {
         let gamePatched = PatchingStatusChecker.evaluateGamePatch(for: version).applied
 
         let shellCommand: String
-        if gamePatched {
+        if gamePatched && version.settings.enableRosettaX87 {
             guard let rosettaURL = BundledRosettaRuntime.executableURL() else {
                 DispatchQueue.main.async {
                     completion(.failure(.rosettaMissing("Contents/Resources/Patching/rosettax87/rosettax87")))

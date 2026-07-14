@@ -11,6 +11,7 @@ struct UserPrefs: Codable, Equatable {
     var telemetryInstallID: String
     var environmentVariables: String
     var vanillaTweaksParameters: String
+    var enableRosettaX87: Bool
 
     static let defaults = UserPrefs(
         remapOptionAsAlt: false,
@@ -22,7 +23,8 @@ struct UserPrefs: Codable, Equatable {
         telemetryConsentAsked: false,
         telemetryInstallID: UUID().uuidString,
         environmentVariables: "",
-        vanillaTweaksParameters: ""
+        vanillaTweaksParameters: "",
+        enableRosettaX87: true
     )
 
     enum CodingKeys: String, CodingKey {
@@ -36,6 +38,7 @@ struct UserPrefs: Codable, Equatable {
         case telemetryInstallID = "telemetry_install_id"
         case environmentVariables = "environment_variables"
         case vanillaTweaksParameters = "vanilla_tweaks_parameters"
+        case enableRosettaX87 = "enable_rosetta_x87"
     }
 
     init(
@@ -48,7 +51,8 @@ struct UserPrefs: Codable, Equatable {
         telemetryConsentAsked: Bool = false,
         telemetryInstallID: String = UUID().uuidString,
         environmentVariables: String = "",
-        vanillaTweaksParameters: String = ""
+        vanillaTweaksParameters: String = "",
+        enableRosettaX87: Bool = true
     ) {
         self.remapOptionAsAlt = remapOptionAsAlt
         self.showTerminalNormally = showTerminalNormally
@@ -60,6 +64,7 @@ struct UserPrefs: Codable, Equatable {
         self.telemetryInstallID = telemetryInstallID
         self.environmentVariables = environmentVariables
         self.vanillaTweaksParameters = vanillaTweaksParameters
+        self.enableRosettaX87 = enableRosettaX87
     }
 
     init(from decoder: Decoder) throws {
@@ -74,5 +79,6 @@ struct UserPrefs: Codable, Equatable {
         telemetryInstallID = try container.decodeIfPresent(String.self, forKey: .telemetryInstallID) ?? UUID().uuidString
         environmentVariables = try container.decodeIfPresent(String.self, forKey: .environmentVariables) ?? ""
         vanillaTweaksParameters = try container.decodeIfPresent(String.self, forKey: .vanillaTweaksParameters) ?? ""
+        enableRosettaX87 = try container.decodeIfPresent(Bool.self, forKey: .enableRosettaX87) ?? true
     }
 }
