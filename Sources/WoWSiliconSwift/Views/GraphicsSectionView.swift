@@ -33,7 +33,9 @@ struct GraphicsSectionView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             // Display
             GroupBox("Display") {

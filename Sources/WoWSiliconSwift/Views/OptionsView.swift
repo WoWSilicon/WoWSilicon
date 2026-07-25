@@ -382,10 +382,10 @@ struct OptionsView: View {
     private var rosettaX87Controls: some View {
         VStack(alignment: .leading, spacing: 6) {
             toggleRow(
-                "Enable Rosetta x87 translation",
+                "Rosetta x87 translation",
                 binding: viewModel.boolBinding(\.enableRosettaX87)
             )
-            Text("Disabling this is not recommended. It is required for correct behavior of floating-point instructions in older games under Wine on Apple Silicon.")
+            Text("Disabling this will make the game run very slowly. Only for testing purposes.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
