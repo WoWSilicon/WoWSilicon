@@ -9,13 +9,13 @@ final class GraphicsBackendTests: XCTestCase {
         XCTAssertEqual(settings.backend.wineDLLOverride, "d3d9=n")
     }
 
-    func testD9MTUsesBuiltinD3D9() {
-        XCTAssertEqual(GraphicsBackend.d9mt.wineDLLOverride, "d3d9=b")
+    func testMtld3dUsesBuiltinD3D9() {
+        XCTAssertEqual(GraphicsBackend.mtld3d.wineDLLOverride, "d3d9=b")
     }
 
     func testLaunchersKeepBuiltinD3D9AsFallback() {
         XCTAssertEqual(GraphicsBackend.d9vk.wineDLLOverrideWithBuiltinFallback, "d3d9=n,b")
-        XCTAssertEqual(GraphicsBackend.d9mt.wineDLLOverrideWithBuiltinFallback, "d3d9=b")
+        XCTAssertEqual(GraphicsBackend.mtld3d.wineDLLOverrideWithBuiltinFallback, "d3d9=b")
     }
 
     func testTelemetryReportsSelectedRenderer() throws {
@@ -24,8 +24,8 @@ final class GraphicsBackendTests: XCTestCase {
         version.settings.graphicsSettings.backend = .d9vk
         XCTAssertEqual(TelemetryEventContext(version: version).renderer, "d9vk")
 
-        version.settings.graphicsSettings.backend = .d9mt
-        XCTAssertEqual(TelemetryEventContext(version: version).renderer, "d9mt")
+        version.settings.graphicsSettings.backend = .mtld3d
+        XCTAssertEqual(TelemetryEventContext(version: version).renderer, "mtld3d")
     }
 
     func testMtld3dHDRSettingReplacesCommentedDefault() {

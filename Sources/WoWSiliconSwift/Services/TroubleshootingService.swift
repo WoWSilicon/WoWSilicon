@@ -121,7 +121,7 @@ enum TroubleshootingService {
             baseLog += "  Environment Variables: \(settings.environmentVariables)\n"
             let gs = settings.graphicsSettings
             baseLog += "  Graphics Backend: \(gs.backend.displayName)\n"
-            baseLog += "  HDR Mode: \(gs.backend == .d9mt && gs.hdrEnabled)\n"
+            baseLog += "  HDR Mode: \(gs.backend == .mtld3d && gs.hdrEnabled)\n"
             baseLog += "  Window Mode: \(gs.windowMode.rawValue)\n"
             baseLog += "  Resolution: \(gs.resolution.isEmpty ? "default" : gs.resolution)\n"
             baseLog += "  Refresh Rate: \(gs.refreshRate)Hz\n"

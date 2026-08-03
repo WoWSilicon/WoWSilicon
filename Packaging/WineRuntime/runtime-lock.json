@@ -7,28 +7,31 @@
     "branch": "wine-11.13-macos",
     "commit": "37540b5d94ac1c86e2599ef55d7f3a15e3237ce8"
   },
+  "mtld3d": {
+    "version": "v0.3.0"
+  },
   "overlays": {
     "winerosetta": [],
     "mtld3d": [
       {
         "source": "mtld3d.conf",
         "destination": "lib/mtld3d.conf",
-        "sha256": "176cd59fe399a2f74533c6304731cf157f6e8e04a6219569aa6fab82960d3523"
+        "sha256": "5e198fdc5c8333cd2830973d9a07a3a6d02ce3ca9df3c55dc6967ea4d217fec0"
       },
       {
         "source": "wine/i386-windows/d3d9.dll",
         "destination": "lib/wine/i386-windows/d3d9.dll",
-        "sha256": "6dbc468973db13c39ff2ba2798ce1a85c438391bc2ee19bdc62f0529c57f44e1"
+        "sha256": "b3bbfce14f036f6ead8cd3c33ecd90f0cfb788e700396e9cb1a8b666e972b292"
       },
       {
         "source": "wine/i386-windows/mtld3d.dll",
         "destination": "lib/wine/i386-windows/mtld3d.dll",
-        "sha256": "80f1a21e6e382d51c0a7c2d604bd31a826dc57db749e3dd9b860344266baeedc"
+        "sha256": "61c74680b15dfc0273c303a3d057f334052c727d310f73c386488a322a002086"
       },
       {
         "source": "wine/x86_64-unix/mtld3d.so",
         "destination": "lib/wine/x86_64-unix/mtld3d.so",
-        "sha256": "a316e84a218e901644572bfc28041bb093e61f2fc8914f784636d4f13d5ed660"
+        "sha256": "f75bd0e91aa74bfb754f8da2fc0f6d50802fd4256adc8950200fe369f6fd5b7b"
       }
     ],
     "external": [

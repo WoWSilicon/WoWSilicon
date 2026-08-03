@@ -97,7 +97,7 @@ struct ConfigService {
         do {
             let content = try String(contentsOf: configURL, encoding: .utf8)
             let graphics = version.settings.graphicsSettings
-            let hdrEnabled = graphics.backend == .d9mt && graphics.hdrEnabled
+            let hdrEnabled = graphics.backend == .mtld3d && graphics.hdrEnabled
             let updated = updateMtld3dSetting(
                 content: content,
                 key: "color.hdr.enable",

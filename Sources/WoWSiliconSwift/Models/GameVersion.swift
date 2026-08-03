@@ -4,26 +4,26 @@ import Foundation
 
 enum GraphicsBackend: String, Codable, CaseIterable, Sendable {
     case d9vk
-    case d9mt
+    case mtld3d
 
     var displayName: String {
         switch self {
         case .d9vk: return "D9VK"
-        case .d9mt: return "D9MT"
+        case .mtld3d: return "MTLD3D"
         }
     }
 
     var wineDLLOverride: String {
         switch self {
         case .d9vk: return "d3d9=n"
-        case .d9mt: return "d3d9=b"
+        case .mtld3d: return "d3d9=b"
         }
     }
 
     var wineDLLOverrideWithBuiltinFallback: String {
         switch self {
         case .d9vk: return "d3d9=n,b"
-        case .d9mt: return "d3d9=b"
+        case .mtld3d: return "d3d9=b"
         }
     }
 }

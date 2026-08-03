@@ -488,7 +488,7 @@ final class MainDashboardViewModel: ObservableObject {
             set: { newValue in
                 guard var version = self.versionManager.currentVersion else { return }
                 var normalizedValue = newValue
-                if normalizedValue.backend != .d9mt {
+                if normalizedValue.backend != .mtld3d {
                     normalizedValue.hdrEnabled = false
                 }
                 version.settings.graphicsSettings = normalizedValue
