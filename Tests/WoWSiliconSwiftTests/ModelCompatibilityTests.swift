@@ -46,4 +46,31 @@ final class ModelCompatibilityTests: XCTestCase {
         XCTAssertTrue(settings.enableLibSiliconPatch)
         XCTAssertTrue(settings.enableRosettaX87)
     }
+
+    func testGameVersionExecutableAndDirectoryPathResolution() {
+        var version = GameVersion(
+            id: "test",
+            displayName: "Test",
+            wowVersion: "1.12.1",
+            gamePath: "/Games/WorldOfWarcraft/WoW.exe",
+            executableName: "WoW.exe",
+            supportsVanillaTweaks: true,
+            supportsDLLLoading: true,
+            usesRosettaPatching: true,
+            usesDivxDecoderPatch: false
+        )
+
+        XCTAssertEqual(version.gameDirectoryPath, "/Games/WorldOfWarcraft")
+        XCTAssertEqual(version.gameExecutablePath, "/Games/WorldOfWarcraft/WoW.exe")
+        XCTAssertEqual(version.effectiveExecutableName, "WoW.exe")
+
+        version.gamePath = "/Games/CustomWoW/Ascension.exe"
+        XCTAssertEqual(version.gameDirectoryPath, "/Games/CustomWoW")
+        XCTAssertEqual(version.gameExecutablePath, "/Games/CustomWoW/Ascension.exe")
+        XCTAssertEqual(version.effectiveExecutableName, "Ascension.exe")
+
+        version.gamePath = "/Games/LegacyFolder"
+        XCTAssertEqual(version.gameDirectoryPath, "/Games/LegacyFolder")
+        XCTAssertEqual(version.effectiveExecutableName, "WoW.exe")
+    }
 }

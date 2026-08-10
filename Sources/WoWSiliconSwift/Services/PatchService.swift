@@ -29,11 +29,11 @@ enum PatchServiceError: LocalizedError {
 
 enum PatchService {
     static func applyGamePatch(for version: GameVersion) throws {
-        guard !version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let gameURL = version.gameDirectoryURL else {
             throw PatchServiceError.gamePathMissing
         }
 
-        let gameURL = URL(fileURLWithPath: version.gamePath, isDirectory: true)
         try ensureDirectoryExists(gameURL, errorOnMissing: .invalidGamePath(version.gamePath))
         guard isSupportedGameClient(at: gameURL) else {
             throw PatchServiceError.gameClientNotDetected
@@ -147,11 +147,11 @@ enum PatchService {
     }
 
     static func removeGamePatch(for version: GameVersion) throws {
-        guard !version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let gameURL = version.gameDirectoryURL else {
             throw PatchServiceError.gamePathMissing
         }
 
-        let gameURL = URL(fileURLWithPath: version.gamePath, isDirectory: true)
         try ensureDirectoryExists(gameURL, errorOnMissing: .invalidGamePath(version.gamePath))
 
         let modsURL = gameURL.appendingPathComponent("mods", isDirectory: true)

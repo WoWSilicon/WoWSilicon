@@ -86,9 +86,8 @@ final class LaunchService: @unchecked Sendable {
 
     private func prepareLaunchArtifacts(for version: GameVersion) throws -> LaunchConfiguration {
         let trimmedGame = version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedGame.isEmpty else { throw LaunchServiceError.gamePathMissing }
+        guard !trimmedGame.isEmpty, let gameURL = version.gameDirectoryURL else { throw LaunchServiceError.gamePathMissing }
 
-        let gameURL = URL(fileURLWithPath: trimmedGame, isDirectory: true)
         let rosettaURL = BundledRosettaRuntime.executableURL()
         if version.settings.enableRosettaX87 && rosettaURL == nil {
             throw LaunchServiceError.rosettaMissing("Contents/Resources/Patching/rosettax87/rosettax87")
@@ -108,6 +107,8 @@ final class LaunchService: @unchecked Sendable {
             } else {
                 throw LaunchServiceError.vanillaTweaksMissing
             }
+        } else if let exeURL = version.gameExecutableURL, fileManager.fileExists(atPath: exeURL.path) {
+            wowExecutableURL = exeURL
         } else {
             let wowExe = gameURL.appendingPathComponent("WoW.exe")
             let ascensionExe = gameURL.appendingPathComponent("Ascension.exe")
@@ -116,7 +117,7 @@ final class LaunchService: @unchecked Sendable {
             } else if fileManager.fileExists(atPath: ascensionExe.path) {
                 wowExecutableURL = ascensionExe
             } else {
-                wowExecutableURL = wowExe
+                wowExecutableURL = version.gameExecutableURL ?? wowExe
             }
         }
 

@@ -246,28 +246,28 @@ final class MainDashboardViewModel: ObservableObject {
 
     func selectGamePath() {
         let panel = NSOpenPanel()
-        panel.title = "Select Game Folder"
+        panel.title = "Select Game Executable"
         panel.prompt = "Choose"
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [UTType(filenameExtension: "exe")].compactMap { $0 }
         panel.level = .modalPanel
 
         if panel.runModal() == .OK, let url = panel.url {
             updateCurrentVersion { version in
                 version.gamePath = url.path
+                version.executableName = url.lastPathComponent
             }
         }
     }
 
     var canOpenGameDirectory: Bool {
-        guard let path = versionManager.currentVersion?.gamePath
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              !path.isEmpty else {
+        guard let dirPath = versionManager.currentVersion?.gameDirectoryPath else {
             return false
         }
         var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+        return FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDirectory)
             && isDirectory.boolValue
     }
 
@@ -278,8 +278,8 @@ final class MainDashboardViewModel: ObservableObject {
 
     func openGameDirectory() {
         guard canOpenGameDirectory,
-              let path = versionManager.currentVersion?.gamePath else { return }
-        NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true))
+              let dirPath = versionManager.currentVersion?.gameDirectoryPath else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: dirPath, isDirectory: true))
     }
 
     func clearGamePath() {

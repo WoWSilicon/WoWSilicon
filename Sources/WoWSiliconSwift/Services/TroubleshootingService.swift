@@ -25,13 +25,24 @@ struct TroubleshootingContext: Sendable {
 
 enum TroubleshootingService {
 
+    private static func gameDirectoryURL(from path: String) -> URL {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: trimmed, isDirectory: &isDir) {
+            return isDir.boolValue ? URL(fileURLWithPath: trimmed, isDirectory: true) : URL(fileURLWithPath: trimmed).deletingLastPathComponent()
+        }
+        let url = URL(fileURLWithPath: trimmed)
+        return url.pathExtension.lowercased() == "exe" ? url.deletingLastPathComponent() : url
+    }
+
     static func deleteWDBDirectories(gamePath: String?) throws -> [String] {
         guard let path = gamePath?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else {
             throw TroubleshootingServiceError.gamePathMissing
         }
         let fm = FileManager.default
-        let primary = URL(fileURLWithPath: path, isDirectory: true).appendingPathComponent("WDB", isDirectory: true)
-        let cache = URL(fileURLWithPath: path, isDirectory: true).appendingPathComponent("Cache", isDirectory: true).appendingPathComponent("WDB", isDirectory: true)
+        let gameDir = gameDirectoryURL(from: path)
+        let primary = gameDir.appendingPathComponent("WDB", isDirectory: true)
+        let cache = gameDir.appendingPathComponent("Cache", isDirectory: true).appendingPathComponent("WDB", isDirectory: true)
 
         var deleted: [String] = []
         if fm.fileExists(atPath: primary.path) {
@@ -64,7 +75,7 @@ enum TroubleshootingService {
         guard let path = gamePath?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else {
             throw TroubleshootingServiceError.gamePathMissing
         }
-        let tweaked = URL(fileURLWithPath: path, isDirectory: true).appendingPathComponent("WoW_tweaked.exe")
+        let tweaked = gameDirectoryURL(from: path).appendingPathComponent("WoW_tweaked.exe")
         guard FileManager.default.fileExists(atPath: tweaked.path) else {
             throw TroubleshootingServiceError.nothingToDelete
         }

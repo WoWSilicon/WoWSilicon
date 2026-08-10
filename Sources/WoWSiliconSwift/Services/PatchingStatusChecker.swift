@@ -21,8 +21,14 @@ enum PatchingStatusChecker {
             )
         }
 
-        let gamePath = version.gamePath
-        let gameURL = URL(fileURLWithPath: gamePath, isDirectory: true)
+        guard let gamePath = version.gameDirectoryPath, let gameURL = version.gameDirectoryURL else {
+            return PatchStatusDescriptor(
+                applied: false,
+                text: "Not set",
+                level: .error,
+                actionable: false
+            )
+        }
 
         guard PatchService.isSupportedGameClient(at: gameURL) else {
             return PatchStatusDescriptor(

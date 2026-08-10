@@ -75,11 +75,12 @@ enum ModService {
 
     static func scanMods(version: GameVersion, supportsDLL: Bool) throws -> [ModInfo] {
         guard supportsDLL else { throw ModServiceError.modsNotSupported }
-        guard !version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let gameURL = version.gameDirectoryURL else {
             throw ModServiceError.gamePathMissing
         }
 
-        let modsURL = URL(fileURLWithPath: version.gamePath, isDirectory: true).appendingPathComponent("mods", isDirectory: true)
+        let modsURL = gameURL.appendingPathComponent("mods", isDirectory: true)
         try FileManager.default.createDirectory(at: modsURL, withIntermediateDirectories: true)
 
         let requiredMods = getRequiredMods(for: version)
@@ -114,7 +115,8 @@ enum ModService {
 
     static func installMod(from sourceURL: URL, version: GameVersion, supportsDLL: Bool) throws -> ModInfo {
         guard supportsDLL else { throw ModServiceError.modsNotSupported }
-        guard !version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let gameURL = version.gameDirectoryURL else {
             throw ModServiceError.gamePathMissing
         }
         guard sourceURL.pathExtension.lowercased() == "dll" else {
@@ -127,7 +129,7 @@ enum ModService {
             throw ModServiceError.protectedMod(name)
         }
 
-        let modsURL = URL(fileURLWithPath: version.gamePath, isDirectory: true).appendingPathComponent("mods", isDirectory: true)
+        let modsURL = gameURL.appendingPathComponent("mods", isDirectory: true)
         let destinationURL = modsURL.appendingPathComponent(name, isDirectory: false)
 
         do {
@@ -199,8 +201,18 @@ enum ModService {
 
     // MARK: - Helpers
 
+    private static func gameDirectoryURL(from gamePath: String) -> URL {
+        let trimmed = gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: trimmed, isDirectory: &isDir) {
+            return isDir.boolValue ? URL(fileURLWithPath: trimmed, isDirectory: true) : URL(fileURLWithPath: trimmed).deletingLastPathComponent()
+        }
+        let url = URL(fileURLWithPath: trimmed)
+        return url.pathExtension.lowercased() == "exe" ? url.deletingLastPathComponent() : url
+    }
+
     private static func enabledModSet(gamePath: String, requiredMods: Set<String>) -> Set<String> {
-        let dllsURL = URL(fileURLWithPath: gamePath, isDirectory: true).appendingPathComponent("dlls.txt")
+        let dllsURL = gameDirectoryURL(from: gamePath).appendingPathComponent("dlls.txt")
         guard let content = try? String(contentsOf: dllsURL) else {
             return Set(requiredMods.map { "mods/" + $0 })
         }
@@ -214,7 +226,7 @@ enum ModService {
     }
 
     private static func writeDllsFile(enabledMods: Set<String>, gamePath: String) throws {
-        let dllsURL = URL(fileURLWithPath: gamePath, isDirectory: true).appendingPathComponent("dlls.txt")
+        let dllsURL = gameDirectoryURL(from: gamePath).appendingPathComponent("dlls.txt")
         let lines = enabledMods.sorted()
         do {
             try lines.joined(separator: "\n").appending("\n").write(to: dllsURL, atomically: true, encoding: .utf8)

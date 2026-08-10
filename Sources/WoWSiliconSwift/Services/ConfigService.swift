@@ -90,8 +90,8 @@ struct ConfigService {
     }
 
     static func applyMtld3dSettings(for version: GameVersion) throws {
-        let configURL = URL(fileURLWithPath: version.gamePath, isDirectory: true)
-            .appendingPathComponent("mtld3d.conf", isDirectory: false)
+        guard let gameURL = version.gameDirectoryURL else { return }
+        let configURL = gameURL.appendingPathComponent("mtld3d.conf", isDirectory: false)
         guard FileManager.default.fileExists(atPath: configURL.path) else { return }
 
         do {
@@ -298,9 +298,9 @@ struct ConfigService {
 
     private static func configFileURL(for version: GameVersion) throws -> URL {
         let trimmed = version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw ConfigServiceError.gamePathMissing }
+        guard !trimmed.isEmpty, let gameURL = version.gameDirectoryURL else { throw ConfigServiceError.gamePathMissing }
 
-        let wtfDir = URL(fileURLWithPath: trimmed, isDirectory: true).appendingPathComponent("WTF", isDirectory: true)
+        let wtfDir = gameURL.appendingPathComponent("WTF", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: wtfDir, withIntermediateDirectories: true)
         } catch {

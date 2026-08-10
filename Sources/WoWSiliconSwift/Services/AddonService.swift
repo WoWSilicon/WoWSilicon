@@ -550,7 +550,17 @@ enum AddonService {
         guard let gamePath = gamePath?.trimmingCharacters(in: .whitespacesAndNewlines), !gamePath.isEmpty else {
             throw AddonServiceError.gamePathMissing
         }
-        let interfaceURL = URL(fileURLWithPath: gamePath, isDirectory: true).appendingPathComponent("Interface", isDirectory: true)
+        let url = URL(fileURLWithPath: gamePath)
+        var isDir: ObjCBool = false
+        let gameDirURL: URL
+        if FileManager.default.fileExists(atPath: gamePath, isDirectory: &isDir) {
+            gameDirURL = isDir.boolValue ? url : url.deletingLastPathComponent()
+        } else if url.pathExtension.lowercased() == "exe" {
+            gameDirURL = url.deletingLastPathComponent()
+        } else {
+            gameDirURL = url
+        }
+        let interfaceURL = gameDirURL.appendingPathComponent("Interface", isDirectory: true)
         let addonsURL = try addonsDirectory(in: interfaceURL)
         let repositoriesURL = interfaceURL.appendingPathComponent(repositoriesDirectoryName, isDirectory: true)
         return Paths(

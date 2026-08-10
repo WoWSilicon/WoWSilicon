@@ -38,7 +38,7 @@ enum VanillaTweaksService {
         }
 
         let trimmedGame = version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedGame.isEmpty else {
+        guard !trimmedGame.isEmpty, let gameURL = version.gameDirectoryURL else {
             throw VanillaTweaksError.resourcesMissing
         }
 
@@ -48,8 +48,7 @@ enum VanillaTweaksService {
             throw VanillaTweaksError.wineMissing(expectedPath)
         }
 
-        let gameURL = URL(fileURLWithPath: trimmedGame, isDirectory: true)
-        let wowURL = gameURL.appendingPathComponent("WoW.exe")
+        let wowURL = version.gameExecutableURL ?? gameURL.appendingPathComponent("WoW.exe")
         guard fileManager.fileExists(atPath: wowURL.path) else {
             throw VanillaTweaksError.wowExecutableMissing(wowURL.path)
         }

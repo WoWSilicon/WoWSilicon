@@ -350,6 +350,69 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         }
     }
 
+    var gameDirectoryURL: URL? {
+        let trimmed = gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: trimmed, isDirectory: &isDir) {
+            if isDir.boolValue {
+                return URL(fileURLWithPath: trimmed, isDirectory: true)
+            } else {
+                return URL(fileURLWithPath: trimmed).deletingLastPathComponent()
+            }
+        }
+        let url = URL(fileURLWithPath: trimmed)
+        if url.pathExtension.lowercased() == "exe" {
+            return url.deletingLastPathComponent()
+        }
+        return url
+    }
+
+    var gameDirectoryPath: String? {
+        gameDirectoryURL?.path
+    }
+
+    var gameExecutableURL: URL? {
+        let trimmed = gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: trimmed, isDirectory: &isDir) {
+            if !isDir.boolValue {
+                return URL(fileURLWithPath: trimmed)
+            } else {
+                let dirURL = URL(fileURLWithPath: trimmed, isDirectory: true)
+                let exeURL = dirURL.appendingPathComponent(executableName)
+                if FileManager.default.fileExists(atPath: exeURL.path) {
+                    return exeURL
+                }
+                let wowExe = dirURL.appendingPathComponent("WoW.exe")
+                if FileManager.default.fileExists(atPath: wowExe.path) {
+                    return wowExe
+                }
+                return exeURL
+            }
+        }
+        let url = URL(fileURLWithPath: trimmed)
+        if url.pathExtension.lowercased() == "exe" {
+            return url
+        }
+        return url.appendingPathComponent(executableName)
+    }
+
+    var gameExecutablePath: String? {
+        gameExecutableURL?.path
+    }
+
+    var effectiveExecutableName: String {
+        let trimmed = gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return executableName }
+        let url = URL(fileURLWithPath: trimmed)
+        if url.pathExtension.lowercased() == "exe" {
+            return url.lastPathComponent
+        }
+        return executableName
+    }
+
     init(
         id: String,
         displayName: String,
