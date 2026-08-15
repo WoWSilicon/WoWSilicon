@@ -81,13 +81,13 @@ enum PatchService {
         try updateDllsTxt(in: gameURL, enableLibSiliconPatch: version.settings.enableLibSiliconPatch && version.libSiliconPatchSubdirectory != nil)
 
         if version.usesRosettaPatching && version.supportsDLLLoading {
-            try patchDivxDecoder(gameURL: gameURL)
+            try patchDivxDecoder(version: version, gameURL: gameURL)
         }
 
         ensureGxResolution(in: gameURL)
     }
 
-    private static func patchDivxDecoder(gameURL: URL) throws {
+    private static func patchDivxDecoder(version: GameVersion, gameURL: URL) throws {
         guard let wineExecutable = BundledWineRuntime.wineExecutableURL() else {
             let expectedPath = BundledWineRuntime.rootURL()?
                 .appendingPathComponent("bin/wine", isDirectory: false).path ?? "Contents/Resources/Wine/bin/wine"
@@ -98,10 +98,12 @@ enum PatchService {
         env["WINEDLLOVERRIDES"] = "winemenubuilder.exe=d;mscoree=d;mshtml=d"
         env["WINEDEBUG"] = "-all"
         env["WINE_LARGE_ADDRESS_AWARE"] = "1"
-        guard let rosettaExecutable = BundledRosettaRuntime.executableURL() else {
-            throw PatchServiceError.resourceMissing("rosettax87 runtime")
+        if version.settings.x87Backend != .disabled {
+            guard let x87Runtime = BundledX87Runtime.resolve(version.settings.x87Backend) else {
+                throw PatchServiceError.resourceMissing("selected x87 runtime")
+            }
+            env[x87Runtime.wineEnvironmentKey] = x87Runtime.executableURL.path
         }
-        env["ROSETTA_X87_PATH"] = rosettaExecutable.path
 
         let patches: [(entry: String, file: String)] = [
             ("PatchDivxDecoder", "DivxDecoder.dll"),

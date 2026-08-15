@@ -4,7 +4,7 @@ import AppKit
 enum LaunchServiceError: LocalizedError {
     case alreadyRunning
     case gamePathMissing
-    case rosettaMissing(String)
+    case x87RuntimeMissing(String)
     case wineMissing(String)
     case executableMissing(String)
     case vanillaTweaksMissing
@@ -19,8 +19,8 @@ enum LaunchServiceError: LocalizedError {
             return "The game is already running."
         case .gamePathMissing:
             return "Game path is not set. Please configure it before launching."
-        case .rosettaMissing(let path):
-            return "Bundled rosettax87 runtime not found at \(path). Reinstall WoWSilicon and try again."
+        case .x87RuntimeMissing(let path):
+            return "Selected x87 runtime not found at \(path). Reinstall WoWSilicon and try again."
         case .wineMissing(let path):
             return "Bundled Wine executable not found at \(path). Reinstall WoWSilicon and try again."
         case .executableMissing(let path):
@@ -79,7 +79,7 @@ final class LaunchService: @unchecked Sendable {
         let version: GameVersion
         let gameURL: URL
         let wowExecutableURL: URL
-        let rosettaURL: URL?
+        let x87Runtime: BundledX87Runtime.ResolvedRuntime?
         let shellCommand: String
         let wineExecutablePath: String
     }
@@ -88,9 +88,11 @@ final class LaunchService: @unchecked Sendable {
         let trimmedGame = version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedGame.isEmpty, let gameURL = version.gameDirectoryURL else { throw LaunchServiceError.gamePathMissing }
 
-        let rosettaURL = BundledRosettaRuntime.executableURL()
-        if version.settings.enableRosettaX87 && rosettaURL == nil {
-            throw LaunchServiceError.rosettaMissing("Contents/Resources/Patching/rosettax87/rosettax87")
+        let x87Runtime = BundledX87Runtime.resolve(version.settings.x87Backend)
+        if version.settings.x87Backend != .disabled && x87Runtime == nil {
+            throw LaunchServiceError.x87RuntimeMissing(
+                BundledX87Runtime.expectedBundlePath(for: version.settings.x87Backend)
+            )
         }
 
         guard let wineExecutableURL = BundledWineRuntime.wineExecutableURL() else {
@@ -131,7 +133,7 @@ final class LaunchService: @unchecked Sendable {
 
         let shellCommand = makeShellCommand(
             gameURL: gameURL,
-            rosettaURL: rosettaURL,
+            x87Runtime: x87Runtime,
             wowURL: wowExecutableURL,
             wineExecutablePath: wineExecutableURL.path,
             settings: version.settings
@@ -141,7 +143,7 @@ final class LaunchService: @unchecked Sendable {
             version: version,
             gameURL: gameURL,
             wowExecutableURL: wowExecutableURL,
-            rosettaURL: rosettaURL,
+            x87Runtime: x87Runtime,
             shellCommand: shellCommand,
             wineExecutablePath: wineExecutableURL.path
         )
@@ -232,7 +234,7 @@ final class LaunchService: @unchecked Sendable {
         }
     }
 
-    private func makeShellCommand(gameURL: URL, rosettaURL: URL?, wowURL: URL, wineExecutablePath: String, settings: VersionSettings) -> String {
+    private func makeShellCommand(gameURL: URL, x87Runtime: BundledX87Runtime.ResolvedRuntime?, wowURL: URL, wineExecutablePath: String, settings: VersionSettings) -> String {
         let game = doubleQuote(gameURL.path)
         let wow = doubleQuote(wowURL.path)
         let wine = doubleQuote(wineExecutablePath)
@@ -247,9 +249,9 @@ final class LaunchService: @unchecked Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
-        if settings.enableRosettaX87, let rosettaURL = rosettaURL {
-            let rosettaBinary = doubleQuote(rosettaURL.path)
-            return "cd \(game) && ROSETTA_X87_PATH=\(rosettaBinary) \(envPart) \(wine) \(wow)"
+        if let x87Runtime {
+            let binary = doubleQuote(x87Runtime.executableURL.path)
+            return "cd \(game) && \(x87Runtime.wineEnvironmentKey)=\(binary) \(envPart) \(wine) \(wow)"
         } else {
             return "cd \(game) && \(envPart) \(wine) \(wow)"
         }
@@ -327,14 +329,16 @@ final class LaunchService: @unchecked Sendable {
         let gamePatched = PatchingStatusChecker.evaluateGamePatch(for: version).applied
 
         let shellCommand: String
-        if gamePatched && version.settings.enableRosettaX87 {
-            guard let rosettaURL = BundledRosettaRuntime.executableURL() else {
+        if gamePatched && version.settings.x87Backend != .disabled {
+            guard let x87Runtime = BundledX87Runtime.resolve(version.settings.x87Backend) else {
                 DispatchQueue.main.async {
-                    completion(.failure(.rosettaMissing("Contents/Resources/Patching/rosettax87/rosettax87")))
+                    completion(.failure(.x87RuntimeMissing(
+                        BundledX87Runtime.expectedBundlePath(for: version.settings.x87Backend)
+                    )))
                 }
                 return
             }
-            shellCommand = "cd \(launcherDir) && ROSETTA_X87_PATH=\(doubleQuote(rosettaURL.path)) \(envPart) \(wine) \(exeName) --disable-gpu --in-process-gpu"
+            shellCommand = "cd \(launcherDir) && \(x87Runtime.wineEnvironmentKey)=\(doubleQuote(x87Runtime.executableURL.path)) \(envPart) \(wine) \(exeName) --disable-gpu --in-process-gpu"
         } else {
             shellCommand = "cd \(launcherDir) && \(envPart) \(wine) \(exeName) --disable-gpu --in-process-gpu"
         }
@@ -504,7 +508,8 @@ final class LaunchService: @unchecked Sendable {
             }
         }
 
-        // Kill rosettax87 instances
+        // Kill x87 accelerator instances.
         pkill(["-9", "-f", "rosettax87"])
+        pkill(["-9", "-f", "x87sidecar"])
     }
 }

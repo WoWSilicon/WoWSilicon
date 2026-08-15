@@ -1,0 +1,213 @@
+diff --git a/dlls/ntdll/unix/coop_proto.h b/dlls/ntdll/unix/coop_proto.h
+new file mode 100644
+index 0000000..b73f5a1
+--- /dev/null
++++ b/dlls/ntdll/unix/coop_proto.h
+@@ -0,0 +1,62 @@
++#ifndef X87SIDECAR_COOP_PROTO_H
++#define X87SIDECAR_COOP_PROTO_H
++
++// Wire protocol for the cooperative task-port handshake between a tracee (a
++// binary built with the coop handshake shim, or wine with its handshake hook)
++// and the x87sidecar running in `--cooperative` mode.
++//
++// Rendezvous: the sidecar publishes a Mach receive port in the bootstrap
++// namespace under the name "x87sidecar.<tracee-pid>" (see X87_COOP_ENV). The
++// tracee looks it up and sends its own task + thread control ports, then blocks
++// for a reply. This replaces task_for_pid + ptrace(PT_ATTACHEXC), so the
++// sidecar binary needs no com.apple.security.get-task-allow and is notarizable.
++//
++// This header is plain C so the x86_64 test shim (and wine's unix loader) can
++// include it directly.
++//
++// NOTE: this is a VERBATIM copy of x87sidecar's
++// rosetta_loader/src/coop_proto.h. The two must stay byte-for-byte identical —
++// they define opposite ends of the same Mach wire protocol. Update both.
++
++#include <mach/mach.h>
++
++// Environment variable carrying the bootstrap service name to the tracee.
++// The sidecar sets it (via setenv) before forking so it survives the execv.
++#define X87_COOP_ENV "X87_SIDECAR_BOOTSTRAP"
++
++// msgh_id of the handshake request (tracee -> sidecar). The reply uses +1.
++#define X87_COOP_MSGH_ID 0x78383721 /* 'x87!' */
++
++// Request: tracee -> sidecar. Complex message with two port descriptors — the
++// tracee's task control port and the handshake thread's control port, both
++// COPY_SEND. msgh_local_port carries a MAKE_SEND_ONCE reply right that the
++// sidecar answers on to unblock the tracee.
++typedef struct {
++    mach_msg_header_t header;
++    mach_msg_body_t body;
++    mach_msg_port_descriptor_t task_port;
++    mach_msg_port_descriptor_t thread_port;
++} x87_coop_request_t;
++
++// Receive buffer on the sidecar side: request + room for the receive trailer.
++typedef struct {
++    x87_coop_request_t req;
++    mach_msg_trailer_t trailer;
++} x87_coop_request_rcv_t;
++
++// Reply: sidecar -> tracee. Its arrival unblocks the tracee. It also carries up
++// to two code ranges the sidecar patched (the translate_insn entry and the
++// injected handler) so the tracee can invalidate its OWN instruction cache for
++// them. This is required in cooperative mode: unlike the default attach (which
++// patches translate_insn before it has ever executed), the cooperative attach
++// happens post-Rosetta-init, when translate_insn is already hot in the i-cache
++// — and a cross-process mach_vm_machine_attribute flush does not reliably make
++// the patch visible. sys_icache_invalidate() on the tracee's own thread (IC
++// IVAU, broadcast inner-shareable) does. len == 0 means "unused slot".
++typedef struct {
++    mach_msg_header_t header;
++    uint64_t icache_addr[2];
++    uint64_t icache_len[2];
++} x87_coop_reply_t;
++
++#endif  // X87SIDECAR_COOP_PROTO_H
+diff --git a/dlls/ntdll/unix/loader.c b/dlls/ntdll/unix/loader.c
+index 4de3fce..cf9a972 100644
+--- a/dlls/ntdll/unix/loader.c
++++ b/dlls/ntdll/unix/loader.c
+@@ -69,6 +69,9 @@
+ # include <mach/mach.h>
+ # include <mach/mach_error.h>
+ # include <mach-o/getsect.h>
++# include <servers/bootstrap.h>
++# include <libkern/OSCacheControl.h>
++# include "coop_proto.h"
+ # include <crt_externs.h>
+ # ifndef _POSIX_SPAWN_DISABLE_ASLR
+ #  define _POSIX_SPAWN_DISABLE_ASLR 0x0100
+@@ -457,12 +460,28 @@ static void preloader_exec( char **argv, WORD machine )
+     execv( argv[0], argv );
+     free( argv[0] );
+ #endif
++    path = getenv( "X87_SIDECAR_PATH" );
++    if (path && machine == IMAGE_FILE_MACHINE_I386)
++    {
++        static char coop_flag[] = "--cooperative";
++        char **coop_argv;
++        int i, n;
++
++        for (n = 1; argv[n]; n++) {}
++        coop_argv = malloc( (n + 2) * sizeof(*coop_argv) );
++        coop_argv[0] = strdup( path );
++        coop_argv[1] = coop_flag;
++        for (i = 1; i <= n; i++) coop_argv[i + 1] = argv[i];
++        execv( coop_argv[0], coop_argv );
++    }
++
+     path = getenv( "ROSETTA_X87_PATH" );
+-    if (path && machine == IMAGE_FILE_MACHINE_I386) {
++    if (path && machine == IMAGE_FILE_MACHINE_I386)
++    {
+         argv[0] = strdup( path );
+         execv( argv[0], argv );
+-    } else
+-        execv( argv[1], argv + 1 );
++    }
++    execv( argv[1], argv + 1 );
+ }
+ 
+ /* exec the appropriate wine loader for the specified machine */
+@@ -2231,6 +2250,87 @@ static void check_command_line( int argc, char *argv[] )
+     reexec_loader( argc, argv, NULL );
+ }
+ 
++#ifdef __APPLE__
++/***********************************************************************
++ *           x87_cooperative_handshake
++ *
++ * Tracee side of the cooperative x87sidecar attach. The sidecar publishes a
++ * per-pid Mach service, and the Rosetta-translated Wine loader hands over its
++ * task and main-thread control ports before Wine initialization continues.
++ */
++static void x87_cooperative_handshake(void)
++{
++    char *name = getenv( X87_COOP_ENV );
++    int verbose = getenv( "X87_LOGS" ) != NULL;
++    mach_port_t bootstrap_port = MACH_PORT_NULL;
++    mach_port_t service = MACH_PORT_NULL;
++    mach_port_t reply = MACH_PORT_NULL;
++    x87_coop_request_t msg;
++    struct {
++        x87_coop_reply_t reply;
++        mach_msg_trailer_t trailer;
++        char slack[64];
++    } rep;
++    kern_return_t kr;
++    char *dot;
++    int i;
++
++    if (!name || !*name) return;
++
++    dot = strrchr( name, '.' );
++    if (!dot || atoi( dot + 1 ) != (int)getpid()) return;
++
++    if (task_get_bootstrap_port( mach_task_self(), &bootstrap_port ) != KERN_SUCCESS) return;
++    kr = bootstrap_look_up( bootstrap_port, name, &service );
++    if (kr != KERN_SUCCESS)
++    {
++        ERR( "x87 coop: bootstrap_look_up(%s) failed 0x%x\n", name, kr );
++        return;
++    }
++
++    mach_port_allocate( mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &reply );
++
++    memset( &msg, 0, sizeof(msg) );
++    msg.header.msgh_bits = MACH_MSGH_BITS( MACH_MSG_TYPE_COPY_SEND, MACH_MSG_TYPE_MAKE_SEND_ONCE ) |
++                           MACH_MSGH_BITS_COMPLEX;
++    msg.header.msgh_size = sizeof(msg);
++    msg.header.msgh_remote_port = service;
++    msg.header.msgh_local_port = reply;
++    msg.header.msgh_id = X87_COOP_MSGH_ID;
++    msg.body.msgh_descriptor_count = 2;
++    msg.task_port.name = mach_task_self();
++    msg.task_port.disposition = MACH_MSG_TYPE_COPY_SEND;
++    msg.task_port.type = MACH_MSG_PORT_DESCRIPTOR;
++    msg.thread_port.name = mach_thread_self();
++    msg.thread_port.disposition = MACH_MSG_TYPE_COPY_SEND;
++    msg.thread_port.type = MACH_MSG_PORT_DESCRIPTOR;
++
++    kr = mach_msg( &msg.header, MACH_SEND_MSG, sizeof(msg), 0, MACH_PORT_NULL,
++                   MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL );
++    if (kr != KERN_SUCCESS)
++    {
++        ERR( "x87 coop: handshake send failed 0x%x\n", kr );
++        return;
++    }
++    if (verbose) ERR( "x87 coop: handed over task+thread ports; blocking for reply\n" );
++
++    memset( &rep, 0, sizeof(rep) );
++    kr = mach_msg( &rep.reply.header, MACH_RCV_MSG, 0, sizeof(rep), reply, 30000,
++                   MACH_PORT_NULL );
++    if (verbose) ERR( "x87 coop: handshake reply kr=0x%x; continuing\n", kr );
++
++    if (kr == KERN_SUCCESS)
++    {
++        for (i = 0; i < 2; i++)
++            if (rep.reply.icache_len[i] != 0)
++                sys_icache_invalidate( (void *)(uintptr_t)rep.reply.icache_addr[i],
++                                       (size_t)rep.reply.icache_len[i] );
++    }
++
++    unsetenv( X87_COOP_ENV );
++}
++#endif
++
+ 
+ /***********************************************************************
+  *           __wine_main
+@@ -2242,6 +2342,10 @@ DECLSPEC_EXPORT void __wine_main( int argc, char *argv[] )
+     main_argc = argc;
+     main_argv = argv;
+ 
++#ifdef __APPLE__
++    x87_cooperative_handshake();
++#endif
++
+     init_paths();
+     if (!getenv( "WINELOADERNOEXEC" ) || argc <= 1) check_command_line( argc, argv );
+     unsetenv( "WINELOADERNOEXEC" );

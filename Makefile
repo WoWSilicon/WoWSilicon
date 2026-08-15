@@ -25,7 +25,7 @@ SWIFT_BUILD := $(SWIFT_ENV) swift build --arch arm64 --disable-sandbox --build-p
 RESOURCE_BUNDLE := $(BUILD_DIR)/arm64-apple-macosx/release/WoWSilicon-swift_WoWSiliconSwift.bundle
 WINE_RUNTIME_DIR ?= $(CURDIR)/.wine-runtime
 
-.PHONY: all build debug run bundle dmg appcast clean app_icon validate_wine_runtime update-mtld3d
+.PHONY: all build debug run bundle dmg appcast clean app_icon validate_wine_runtime update-mtld3d update-x87sidecar
 
 all: bundle
 
@@ -51,6 +51,9 @@ validate_wine_runtime:
 
 update-mtld3d:
 	@tools/wine-runtime/update-mtld3d.sh $(if $(TAG),--tag $(TAG),)
+
+update-x87sidecar:
+	@tools/wine-runtime/update-x87sidecar.sh $(if $(TAG),--tag $(TAG),)
 
 bundle: build validate_wine_runtime
 	@$(MAKE) app_icon

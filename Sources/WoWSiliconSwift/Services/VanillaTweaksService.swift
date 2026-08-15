@@ -4,7 +4,7 @@ enum VanillaTweaksError: LocalizedError {
     case resourcesMissing
     case wowExecutableMissing(String)
     case wineMissing(String)
-    case rosettaMissing
+    case x87RuntimeMissing
     case executionFailed(String)
     case outputMissing(String)
     case invalidParameterFormat(String)
@@ -17,8 +17,8 @@ enum VanillaTweaksError: LocalizedError {
             return "WoW.exe not found at \(path)."
         case .wineMissing(let path):
             return "Bundled Wine executable not found at \(path). Reinstall WoWSilicon and try again."
-        case .rosettaMissing:
-            return "Bundled rosettax87 runtime is missing. Reinstall WoWSilicon and try again."
+        case .x87RuntimeMissing:
+            return "The selected x87 runtime is missing. Reinstall WoWSilicon and try again."
         case .executionFailed(let message):
             return message
         case .outputMissing(let output):
@@ -65,7 +65,10 @@ enum VanillaTweaksService {
         let result = try ProcessRunner.run(
             executablePath: wineExecutable.path,
             arguments: try makeArguments(for: version.settings),
-            environment: try makeWineEnvironment(wineExecutable: wineExecutable),
+            environment: try makeWineEnvironment(
+                wineExecutable: wineExecutable,
+                backend: version.settings.x87Backend
+            ),
             currentDirectory: gameURL,
             timeout: 300
         )
@@ -122,13 +125,15 @@ enum VanillaTweaksService {
         return arguments
     }
     
-    private static func makeWineEnvironment(wineExecutable: URL) throws -> [String: String] {
+    private static func makeWineEnvironment(wineExecutable: URL, backend: X87Backend) throws -> [String: String] {
         var environment = BundledWineRuntime.makeEnvironment()
         environment["WINE_LARGE_ADDRESS_AWARE"] = "1"
-        guard let rosettaExecutable = BundledRosettaRuntime.executableURL() else {
-            throw VanillaTweaksError.rosettaMissing
+        if backend != .disabled {
+            guard let x87Runtime = BundledX87Runtime.resolve(backend) else {
+                throw VanillaTweaksError.x87RuntimeMissing
+            }
+            environment[x87Runtime.wineEnvironmentKey] = x87Runtime.executableURL.path
         }
-        environment["ROSETTA_X87_PATH"] = rosettaExecutable.path
 
         let wineDirectory = wineExecutable.deletingLastPathComponent().path
         if var path = environment["PATH"] {

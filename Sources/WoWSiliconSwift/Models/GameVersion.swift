@@ -28,6 +28,20 @@ enum GraphicsBackend: String, Codable, CaseIterable, Sendable {
     }
 }
 
+enum X87Backend: String, Codable, CaseIterable, Sendable {
+    case disabled
+    case rosettaX87 = "rosettax87"
+    case x87Sidecar = "x87sidecar"
+
+    var displayName: String {
+        switch self {
+        case .disabled: return "Stock Rosetta"
+        case .rosettaX87: return "rosettax87 JIT"
+        case .x87Sidecar: return "x87sidecar"
+        }
+    }
+}
+
 enum WindowMode: String, Codable, CaseIterable, Sendable {
     case windowed
     case fullscreen
@@ -221,7 +235,12 @@ struct VersionSettings: Codable, Equatable, Sendable {
     var graphicsSettings: GraphicsSettings
     var enableLibSiliconPatch: Bool
     var userDisabledLibSiliconPatch: Bool
-    var enableRosettaX87: Bool
+    var x87Backend: X87Backend
+
+    var enableRosettaX87: Bool {
+        get { x87Backend != .disabled }
+        set { x87Backend = newValue ? .rosettaX87 : .disabled }
+    }
 
     init(
         enableVanillaTweaks: Bool = false,
@@ -235,7 +254,8 @@ struct VersionSettings: Codable, Equatable, Sendable {
         graphicsSettings: GraphicsSettings = GraphicsSettings(),
         enableLibSiliconPatch: Bool = false,
         userDisabledLibSiliconPatch: Bool = false,
-        enableRosettaX87: Bool = true
+        enableRosettaX87: Bool = true,
+        x87Backend: X87Backend? = nil
     ) {
         self.enableVanillaTweaks = enableVanillaTweaks
         self.remapOptionAsAlt = remapOptionAsAlt
@@ -248,7 +268,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
         self.graphicsSettings = graphicsSettings
         self.enableLibSiliconPatch = enableLibSiliconPatch
         self.userDisabledLibSiliconPatch = userDisabledLibSiliconPatch
-        self.enableRosettaX87 = enableRosettaX87
+        self.x87Backend = x87Backend ?? (enableRosettaX87 ? .rosettaX87 : .disabled)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -257,7 +277,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
         case vanillaTweaksParameters, cursorSizeMultiplier
         case graphicsSettings
         case enableLibSiliconPatch, userDisabledLibSiliconPatch
-        case enableRosettaX87
+        case x87Backend, enableRosettaX87
         // Legacy keys kept for migration only
         case reduceTerrainDistance, setMultisampleTo2x, setShadowLOD0, userDisabledShadowLOD
     }
@@ -274,7 +294,12 @@ struct VersionSettings: Codable, Equatable, Sendable {
         cursorSizeMultiplier = try container.decodeIfPresent(Int.self, forKey: .cursorSizeMultiplier) ?? 1
         enableLibSiliconPatch = try container.decodeIfPresent(Bool.self, forKey: .enableLibSiliconPatch) ?? false
         userDisabledLibSiliconPatch = try container.decodeIfPresent(Bool.self, forKey: .userDisabledLibSiliconPatch) ?? false
-        enableRosettaX87 = try container.decodeIfPresent(Bool.self, forKey: .enableRosettaX87) ?? true
+        if let backend = try container.decodeIfPresent(X87Backend.self, forKey: .x87Backend) {
+            x87Backend = backend
+        } else {
+            let enabled = try container.decodeIfPresent(Bool.self, forKey: .enableRosettaX87) ?? true
+            x87Backend = enabled ? .rosettaX87 : .disabled
+        }
 
         if let gs = try container.decodeIfPresent(GraphicsSettings.self, forKey: .graphicsSettings) {
             graphicsSettings = gs
@@ -307,6 +332,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
         try container.encode(graphicsSettings, forKey: .graphicsSettings)
         try container.encode(enableLibSiliconPatch, forKey: .enableLibSiliconPatch)
         try container.encode(userDisabledLibSiliconPatch, forKey: .userDisabledLibSiliconPatch)
+        try container.encode(x87Backend, forKey: .x87Backend)
         try container.encode(enableRosettaX87, forKey: .enableRosettaX87)
     }
 

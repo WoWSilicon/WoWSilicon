@@ -480,6 +480,19 @@ final class MainDashboardViewModel: ObservableObject {
         )
     }
 
+    func x87BackendBinding() -> Binding<X87Backend> {
+        Binding(
+            get: {
+                self.versionManager.currentVersion?.settings.x87Backend ?? .rosettaX87
+            },
+            set: { newValue in
+                self.updateCurrentVersion { version in
+                    version.settings.x87Backend = newValue
+                }
+            }
+        )
+    }
+
     func graphicsSettingsBinding() -> Binding<GraphicsSettings> {
         Binding(
             get: {
@@ -1018,7 +1031,7 @@ final class MainDashboardViewModel: ObservableObject {
                 version.settings.environmentVariables = userPrefs.environmentVariables
             }
             version.settings.vanillaTweaksParameters = userPrefs.vanillaTweaksParameters
-            version.settings.enableRosettaX87 = userPrefs.enableRosettaX87
+            version.settings.x87Backend = userPrefs.x87Backend
             if version.libSiliconPatchSubdirectory != nil {
                 if !version.settings.userDisabledLibSiliconPatch {
                     version.settings.enableLibSiliconPatch = true
@@ -1113,7 +1126,7 @@ final class MainDashboardViewModel: ObservableObject {
         updated.telemetryInstallID = userPrefs.telemetryInstallID
         updated.environmentVariables = settings.environmentVariables
         updated.vanillaTweaksParameters = settings.vanillaTweaksParameters
-        updated.enableRosettaX87 = settings.enableRosettaX87
+        updated.x87Backend = settings.x87Backend
 
         if updated != userPrefs {
             userPrefs = updated

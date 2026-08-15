@@ -381,11 +381,12 @@ struct OptionsView: View {
 
     private var rosettaX87Controls: some View {
         VStack(alignment: .leading, spacing: 6) {
-            toggleRow(
-                "Rosetta x87 translation",
-                binding: viewModel.boolBinding(\.enableRosettaX87)
-            )
-            Text("Disabling this will make the game run very slowly. Only for testing purposes.")
+            Picker("x87 translation", selection: viewModel.x87BackendBinding()) {
+                ForEach(X87Backend.allCases, id: \.self) { backend in
+                    Text(backend.displayName).tag(backend)
+                }
+            }
+            Text("Choose between rosettax87_jit or x87sidecar for accelerated x87 performance. Stock Rosetta is much slower and is intended for testing.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
