@@ -105,6 +105,16 @@ Release automation is handled through GitHub Actions. A version tag such as `v2.
 
 See [docs/releasing.md](docs/releasing.md) for the release flow and required repository secrets.
 
+## Credits
+
+WoWSilicon builds on the work of these open-source projects:
+
+- [D9VK](https://github.com/Sikarugir-App/d9vk) — Direct3D 9 translation through Vulkan
+- [rosettax87_jit](https://github.com/Lifeisawful/rosettax87_jit) — accelerated x87 translation for Rosetta 2
+- [vanilla-tweaks](https://github.com/brndd/vanilla-tweaks) — quality-of-life patches for the Vanilla WoW client
+- [x87sidecar](https://github.com/athei/x87sidecar) — isolated, cooperative x87 acceleration
+- [MTLd3D](https://github.com/athei/mtld3d) — Direct3D 9 translation through Metal
+
 ## Disclaimer
 
 WoWSilicon is not affiliated with or endorsed by Blizzard Entertainment.
