@@ -12,9 +12,16 @@ struct OptionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Options")
-                .font(.title2)
-                .fontWeight(.semibold)
+            HStack {
+                Text("Options")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                Spacer()
+                Button("Close", role: .cancel) {
+                    viewModel.completeOptionsSession()
+                    onClose()
+                }
+            }
 
             HStack {
                 Spacer()
@@ -49,16 +56,6 @@ struct OptionsView: View {
                 .padding(.trailing, 18)
             }
 
-            Divider()
-
-            HStack {
-                Spacer()
-                Button("Close", role: .cancel) {
-                    viewModel.completeOptionsSession()
-                    onClose()
-                }
-                    .buttonStyle(.borderedProminent)
-            }
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -372,7 +369,7 @@ struct OptionsView: View {
                 "Share Anonymous Usage Statistics",
                 binding: viewModel.telemetryEnabledBinding()
             )
-            Text("Shares app version, WoW version, macOS version, renderer, and configured realmlist server for public aggregate stats. No IP address, username, account name, character name, file paths, or hardware identifiers are collected.")
+            Text("Shares app version, WoW version, macOS version, renderer, x87 translation, and configured realmlist server for public aggregate stats. No IP address, username, account name, character name, file paths, or hardware identifiers are collected.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -380,16 +377,35 @@ struct OptionsView: View {
     }
 
     private var rosettaX87Controls: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Picker("x87 translation", selection: viewModel.x87BackendBinding()) {
-                ForEach(X87Backend.allCases, id: \.self) { backend in
-                    Text(backend.displayName).tag(backend)
+        let selection = viewModel.x87BackendBinding()
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("x87 Translation")
+                Spacer()
+                Picker("", selection: selection) {
+                    ForEach(X87Backend.allCases, id: \.self) { backend in
+                        Text(backend.displayName).tag(backend)
+                    }
                 }
+                .labelsHidden()
+                .fixedSize()
             }
-            Text("Choose between rosettax87_jit or x87sidecar for accelerated x87 performance. Stock Rosetta is much slower and is intended for testing.")
+            Text(x87BackendDescription(selection.wrappedValue))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func x87BackendDescription(_ backend: X87Backend) -> String {
+        switch backend {
+        case .disabled:
+            return "Uses stock Rosetta translation. This is significantly slower and intended for testing."
+        case .rosettaX87:
+            return "Uses rosettax87_jit for accelerated x87 translation."
+        case .x87Sidecar:
+            return "Runs accelerated x87 translation in an isolated helper process."
         }
     }
 

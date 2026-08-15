@@ -2,6 +2,23 @@ import XCTest
 @testable import WoWSiliconSwift
 
 final class TroubleshootingServiceTests: XCTestCase {
+    func testDebugLogReportsSelectedX87Translation() throws {
+        var version = try XCTUnwrap(VersionManager.defaultVersions["wrathsilicon"])
+        version.settings.x87Backend = .x87Sidecar
+
+        let result = TroubleshootingService.generateDebugLog(
+            context: TroubleshootingContext(
+                gamePath: nil,
+                currentVersion: version,
+                isGamePatched: false
+            ),
+            hideMacUserName: true,
+            includeLatestErrorLog: false
+        )
+
+        XCTAssertTrue(result.full.contains("x87 Translation: x87sidecar (x87sidecar)"))
+    }
+
     func testDeleteDefaultWineBottleOnlyDeletesWineDirectory() throws {
         let home = FileManager.default.temporaryDirectory
             .appendingPathComponent("WoWSiliconTroubleshootingTests-\(UUID().uuidString)", isDirectory: true)

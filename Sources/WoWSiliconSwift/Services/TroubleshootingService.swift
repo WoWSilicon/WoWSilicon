@@ -124,6 +124,7 @@ enum TroubleshootingService {
 
             baseLog += "\nVersion Settings:\n"
             let settings = version.settings
+            baseLog += "  x87 Translation: \(settings.x87Backend.displayName) (\(settings.x87Backend.rawValue))\n"
             baseLog += "  Vanilla Tweaks: \(settings.enableVanillaTweaks)\n"
             baseLog += "  Remap Option as Alt: \(settings.remapOptionAsAlt)\n"
             baseLog += "  Auto Delete WDB: \(settings.autoDeleteWdb)\n"
@@ -171,6 +172,9 @@ enum TroubleshootingService {
                 if let wine = lock["wine"] as? [String: Any] {
                     baseLog += "Wine version: \(wine["version"] ?? "Unknown")\n"
                     baseLog += "Wine commit: \(wine["commit"] ?? "Unknown")\n"
+                }
+                if let mtld3d = lock["mtld3d"] as? [String: Any] {
+                    baseLog += "MTLd3D version: \(mtld3d["version"] ?? "Unknown")\n"
                 }
             } else {
                 baseLog += "Runtime lock: Missing\n"

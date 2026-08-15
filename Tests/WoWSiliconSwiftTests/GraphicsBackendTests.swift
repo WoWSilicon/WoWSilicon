@@ -28,6 +28,19 @@ final class GraphicsBackendTests: XCTestCase {
         XCTAssertEqual(TelemetryEventContext(version: version).renderer, "mtld3d")
     }
 
+    func testTelemetryReportsSelectedX87Translation() throws {
+        var version = try XCTUnwrap(VersionManager.defaultVersions["wrathsilicon"])
+
+        version.settings.x87Backend = .rosettaX87
+        XCTAssertEqual(TelemetryEventContext(version: version).x87Translation, "rosettax87")
+
+        version.settings.x87Backend = .x87Sidecar
+        XCTAssertEqual(TelemetryEventContext(version: version).x87Translation, "x87sidecar")
+
+        version.settings.x87Backend = .disabled
+        XCTAssertEqual(TelemetryEventContext(version: version).x87Translation, "disabled")
+    }
+
     func testMtld3dHDRSettingReplacesCommentedDefault() {
         let content = "# Color\n# color.hdr.enable = false\n# Cursor\n"
         let updated = ConfigService.updateMtld3dSetting(

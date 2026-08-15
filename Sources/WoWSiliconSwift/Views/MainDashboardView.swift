@@ -132,7 +132,7 @@ struct MainDashboardView: View {
                 viewModel.handleTelemetryConsent(accepted: true)
             }
         } message: {
-            Text("Help us show anonymous WoWSilicon usage stats, like how many people use the launcher, which WoW versions are used, macOS version, renderer, and configured realmlist server. We do not collect your IP address, username, account name, character name, file paths, or hardware identifiers.")
+            Text("Help us show anonymous WoWSilicon usage stats, like how many people use the launcher, which WoW versions are used, macOS version, renderer, x87 translation, and configured realmlist server. We do not collect your IP address, username, account name, character name, file paths, or hardware identifiers.")
         }
         .alert("Apply vanilla-tweaks?", isPresented: $vanillaTweaksAlert) {
             Button("Cancel", role: .cancel) {
