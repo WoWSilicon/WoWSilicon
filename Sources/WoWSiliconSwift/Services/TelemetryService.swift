@@ -10,11 +10,11 @@ struct TelemetryEventContext: Sendable {
 
     init(version: GameVersion?) {
         appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? appVersionFallback
-        wowVersion = version?.wowVersion
+        wowVersion = version?.isWorldOfWarcraft == true ? version?.wowVersion : nil
         renderer = version?.settings.graphicsSettings.backend.rawValue ?? GraphicsBackend.d9vk.rawValue
         x87Translation = version?.settings.x87Backend.rawValue ?? X87Backend.rosettaX87.rawValue
         macOSVersion = TelemetryEventContext.makeMacOSVersion()
-        if let gamePath = version?.gamePath {
+        if version?.supportsRealmlist == true, let gamePath = version?.gamePath {
             realmlist = RealmlistService.currentRealmValue(gamePath: gamePath)
         } else {
             realmlist = nil

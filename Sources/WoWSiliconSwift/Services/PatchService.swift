@@ -35,6 +35,16 @@ enum PatchService {
         }
 
         try ensureDirectoryExists(gameURL, errorOnMissing: .invalidGamePath(version.gamePath))
+        if version.profileKind == .genericD3D9 {
+            try copyResource(
+                named: "d3d9",
+                extension: "dll",
+                subdirectory: "Patching/d9vk",
+                to: gameURL.appendingPathComponent("d3d9.dll")
+            )
+            return
+        }
+
         guard isSupportedGameClient(at: gameURL) else {
             throw PatchServiceError.gameClientNotDetected
         }
@@ -155,6 +165,11 @@ enum PatchService {
         }
 
         try ensureDirectoryExists(gameURL, errorOnMissing: .invalidGamePath(version.gamePath))
+
+        if version.profileKind == .genericD3D9 {
+            try removeIfExists(gameURL.appendingPathComponent("d3d9.dll"))
+            return
+        }
 
         let modsURL = gameURL.appendingPathComponent("mods", isDirectory: true)
 

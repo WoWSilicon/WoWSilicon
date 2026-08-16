@@ -351,9 +351,15 @@ enum OptimizationLevel: String, Codable, Sendable {
     case high
 }
 
+enum GameProfileKind: String, Codable, Sendable {
+    case worldOfWarcraft = "world_of_warcraft"
+    case genericD3D9 = "generic_d3d9"
+}
+
 struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     var id: String
     var displayName: String
+    var profileKind: GameProfileKind
     var wowVersion: String
     var gamePath: String
     var executableName: String
@@ -367,6 +373,10 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     var wantsLauncher: Bool
 
     var hasLauncher: Bool { !launcherExePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var isWorldOfWarcraft: Bool { profileKind == .worldOfWarcraft }
+    var supportsAddons: Bool { isWorldOfWarcraft }
+    var supportsRealmlist: Bool { isWorldOfWarcraft }
+    var supportsCustomGraphicsSettings: Bool { isWorldOfWarcraft }
 
     var libSiliconPatchSubdirectory: String? {
         switch wowVersion {
@@ -442,6 +452,7 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     init(
         id: String,
         displayName: String,
+        profileKind: GameProfileKind = .worldOfWarcraft,
         wowVersion: String,
         gamePath: String = "",
         executableName: String,
@@ -456,6 +467,7 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     ) {
         self.id = id
         self.displayName = displayName
+        self.profileKind = profileKind
         self.wowVersion = wowVersion
         self.gamePath = gamePath
         self.executableName = executableName
@@ -472,6 +484,7 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id
         case displayName = "display_name"
+        case profileKind = "profile_kind"
         case wowVersion = "wow_version"
         case gamePath = "game_path"
         case executableName
@@ -489,6 +502,7 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         displayName = try container.decode(String.self, forKey: .displayName)
+        profileKind = try container.decodeIfPresent(GameProfileKind.self, forKey: .profileKind) ?? .worldOfWarcraft
         wowVersion = try container.decode(String.self, forKey: .wowVersion)
         gamePath = try container.decodeIfPresent(String.self, forKey: .gamePath) ?? ""
         executableName = try container.decodeIfPresent(String.self, forKey: .executableName) ?? "WoW.exe"
@@ -503,6 +517,7 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     }
 
     mutating func syncCapabilities(with defaults: GameVersion) {
+        profileKind = defaults.profileKind
         executableName = defaults.executableName
         supportsVanillaTweaks = defaults.supportsVanillaTweaks
         supportsDLLLoading = defaults.supportsDLLLoading
@@ -521,6 +536,7 @@ struct VersionManager: Codable, Sendable {
     var versions: [String: GameVersion]
 
     static let defaultCurrentVersionID = "vanillasilicon"
+    static let genericD3D9TemplateID = "genericd3d9"
     static let defaultOrder = [
         "vanillasilicon",
         "burningsilicon",
@@ -565,6 +581,25 @@ struct VersionManager: Codable, Sendable {
             settings: VersionSettings(autoDeleteWdb: true, enableLibSiliconPatch: true)
         )
     ]
+
+    static let genericD3D9Template = GameVersion(
+        id: genericD3D9TemplateID,
+        displayName: "Non-WoW game (32-bit D3D9)",
+        profileKind: .genericD3D9,
+        wowVersion: "",
+        executableName: "Game.exe",
+        supportsVanillaTweaks: false,
+        supportsDLLLoading: false,
+        usesRosettaPatching: false,
+        usesDivxDecoderPatch: false,
+        settings: VersionSettings(autoDeleteWdb: false)
+    )
+
+    static var profileTemplates: [String: GameVersion] {
+        var templates = defaultVersions
+        templates[genericD3D9TemplateID] = genericD3D9Template
+        return templates
+    }
 
     static func makeDefault() -> VersionManager {
         VersionManager(

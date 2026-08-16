@@ -26,7 +26,7 @@ struct OptionsView: View {
             HStack {
                 Spacer()
                 Picker("", selection: $selectedTab) {
-                    ForEach(OptionsTab.allCases) { tab in
+                    ForEach(availableTabs) { tab in
                         Text(tab.title).tag(tab)
                     }
                 }
@@ -103,10 +103,25 @@ struct OptionsView: View {
     }
 
     private var graphicsSection: some View {
-        GraphicsSectionView(settings: viewModel.graphicsSettingsBinding())
+        GraphicsSectionView(
+            settings: viewModel.graphicsSettingsBinding(),
+            showsWoWSettings: viewModel.currentVersion?.supportsCustomGraphicsSettings ?? true
+        )
+    }
+
+    private var availableTabs: [OptionsTab] {
+        OptionsTab.allCases.filter { tab in
+            tab != .realmlist || viewModel.currentVersion?.supportsRealmlist != false
+        }
     }
 
     private func refreshRealmlist() {
+        guard viewModel.currentVersion?.supportsRealmlist != false else {
+            realmlistURL = nil
+            realmlistMultipleURLs = []
+            realmlistContent = ""
+            return
+        }
         guard let gamePath = viewModel.currentVersion?.gamePath else { return }
         switch RealmlistService.find(gamePath: gamePath) {
         case .none:

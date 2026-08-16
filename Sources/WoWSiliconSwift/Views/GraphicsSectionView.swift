@@ -2,6 +2,7 @@ import SwiftUI
 
 struct GraphicsSectionView: View {
     @Binding var settings: GraphicsSettings
+    var showsWoWSettings: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -21,13 +22,13 @@ struct GraphicsSectionView: View {
                         }
                     }
 
-                    Toggle("HDR Mode", isOn: $settings.hdrEnabled)
-                        .toggleStyle(.switch)
-                        .disabled(settings.backend != .mtld3d)
+                    if showsWoWSettings {
+                        Toggle("HDR Mode", isOn: $settings.hdrEnabled)
+                            .toggleStyle(.switch)
+                            .disabled(settings.backend != .mtld3d)
+                    }
 
-                    Text(settings.backend == .mtld3d
-                         ? "Experimental Metal backend. Some WoW clients or configurations may have rendering issues or crashes."
-                         : "Default Vulkan-based backend with broad compatibility. MTLD3D is required for HDR mode.")
+                    Text(backendHelpText)
                         .font(.caption)
                         .foregroundStyle(settings.backend == .mtld3d ? .orange : .secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -37,47 +38,60 @@ struct GraphicsSectionView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Display
-            GroupBox("Display") {
-                VStack(spacing: 0) {
-                    pickerRow("Window Mode", selection: $settings.windowMode, options: WindowMode.allCases, label: \.displayName)
-                    Divider()
-                    resolutionRow
-                    Divider()
-                    refreshRateRow
-                    Divider()
-                    toggleRow("VSync", isOn: $settings.vsync)
+            if showsWoWSettings {
+                // Display
+                GroupBox("Display") {
+                    VStack(spacing: 0) {
+                        pickerRow("Window Mode", selection: $settings.windowMode, options: WindowMode.allCases, label: \.displayName)
+                        Divider()
+                        resolutionRow
+                        Divider()
+                        refreshRateRow
+                        Divider()
+                        toggleRow("VSync", isOn: $settings.vsync)
+                    }
                 }
-            }
 
-            // Quality
-            GroupBox("Quality") {
-                VStack(spacing: 0) {
-                    pickerRow("Anti-Aliasing", selection: $settings.multisampling, options: Multisampling.allCases, label: \.displayName)
-                    Divider()
-                    pickerRow("Texture Filtering", selection: $settings.textureFiltering, options: TextureFiltering.allCases, label: \.displayName)
-                    Divider()
-                    pickerRow("Shadows", selection: $settings.shadowQuality, options: ShadowQuality.allCases, label: \.displayName)
-                    Divider()
-                    toggleRow("Specular Lighting", isOn: $settings.specular)
-                    Divider()
-                    toggleRow("Projected Textures", isOn: $settings.projectedTextures)
+                // Quality
+                GroupBox("Quality") {
+                    VStack(spacing: 0) {
+                        pickerRow("Anti-Aliasing", selection: $settings.multisampling, options: Multisampling.allCases, label: \.displayName)
+                        Divider()
+                        pickerRow("Texture Filtering", selection: $settings.textureFiltering, options: TextureFiltering.allCases, label: \.displayName)
+                        Divider()
+                        pickerRow("Shadows", selection: $settings.shadowQuality, options: ShadowQuality.allCases, label: \.displayName)
+                        Divider()
+                        toggleRow("Specular Lighting", isOn: $settings.specular)
+                        Divider()
+                        toggleRow("Projected Textures", isOn: $settings.projectedTextures)
+                    }
                 }
-            }
 
-            // Distance & Environment
-            GroupBox("Distance & Environment") {
-                VStack(spacing: 0) {
-                    viewDistanceRow
-                    Divider()
-                    groundEffectRow
-                    Divider()
-                    weatherRow
-                    Divider()
-                    particleRow
+                // Distance & Environment
+                GroupBox("Distance & Environment") {
+                    VStack(spacing: 0) {
+                        viewDistanceRow
+                        Divider()
+                        groundEffectRow
+                        Divider()
+                        weatherRow
+                        Divider()
+                        particleRow
+                    }
                 }
             }
         }
+    }
+
+    private var backendHelpText: String {
+        if !showsWoWSettings {
+            return settings.backend == .mtld3d
+                ? "Uses the bundled Metal-based Direct3D 9 renderer."
+                : "Uses the bundled Vulkan-based D9VK renderer."
+        }
+        return settings.backend == .mtld3d
+            ? "Experimental Metal backend. Some WoW clients or configurations may have rendering issues or crashes."
+            : "Default Vulkan-based backend with broad compatibility. MTLD3D is required for HDR mode."
     }
 
     // MARK: - Row builders

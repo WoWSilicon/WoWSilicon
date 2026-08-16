@@ -24,7 +24,7 @@ enum LaunchServiceError: LocalizedError {
         case .wineMissing(let path):
             return "Bundled Wine executable not found at \(path). Reinstall WoWSilicon and try again."
         case .executableMissing(let path):
-            return "WoW executable not found at \(path). Please verify your game installation."
+            return "Game executable not found at \(path). Please verify your game installation."
         case .vanillaTweaksMissing:
             return "Vanilla Tweaks is enabled but WoW-tweaked.exe was not found. Disable the option or run the tweaks patch first."
         case .patchNotApplied:

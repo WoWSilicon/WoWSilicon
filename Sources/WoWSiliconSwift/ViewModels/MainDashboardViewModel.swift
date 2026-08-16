@@ -39,6 +39,7 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var isGitInstallInProgress: Bool = false
     @Published private(set) var gitStatus: DependencyInstallStatus = .unknown
     @Published private(set) var currentVersion: GameVersion?
+    @Published private(set) var supportsAddons: Bool = false
     @Published private(set) var supportsMods: Bool = false
     @Published private(set) var versions: [GameVersion] = []
     @Published private(set) var currentVersionID: String = VersionManager.defaultCurrentVersionID
@@ -114,13 +115,13 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     func addVersion(name: String, baseID: String, wantsLauncher: Bool) {
-        guard let base = VersionManager.defaultVersions[baseID] else { return }
+        guard let base = VersionManager.profileTemplates[baseID] else { return }
         let newID = UUID().uuidString
         var newVersion = base
         newVersion.id = newID
         newVersion.displayName = name
         newVersion.gamePath = ""
-        newVersion.wantsLauncher = wantsLauncher
+        newVersion.wantsLauncher = newVersion.isWorldOfWarcraft && wantsLauncher
         newVersion.launcherExePath = ""
         versionManager.versions[newID] = newVersion
         versionManager.setCurrentVersion(id: newID)
@@ -506,6 +507,7 @@ final class MainDashboardViewModel: ObservableObject {
                 }
                 version.settings.graphicsSettings = normalizedValue
                 self.updateCurrentVersion { current in current = version }
+                guard version.supportsCustomGraphicsSettings else { return }
                 let versionForWork = version
                 DispatchQueue.global(qos: .userInitiated).async {
                     do {
@@ -736,7 +738,8 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     func refreshGraphicsSettings() {
-        guard let version = versionManager.currentVersion else { return }
+        guard let version = versionManager.currentVersion,
+              version.supportsCustomGraphicsSettings else { return }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let gs = ConfigService.readGraphicsSettings(for: version)
             DispatchQueue.main.async {
@@ -939,6 +942,8 @@ final class MainDashboardViewModel: ObservableObject {
     private func refreshSnapshot() {
         guard var currentVersion = versionManager.currentVersion else {
             versionDisplayName = "WoWSilicon"
+            subtitleText = "Launch World Of Warcraft from 2006-2010 on Apple Silicon Macs"
+            supportsAddons = false
             supportsMods = false
             self.currentVersion = nil
             gamePathStatus = StatusValue(text: "Not set", level: .error)
@@ -959,8 +964,12 @@ final class MainDashboardViewModel: ObservableObject {
         currentVersion = syncCursorSizeMultiplierFromConfig(for: currentVersion)
 
         versionDisplayName = currentVersion.displayName
+        subtitleText = currentVersion.isWorldOfWarcraft
+            ? "Launch World Of Warcraft from 2006-2010 on Apple Silicon Macs"
+            : "Launch a 32-bit Direct3D 9 game on Apple Silicon"
         self.currentVersion = currentVersion
-        supportsMods = currentVersion.supportsDLLLoading
+        supportsAddons = currentVersion.supportsAddons
+        supportsMods = currentVersion.isWorldOfWarcraft && currentVersion.supportsDLLLoading
         versions = versionManager.orderedVersions()
         currentVersionID = versionManager.currentVersionID
         gamePathStatus = makePathStatus(for: currentVersion.gamePath)
@@ -1025,7 +1034,7 @@ final class MainDashboardViewModel: ObservableObject {
             } else {
                 version.settings.enableVanillaTweaks = false
             }
-            version.settings.autoDeleteWdb = true
+            version.settings.autoDeleteWdb = version.isWorldOfWarcraft
             version.settings.remapOptionAsAlt = userPrefs.remapOptionAsAlt
             if !userPrefs.environmentVariables.isEmpty {
                 version.settings.environmentVariables = userPrefs.environmentVariables
@@ -1084,6 +1093,7 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     private func applyCursorSizeMultiplier(for version: GameVersion) {
+        guard version.supportsCustomGraphicsSettings else { return }
         let trimmedPath = version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPath.isEmpty else { return }
         let multiplier = version.settings.cursorSizeMultiplier
@@ -1100,6 +1110,7 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     private func syncCursorSizeMultiplierFromConfig(for version: GameVersion) -> GameVersion {
+        guard version.supportsCustomGraphicsSettings else { return version }
         var updated = version
         let trimmedPath = version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPath.isEmpty else { return version }

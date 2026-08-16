@@ -30,6 +30,48 @@ enum PatchingStatusChecker {
             )
         }
 
+        if version.profileKind == .genericD3D9 {
+            guard let executableURL = version.gameExecutableURL,
+                  fileExists(at: executableURL) else {
+                return PatchStatusDescriptor(
+                    applied: false,
+                    text: "Executable missing",
+                    level: .error,
+                    actionable: false
+                )
+            }
+
+            let d3d9URL = gamePath.appendingPathComponent("d3d9.dll")
+            guard fileExists(at: d3d9URL) else {
+                return PatchStatusDescriptor(
+                    applied: false,
+                    text: "Missing d3d9.dll",
+                    level: .error,
+                    actionable: true
+                )
+            }
+
+            if let bundledURL = PatchService.resourceURL(
+                named: "d3d9",
+                extension: "dll",
+                subdirectory: "Patching/d9vk"
+            ), fileChecksum(at: d3d9URL) != fileChecksum(at: bundledURL) {
+                return PatchStatusDescriptor(
+                    applied: false,
+                    text: "d3d9.dll outdated",
+                    level: .warning,
+                    actionable: true
+                )
+            }
+
+            return PatchStatusDescriptor(
+                applied: true,
+                text: "Applied",
+                level: .success,
+                actionable: true
+            )
+        }
+
         guard PatchService.isSupportedGameClient(at: gameURL) else {
             return PatchStatusDescriptor(
                 applied: false,

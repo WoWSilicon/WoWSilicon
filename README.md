@@ -36,6 +36,7 @@ It bundles a customized Wine runtime alongside RosettaX87, DX9 translation, and 
 - The Burning Crusade 2.4.3
 - Wrath of the Lich King 3.3.5a
 - Custom profiles based on the supported client families
+- Other 32-bit Direct3D 9 games through Non-WoW profiles
 
 ## Features
 

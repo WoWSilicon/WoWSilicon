@@ -39,6 +39,8 @@ struct MainDashboardView: View {
                 .padding(.horizontal, 32)
 
                 MainContentView(
+                    gamePathLabel: viewModel.currentVersion?.isWorldOfWarcraft == false ? "Executable:" : "Game Path:",
+                    gamePatchLabel: viewModel.currentVersion?.isWorldOfWarcraft == false ? "D3D9 Patch:" : "Game Patch:",
                     gameStatus: viewModel.gamePathStatus,
                     gamePatchStatus: viewModel.gamePatchStatus,
                     onSelectGamePath: viewModel.selectGamePath,
@@ -64,6 +66,7 @@ struct MainDashboardView: View {
                 .frame(minHeight: 0, maxHeight: .infinity)
 
                 BottomBarView(
+                    supportsAddons: viewModel.supportsAddons,
                     supportsMods: viewModel.supportsMods,
                     onOptions: { showOptionsSheet = true },
                     onTroubleshooting: {
@@ -340,6 +343,8 @@ struct HeaderView: View {
 }
 
 struct MainContentView: View {
+    let gamePathLabel: String
+    let gamePatchLabel: String
     let gameStatus: StatusValue
     let gamePatchStatus: StatusValue
     let onSelectGamePath: () -> Void
@@ -377,7 +382,7 @@ struct MainContentView: View {
                     )
                 }
                 PathRow(
-                    label: "Game Path:",
+                    label: gamePathLabel,
                     status: gameStatus,
                     buttonTitle: "Set/Change",
                     onOpen: onOpenGamePath,
@@ -393,7 +398,7 @@ struct MainContentView: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 PatchRow(
-                    label: "Game Patch:",
+                    label: gamePatchLabel,
                     status: gamePatchStatus,
                     primaryActionTitle: "Patch",
                     secondaryActionTitle: "Unpatch",
@@ -521,6 +526,7 @@ struct PatchRow: View {
 }
 
 struct BottomBarView: View {
+    let supportsAddons: Bool
     let supportsMods: Bool
     let onOptions: () -> Void
     let onTroubleshooting: () -> Void
@@ -534,11 +540,8 @@ struct BottomBarView: View {
             HStack(spacing: 12) {
                 BottomActionButton(title: "Options", action: onOptions)
                 BottomActionButton(title: "Troubleshooting", action: onTroubleshooting)
-                BottomActionButton(title: "Addons", action: onAddons)
-
-                if supportsMods {
-                    BottomActionButton(title: "Mods", action: onMods)
-                }
+                BottomActionButton(title: "Addons", action: onAddons, disabled: !supportsAddons)
+                BottomActionButton(title: "Mods", action: onMods, disabled: !supportsMods)
             }
 
             Spacer(minLength: 20)
@@ -597,6 +600,7 @@ private struct AppVersionBadge: View {
 private struct BottomActionButton: View {
     let title: String
     let action: () -> Void
+    var disabled: Bool = false
 
     var body: some View {
         Button(title, action: action)
@@ -605,6 +609,7 @@ private struct BottomActionButton: View {
             .padding(.vertical, 6)
             .buttonStyle(.bordered)
             .controlSize(.large)
+            .disabled(disabled)
     }
 }
 
@@ -615,7 +620,8 @@ private struct AddVersionSheet: View {
     private let baseOptions: [(id: String, label: String)] = [
         ("vanillasilicon", "VanillaSilicon (1.12.1)"),
         ("burningsilicon", "BurningSilicon (2.4.3)"),
-        ("wrathsilicon", "WrathSilicon (3.3.5a)")
+        ("wrathsilicon", "WrathSilicon (3.3.5a)"),
+        (VersionManager.genericD3D9TemplateID, "Non-WoW game (32-bit D3D9)")
     ]
 
     @State private var customName: String = ""
@@ -646,16 +652,24 @@ private struct AddVersionSheet: View {
                     }
                 }
                 .pickerStyle(.radioGroup)
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 4) {
-                Toggle("Use third-party launcher", isOn: $useLauncher)
-                if useLauncher {
-                    Text("You can install the launcher after creating this profile.")
+                if selectedBaseID == VersionManager.genericD3D9TemplateID {
+                    Text("For standalone 32-bit Direct3D 9 games. Select the game's .exe after creating the profile.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if selectedBaseID != VersionManager.genericD3D9TemplateID {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Use third-party launcher", isOn: $useLauncher)
+                    if useLauncher {
+                        Text("You can install the launcher after creating this profile.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -666,7 +680,11 @@ private struct AddVersionSheet: View {
                 Button("Add") {
                     let name = customName.trimmingCharacters(in: .whitespaces)
                     guard !name.isEmpty else { return }
-                    onAdd(name, selectedBaseID, useLauncher)
+                    onAdd(
+                        name,
+                        selectedBaseID,
+                        selectedBaseID == VersionManager.genericD3D9TemplateID ? false : useLauncher
+                    )
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(customName.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -675,6 +693,7 @@ private struct AddVersionSheet: View {
         .padding(24)
         .frame(width: 360)
         .animation(.default, value: useLauncher)
+        .animation(.default, value: selectedBaseID)
     }
 }
 

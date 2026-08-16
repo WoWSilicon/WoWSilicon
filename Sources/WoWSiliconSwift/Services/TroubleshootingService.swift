@@ -114,7 +114,10 @@ enum TroubleshootingService {
         baseLog += "\n=== WoWSilicon Configuration ===\n"
         if let version = context.currentVersion {
             baseLog += "Current Game Version: \(version.displayName) (\(version.id))\n"
-            baseLog += "WoW Version: \(version.wowVersion)\n"
+            baseLog += "Profile Type: \(version.profileKind.rawValue)\n"
+            if version.isWorldOfWarcraft {
+                baseLog += "WoW Version: \(version.wowVersion)\n"
+            }
             baseLog += "Game Path: \(version.gamePath)\n"
             baseLog += "Executable: \(version.executableName)\n"
             baseLog += "Supports Vanilla Tweaks: \(version.supportsVanillaTweaks)\n"
@@ -133,17 +136,19 @@ enum TroubleshootingService {
             baseLog += "  Environment Variables: \(settings.environmentVariables)\n"
             let gs = settings.graphicsSettings
             baseLog += "  Graphics Backend: \(gs.backend.displayName)\n"
-            baseLog += "  HDR Mode: \(gs.backend == .mtld3d && gs.hdrEnabled)\n"
-            baseLog += "  Window Mode: \(gs.windowMode.rawValue)\n"
-            baseLog += "  Resolution: \(gs.resolution.isEmpty ? "default" : gs.resolution)\n"
-            baseLog += "  Refresh Rate: \(gs.refreshRate)Hz\n"
-            baseLog += "  VSync: \(gs.vsync)\n"
-            baseLog += "  Multisampling: \(gs.multisampling.rawValue)\n"
-            baseLog += "  Texture Filtering: \(gs.textureFiltering.rawValue)\n"
-            baseLog += "  Shadow Quality: \(gs.shadowQuality.rawValue)\n"
-            baseLog += "  View Distance: \(gs.viewDistance)\n"
-            baseLog += "  Particle Density: \(gs.particleDensity)\n"
-            baseLog += "  Enable LibSilicon Patch: \(settings.enableLibSiliconPatch)\n"
+            if version.supportsCustomGraphicsSettings {
+                baseLog += "  HDR Mode: \(gs.backend == .mtld3d && gs.hdrEnabled)\n"
+                baseLog += "  Window Mode: \(gs.windowMode.rawValue)\n"
+                baseLog += "  Resolution: \(gs.resolution.isEmpty ? "default" : gs.resolution)\n"
+                baseLog += "  Refresh Rate: \(gs.refreshRate)Hz\n"
+                baseLog += "  VSync: \(gs.vsync)\n"
+                baseLog += "  Multisampling: \(gs.multisampling.rawValue)\n"
+                baseLog += "  Texture Filtering: \(gs.textureFiltering.rawValue)\n"
+                baseLog += "  Shadow Quality: \(gs.shadowQuality.rawValue)\n"
+                baseLog += "  View Distance: \(gs.viewDistance)\n"
+                baseLog += "  Particle Density: \(gs.particleDensity)\n"
+                baseLog += "  Enable LibSilicon Patch: \(settings.enableLibSiliconPatch)\n"
+            }
         } else {
             baseLog += "Current Game Version: none selected\n"
         }
