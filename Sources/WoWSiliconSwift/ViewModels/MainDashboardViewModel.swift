@@ -22,6 +22,8 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var launcherPathStatus: StatusValue = StatusValue(text: "Not set", level: .error)
     @Published private(set) var currentVersionLauncherName: String = "Open Launcher"
     @Published private(set) var isLauncherLoading: Bool = false
+    @Published private(set) var wineProcessCount: Int = 0
+    @Published private(set) var isForceQuittingWine: Bool = false
     @Published private(set) var shouldShowVanillaTweaksPrompt: Bool = false
     @Published private(set) var shouldShowVersionMismatchPrompt: Bool = false
     @Published private(set) var versionMismatchData: (base: String, tweaked: String)?
@@ -239,9 +241,36 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     func forceQuitWine() {
+        guard !isForceQuittingWine else { return }
+        isForceQuittingWine = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             LaunchService.forceQuitWine()
-            DispatchQueue.main.async { self?.refreshSnapshot() }
+            let remainingProcessCount = WineProcessMonitor.currentProcessCount()
+            DispatchQueue.main.async {
+                self?.isForceQuittingWine = false
+                if let remainingProcessCount {
+                    self?.wineProcessCount = remainingProcessCount
+                }
+                self?.refreshSnapshot()
+            }
+        }
+    }
+
+    func monitorWineProcesses() async {
+        while !Task.isCancelled {
+            let processCount = await Task.detached(priority: .utility) {
+                WineProcessMonitor.currentProcessCount()
+            }.value
+
+            if let processCount {
+                wineProcessCount = processCount
+            }
+
+            do {
+                try await Task.sleep(for: .seconds(3))
+            } catch {
+                return
+            }
         }
     }
 

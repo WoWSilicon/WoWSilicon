@@ -494,26 +494,11 @@ final class LaunchService: @unchecked Sendable {
     // MARK: - Force quit
 
     static func forceQuitWine() {
-        func pkill(_ args: [String]) {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-            p.arguments = args
-            try? p.run()
-            p.waitUntilExit()
+        guard let processIDs = WineProcessMonitor.currentProcessIDs() else { return }
+        let currentProcessID = ProcessInfo.processInfo.processIdentifier
+
+        for processID in processIDs where processID != currentProcessID {
+            kill(processID, SIGKILL)
         }
-
-        // Wine processes run with their Windows path as the process name (e.g. "Z:\Volumes\...\WoW.exe").
-        // pkill -f matches against the full argument string, so matching ".exe" catches them all.
-        pkill(["-9", "-f", ".exe"])
-
-        if let runtimeRoot = BundledWineRuntime.rootURL()?.path {
-            for binary in ["wine", "wineserver"] {
-                pkill(["-9", "-f", runtimeRoot + "/bin/" + binary])
-            }
-        }
-
-        // Kill x87 accelerator instances.
-        pkill(["-9", "-f", "rosettax87"])
-        pkill(["-9", "-f", "x87sidecar"])
     }
 }

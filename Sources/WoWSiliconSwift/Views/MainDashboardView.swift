@@ -33,6 +33,8 @@ struct MainDashboardView: View {
                     isLauncherLoading: viewModel.isLauncherLoading,
                     onOpenLauncher: viewModel.launchThirdPartyLauncher,
                     onInstallLauncher: viewModel.installLauncher,
+                    wineProcessCount: viewModel.wineProcessCount,
+                    isForceQuittingWine: viewModel.isForceQuittingWine,
                     onForceQuitWine: viewModel.forceQuitWine
                 )
                 .padding(.top, 24)
@@ -89,6 +91,9 @@ struct MainDashboardView: View {
                 .padding(.bottom, 24)
             }
 
+        }
+        .task {
+            await viewModel.monitorWineProcesses()
         }
         .sheet(isPresented: $showOptionsSheet) {
             OptionsView(
@@ -242,6 +247,8 @@ struct HeaderView: View {
     let isLauncherLoading: Bool
     let onOpenLauncher: () -> Void
     let onInstallLauncher: () -> Void
+    let wineProcessCount: Int
+    let isForceQuittingWine: Bool
     let onForceQuitWine: () -> Void
     @State private var showVersionPicker = false
     @State private var showAddVersionSheet = false
@@ -257,17 +264,42 @@ struct HeaderView: View {
                 Button {
                     showForceQuitConfirm = true
                 } label: {
-                    Image(systemName: "xmark.octagon.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(Color.red)
+                    HStack(spacing: 7) {
+                        if isForceQuittingWine {
+                            ProgressView()
+                                .controlSize(.mini)
+                        } else {
+                            Circle()
+                                .fill(wineProcessCount > 0 ? Color.orange : Color.secondary.opacity(0.45))
+                                .frame(width: 7, height: 7)
+                        }
+
+                        Text(wineProcessLabel)
+                            .font(.caption.weight(.semibold))
+
+                        if wineProcessCount > 0 && !isForceQuittingWine {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(Color.red)
+                        }
+                    }
+                    .foregroundStyle(wineProcessCount > 0 ? Color.primary : Color.secondary)
+                    .padding(.horizontal, 10)
+                    .frame(height: 27)
+                    .background(.thinMaterial, in: Capsule())
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(Color.primary.opacity(wineProcessCount > 0 ? 0.16 : 0.08))
+                    }
                 }
                 .buttonStyle(.plain)
-                .help("Force quit Wine session")
+                .disabled(wineProcessCount == 0 || isForceQuittingWine)
+                .help(wineProcessHelp)
                 .alert("Force Quit Wine?", isPresented: $showForceQuitConfirm) {
                     Button("Cancel", role: .cancel) { }
                     Button("Force Quit", role: .destructive) { onForceQuitWine() }
                 } message: {
-                    Text("This will immediately force quit all Wine processes and the wineserver. Useful when the game has frozen.")
+                    Text("This will immediately force quit all detected Wine processes, including any running game or other Wine application. Use it when Wine remains active after the game closes or the game has frozen.")
                 }
 
                 Button {
@@ -339,6 +371,24 @@ struct HeaderView: View {
                 .foregroundColor(.secondary)
                 .frame(maxWidth: .infinity, alignment: .center)
         }
+    }
+
+    private var wineProcessLabel: String {
+        if isForceQuittingWine {
+            return "Stopping Wine…"
+        }
+        if wineProcessCount == 0 {
+            return "Wine idle"
+        }
+        return "Wine · \(wineProcessCount)"
+    }
+
+    private var wineProcessHelp: String {
+        if wineProcessCount == 0 {
+            return "No Wine processes detected"
+        }
+        let noun = wineProcessCount == 1 ? "process is" : "processes are"
+        return "\(wineProcessCount) Wine-related \(noun) running. Click to force quit them."
     }
 }
 
