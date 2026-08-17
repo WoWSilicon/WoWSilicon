@@ -86,6 +86,10 @@ struct OptionsView: View {
                 "Show Terminal",
                 binding: viewModel.boolBinding(\.showTerminalNormally)
             )
+            toggleRow(
+                "Use System Proxy (fixes slow exit)",
+                binding: viewModel.boolBinding(\.useSystemProxy)
+            )
             if viewModel.isVanillaTweaksSupported {
                 toggleRow(
                     "Enable vanilla-tweaks",

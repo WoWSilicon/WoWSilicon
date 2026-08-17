@@ -185,6 +185,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
     var graphicsSettings: GraphicsSettings
     var enableLibSiliconPatch: Bool
     var userDisabledLibSiliconPatch: Bool
+    var useSystemProxy: Bool
 
     init(
         enableVanillaTweaks: Bool = false,
@@ -197,7 +198,8 @@ struct VersionSettings: Codable, Equatable, Sendable {
         cursorSizeMultiplier: Int = 1,
         graphicsSettings: GraphicsSettings = GraphicsSettings(),
         enableLibSiliconPatch: Bool = false,
-        userDisabledLibSiliconPatch: Bool = false
+        userDisabledLibSiliconPatch: Bool = false,
+        useSystemProxy: Bool = true
     ) {
         self.enableVanillaTweaks = enableVanillaTweaks
         self.remapOptionAsAlt = remapOptionAsAlt
@@ -210,6 +212,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
         self.graphicsSettings = graphicsSettings
         self.enableLibSiliconPatch = enableLibSiliconPatch
         self.userDisabledLibSiliconPatch = userDisabledLibSiliconPatch
+        self.useSystemProxy = useSystemProxy
     }
 
     enum CodingKeys: String, CodingKey {
@@ -218,6 +221,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
         case vanillaTweaksParameters, cursorSizeMultiplier
         case graphicsSettings
         case enableLibSiliconPatch, userDisabledLibSiliconPatch
+        case useSystemProxy
         // Legacy keys kept for migration only
         case reduceTerrainDistance, setMultisampleTo2x, setShadowLOD0, userDisabledShadowLOD
     }
@@ -234,6 +238,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
         cursorSizeMultiplier = try container.decodeIfPresent(Int.self, forKey: .cursorSizeMultiplier) ?? 1
         enableLibSiliconPatch = try container.decodeIfPresent(Bool.self, forKey: .enableLibSiliconPatch) ?? false
         userDisabledLibSiliconPatch = try container.decodeIfPresent(Bool.self, forKey: .userDisabledLibSiliconPatch) ?? false
+        useSystemProxy = try container.decodeIfPresent(Bool.self, forKey: .useSystemProxy) ?? true
 
         if let gs = try container.decodeIfPresent(GraphicsSettings.self, forKey: .graphicsSettings) {
             graphicsSettings = gs
@@ -266,6 +271,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
         try container.encode(graphicsSettings, forKey: .graphicsSettings)
         try container.encode(enableLibSiliconPatch, forKey: .enableLibSiliconPatch)
         try container.encode(userDisabledLibSiliconPatch, forKey: .userDisabledLibSiliconPatch)
+        try container.encode(useSystemProxy, forKey: .useSystemProxy)
     }
 
     func mergedWithDefaults(_ defaults: VersionSettings) -> VersionSettings {

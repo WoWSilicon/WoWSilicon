@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import SystemConfiguration
 
 enum LaunchServiceError: LocalizedError {
     case alreadyRunning
@@ -55,6 +56,9 @@ final class LaunchService: @unchecked Sendable {
     private init() {}
 
     func launch(version: GameVersion, completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void) {
+        // Kill residual wine processes before launch to prevent display switching issues
+        Self.forceQuitWine(crossOverPath: version.crossOverPath.isEmpty ? nil : version.crossOverPath)
+
         do {
             let result = try prepareLaunchArtifacts(for: version)
 
@@ -64,10 +68,12 @@ final class LaunchService: @unchecked Sendable {
 
             if version.settings.showTerminalNormally {
                 try launchViaTerminal(configuration: result)
+                scheduleSynapticsCleanup()
                 DispatchQueue.main.async { completion(.success(())) }
                 DispatchQueue.main.async { self.processDidTerminate?() }
             } else {
                 try launchIntegrated(configuration: result, completion: completion)
+                scheduleSynapticsCleanup()
             }
         } catch let error as LaunchServiceError {
             DispatchQueue.main.async { completion(.failure(error)) }
@@ -165,37 +171,30 @@ final class LaunchService: @unchecked Sendable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", configuration.shellCommand]
-        process.environment = ProcessInfo.processInfo.environment
-
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        stdout.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else {
-                handle.readabilityHandler = nil
-                return
-            }
-            if let text = String(data: data, encoding: .utf8), !text.isEmpty {
-                print("[GAME]", text)
+        var env = ProcessInfo.processInfo.environment
+        // The game tries to reach an external endpoint on exit (e.g. launcher.warcraftchina.com
+        // on WoW 3.3.5a private-server clients). With a proxy configured the connection fails
+        // fast; without one it hits a TCP timeout (~60s), making the game appear to hang when
+        // closing its window. Inject the macOS system proxy settings unless the user disabled it.
+        if configuration.version.settings.useSystemProxy {
+            let systemProxy = Self.systemProxyEnvironment()
+            for (key, value) in systemProxy where env[key] == nil {
+                env[key] = value
             }
         }
-        stderr.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else {
-                handle.readabilityHandler = nil
-                return
-            }
-            if let text = String(data: data, encoding: .utf8), !text.isEmpty {
-                print("[GAME:ERR]", text)
-            }
+        if env["LANG"] == nil { env["LANG"] = "zh_CN.UTF-8" }
+        if env["TERM"] == nil { env["TERM"] = "xterm-256color" }
+        if env["PATH"] == nil || !env["PATH"]!.contains("/opt/homebrew") {
+            let home = NSHomeDirectory()
+            env["PATH"] = "\(home)/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         }
+        process.environment = env
+        // Discard game output instead of piping it: DXVK emits a large volume of logs and a
+        // Pipe can fill up (64KB) faster than it is drained, blocking the wine process.
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
 
         process.terminationHandler = { [weak self] _ in
-            stdout.fileHandleForReading.readabilityHandler = nil
-            stderr.fileHandleForReading.readabilityHandler = nil
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.focusTimer?.cancel()
@@ -316,6 +315,9 @@ final class LaunchService: @unchecked Sendable {
     }
 
     func launchThirdPartyLauncher(version: GameVersion, completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void) {
+        // Kill residual wine processes before launch to prevent display switching issues
+        Self.forceQuitWine(crossOverPath: version.crossOverPath.isEmpty ? nil : version.crossOverPath)
+
         let exePath = version.launcherExePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !exePath.isEmpty else {
             DispatchQueue.main.async { completion(.failure(.executableMissing("No launcher configured"))) }
@@ -519,6 +521,55 @@ final class LaunchService: @unchecked Sendable {
 
     // MARK: - Force quit
 
+    /// Reads the macOS system proxy settings (System Settings → Network → Proxies)
+    /// and converts them to the standard proxy environment variables expected by Wine.
+    /// Returns an empty dict when no proxy is configured.
+    static func systemProxyEnvironment() -> [String: String] {
+        guard let proxies = SCDynamicStoreCopyProxies(nil) as? [String: Any] else { return [:] }
+
+        func proxyURL(enableKey: String, hostKey: String, portKey: String) -> String? {
+            guard let enabled = proxies[enableKey] as? Bool, enabled,
+                  let host = proxies[hostKey] as? String, !host.isEmpty,
+                  let port = proxies[portKey] as? Int, port > 0 else { return nil }
+            return "http://\(host):\(port)"
+        }
+
+        var result: [String: String] = [:]
+        if let http = proxyURL(enableKey: "HTTPEnable", hostKey: "HTTPProxy", portKey: "HTTPPort") {
+            result["HTTP_PROXY"] = http
+            result["http_proxy"] = http
+        }
+        if let https = proxyURL(enableKey: "HTTPSEnable", hostKey: "HTTPSProxy", portKey: "HTTPSPort") {
+            result["HTTPS_PROXY"] = https
+            result["https_proxy"] = https
+        }
+        if let all = result["HTTPS_PROXY"] ?? result["HTTP_PROXY"] {
+            result["ALL_PROXY"] = all
+            result["all_proxy"] = all
+        }
+        // Keep local/server traffic off the proxy.
+        result["NO_PROXY"] = "127.0.0.1,localhost,10.211.55.6"
+        result["no_proxy"] = "127.0.0.1,localhost,10.211.55.6"
+        return result
+    }
+
+    /// WoW 3.3.5a private-server clients spawn a duplicate copy of the game binary
+    /// (Synaptics.exe, byte-identical to WoW.exe) as a watchdog instance. It creates a
+    /// second game window and blocks a clean exit: closing the real game window then
+    /// waits ~60s for the watchdog to terminate. Killing it shortly after launch makes
+    /// the game exit instantly and removes the duplicate window.
+    private func scheduleSynapticsCleanup() {
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 8) {
+            for target in ["Synaptics.exe", "._cache_Synaptics", "start.exe"] {
+                _ = try? ProcessRunner.run(
+                    executablePath: "/usr/bin/pkill",
+                    arguments: ["-9", "-f", target],
+                    timeout: 5
+                )
+            }
+        }
+    }
+
     static func forceQuitWine(crossOverPath: String?) {
         func pkill(_ args: [String]) {
             let p = Process()
@@ -528,11 +579,12 @@ final class LaunchService: @unchecked Sendable {
             p.waitUntilExit()
         }
 
-        // Wine processes run with their Windows path as the process name (e.g. "Z:\Volumes\...\WoW.exe").
-        // pkill -f matches against the full argument string, so matching ".exe" catches them all.
-        pkill(["-9", "-f", ".exe"])
+        // Kill residual wine processes. Match "wine" in the command line (covers wineloader,
+        // wineserver, and the CrossOver wine binary) rather than the broad ".exe" pattern,
+        // which would also kill unrelated Windows binaries running under Wine (e.g. VeraCrypt).
+        pkill(["-9", "-f", "wine"])
 
-        // Kill wineserver and wineloader2 by path
+        // Kill wineserver and wineloader2 by path (redundant safety net)
         let resolvedCrossOverPath = crossOverPath ?? "/Applications/CrossOver.app"
         let base = resolvedCrossOverPath + "/Contents/SharedSupport/CrossOver/CrossOver-Hosted Application"
         for binary in ["wineserver", "wineloader", "wineloader2"] {
