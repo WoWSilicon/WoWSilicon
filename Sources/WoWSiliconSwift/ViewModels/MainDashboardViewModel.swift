@@ -347,7 +347,7 @@ final class MainDashboardViewModel: ObservableObject {
 
     func launchGame() {
         guard canLaunch, let currentVersion = versionManager.currentVersion else {
-            patchFeedback = PatchFeedback(title: "Cannot Launch", message: "Ensure the game path is set, Wine is installed, and both patches are applied.", isError: true)
+            patchFeedback = PatchFeedback(title: "Cannot Launch", message: "Ensure the game path is set and the game patch is applied.", isError: true)
             return
         }
 
@@ -406,7 +406,6 @@ final class MainDashboardViewModel: ObservableObject {
                 DispatchQueue.main.async {
                     self.pendingVanillaTweaksLaunch = false
                     self.isApplyingVanillaTweaks = false
-                    self.refreshSnapshot()
                     self.isGameOperationInProgress = false
                     self.launchGame()
                 }
@@ -447,7 +446,6 @@ final class MainDashboardViewModel: ObservableObject {
                 
                 DispatchQueue.main.async {
                     self.isApplyingVanillaTweaks = false
-                    self.refreshSnapshot()
                     self.isGameOperationInProgress = false
                     self.versionMismatchData = nil
                     self.launchGame()

@@ -26,7 +26,7 @@ enum LaunchServiceError: LocalizedError {
         case .executableMissing(let path):
             return "Game executable not found at \(path). Please verify your game installation."
         case .vanillaTweaksMissing:
-            return "Vanilla Tweaks is enabled but WoW-tweaked.exe was not found. Disable the option or run the tweaks patch first."
+            return "Vanilla Tweaks is enabled but WoW_tweaked.exe was not found. WoWSilicon can create it automatically before launching."
         case .patchNotApplied:
             return "Patches no longer appear to be applied. Re-run the patching steps before launching."
         case .processLaunchFailed(let reason):
@@ -381,8 +381,12 @@ final class LaunchService: @unchecked Sendable {
             return nil
         }
         
-        let baseVersion = BinaryVersionReader.readWoWVersion(from: wowURL) ?? "Unknown"
-        let tweakedVersion = BinaryVersionReader.readWoWVersion(from: tweakedURL) ?? "Unknown"
+        guard let baseVersion = BinaryVersionReader.readWoWVersion(from: wowURL),
+              !baseVersion.isEmpty,
+              let tweakedVersion = BinaryVersionReader.readWoWVersion(from: tweakedURL),
+              !tweakedVersion.isEmpty else {
+            return nil
+        }
         
         if baseVersion != tweakedVersion {
             return (baseVersion, tweakedVersion)
