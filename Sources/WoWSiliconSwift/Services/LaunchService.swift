@@ -599,6 +599,13 @@ final class LaunchService: @unchecked Sendable {
         // which would also kill unrelated Windows binaries running under Wine (e.g. VeraCrypt).
         pkill(["-9", "-f", "wine"])
 
+        // Wine's Windows system services (explorer, rpcss, services, svchost, plugplay, ...)
+        // run with argv like `C:\windows\system32\rpcss.exe` containing no "wine" text, so the
+        // pattern above misses them. Match the C:\windows prefix (double-escaped for pkill's
+        // ERE: `\\` = literal backslash). Apps installed elsewhere under Wine (e.g. VeraCrypt
+        // in Program Files) are left alone.
+        pkill(["-9", "-f", "C:\\\\windows"])
+
         // Kill wineserver and wineloader2 by path (redundant safety net)
         let resolvedCrossOverPath = crossOverPath ?? "/Applications/CrossOver.app"
         let base = resolvedCrossOverPath + "/Contents/SharedSupport/CrossOver/CrossOver-Hosted Application"

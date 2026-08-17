@@ -44,7 +44,11 @@ struct WoWSiliconSwiftApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        .terminateNow
+        // Clean up residual wine processes left behind by game sessions (winedevice,
+        // wineserver, Synaptics watchdog, etc.). Doing this when the app quits avoids
+        // killing the game while it is running and avoids racing with a new launch.
+        LaunchService.forceQuitWine(crossOverPath: nil)
+        return .terminateNow
     }
 }
 
