@@ -177,7 +177,21 @@ final class LaunchService: @unchecked Sendable {
         // fast; without one it hits a TCP timeout (~60s), making the game appear to hang when
         // closing its window. Inject the macOS system proxy settings unless the user disabled it.
         if configuration.version.settings.useSystemProxy {
-            let systemProxy = Self.systemProxyEnvironment()
+            var systemProxy = Self.systemProxyEnvironment()
+            // Merge any user-configured NO_PROXY entries (comma-separated list,
+            // e.g. a private-server host on the LAN) with the default localhost ones.
+            let customNoProxy = configuration.version.settings.noProxyList
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if !customNoProxy.isEmpty {
+                let existing = systemProxy["NO_PROXY"] ?? ""
+                let combined = ([existing] + customNoProxy)
+                    .filter { !$0.isEmpty }
+                    .joined(separator: ",")
+                systemProxy["NO_PROXY"] = combined
+                systemProxy["no_proxy"] = combined
+            }
             for (key, value) in systemProxy where env[key] == nil {
                 env[key] = value
             }
@@ -547,9 +561,10 @@ final class LaunchService: @unchecked Sendable {
             result["ALL_PROXY"] = all
             result["all_proxy"] = all
         }
-        // Keep local/server traffic off the proxy.
-        result["NO_PROXY"] = "127.0.0.1,localhost,10.211.55.6"
-        result["no_proxy"] = "127.0.0.1,localhost,10.211.55.6"
+        // Keep local traffic off the proxy. Users can add more entries (e.g. a LAN
+        // private-server host) via the "No Proxy" option.
+        result["NO_PROXY"] = "127.0.0.1,localhost"
+        result["no_proxy"] = "127.0.0.1,localhost"
         return result
     }
 

@@ -90,6 +90,9 @@ struct OptionsView: View {
                 "Use System Proxy (fixes slow exit)",
                 binding: viewModel.boolBinding(\.useSystemProxy)
             )
+            if viewModel.currentVersion?.settings.useSystemProxy ?? false {
+                noProxyListField
+            }
             if viewModel.isVanillaTweaksSupported {
                 toggleRow(
                     "Enable vanilla-tweaks",
@@ -105,6 +108,18 @@ struct OptionsView: View {
                 UpdaterService.shared.checkForUpdates()
             }
             .buttonStyle(.bordered)
+        }
+    }
+
+    private var noProxyListField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("No Proxy (comma-separated)")
+                .font(.headline)
+            TextField("e.g. 10.211.55.6,192.168.1.1", text: viewModel.stringBinding(\.noProxyList))
+                .textFieldStyle(.roundedBorder)
+            Text("Hosts that should bypass the proxy, e.g. your private-server host on the LAN.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
