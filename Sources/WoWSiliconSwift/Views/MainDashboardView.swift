@@ -9,6 +9,7 @@ struct MainDashboardView: View {
     @State private var patchAlertMessage = ""
     @State private var vanillaTweaksAlert = false
     @State private var versionMismatchAlert = false
+    @State private var existingWineAlert = false
     @State private var troubleshootingViewModel: TroubleshootingViewModel?
     @State private var addonManagerViewModel: AddonManagerViewModel?
     @State private var modManagerViewModel: ModManagerViewModel?
@@ -86,6 +87,8 @@ struct MainDashboardView: View {
                     onPlay: viewModel.launchGame,
                     canPlay: viewModel.canLaunch,
                     isBusy: viewModel.isGameOperationInProgress
+                        || viewModel.isForceQuittingWine
+                        || viewModel.isCheckingWineProcesses
                 )
                 .padding(.horizontal, 32)
                 .padding(.bottom, 24)
@@ -166,6 +169,21 @@ struct MainDashboardView: View {
                 Text("Your tweaked executable is out of sync with WoW.exe. Would you like to re-generate it?")
             }
         }
+        .alert("Wine Is Already Running", isPresented: $existingWineAlert) {
+            Button("Cancel", role: .cancel) {
+                viewModel.handleExistingWineBeforeLaunch(cleanUp: nil)
+            }
+            Button("Launch Another") {
+                viewModel.handleExistingWineBeforeLaunch(cleanUp: false)
+            }
+            Button("Close and Launch", role: .destructive) {
+                viewModel.handleExistingWineBeforeLaunch(cleanUp: true)
+            }
+        } message: {
+            let count = viewModel.wineProcessCount
+            let noun = count == 1 ? "process is" : "processes are"
+            Text("\(count) Wine-related \(noun) already running. You can close the existing Wine session first or launch another game instance.")
+        }
         .onChange(of: viewModel.patchFeedback) { _, feedback in
             guard let feedback else { return }
             patchAlertTitle = feedback.title
@@ -178,6 +196,9 @@ struct MainDashboardView: View {
         }
         .onChange(of: viewModel.shouldShowVersionMismatchPrompt) { _, shouldShow in
             versionMismatchAlert = shouldShow
+        }
+        .onChange(of: viewModel.shouldShowExistingWinePrompt) { _, shouldShow in
+            existingWineAlert = shouldShow
         }
         .sheet(isPresented: Binding.constant(viewModel.isApplyingVanillaTweaks)) {
             VanillaTweaksLoadingView()

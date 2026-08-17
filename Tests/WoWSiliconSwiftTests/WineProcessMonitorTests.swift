@@ -31,6 +31,19 @@ final class WineProcessMonitorTests: XCTestCase {
         XCTAssertEqual(result, [201, 202, 203])
     }
 
+    func testRecognizesWineSystemHelpersWithBasenameOnlyCommands() {
+        let processList = """
+          211 start.exe /exec
+          212 services.exe
+          213 winedevice.exe
+          214 explorer.exe /desktop
+        """
+
+        let result = WineProcessMonitor.processIDs(in: processList, runtimeRoot: nil)
+
+        XCTAssertEqual(result, [211, 212, 213, 214])
+    }
+
     func testIgnoresUnrelatedProcessesAndExeArguments() {
         let processList = """
           301 /Applications/VeraCrypt.app/Contents/MacOS/VeraCrypt

@@ -33,10 +33,7 @@ enum RetinaModeService {
     }
 
     static func isRetinaModeEnabled() -> Bool {
-        if let accurate = isRetinaModeEnabledAccurately() {
-            return accurate
-        }
-        return isRetinaModeEnabledFast()
+        isRetinaModeEnabledFast()
     }
 
     static func isRetinaModeEnabledFast() -> Bool {
@@ -64,24 +61,6 @@ enum RetinaModeService {
         }
 
         return lastValue == "Y"
-    }
-
-    private static func isRetinaModeEnabledAccurately() -> Bool? {
-        guard let wineExecutable = WineRegistrySupport.wineExecutablePath() else { return nil }
-
-        let prefixURL = WineRegistrySupport.winePrefixURL()
-        guard let result = try? ProcessRunner.run(
-            executablePath: wineExecutable,
-            arguments: ["reg", "query", WineRegistrySupport.macDriverRegistryKey, "/v", "RetinaMode"],
-            environment: WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable),
-            timeout: 10
-        ) else {
-            return nil
-        }
-        guard result.exitCode == 0 else { return false }
-
-        let output = result.stdout
-        return output.contains("RetinaMode") && output.contains("Y")
     }
 
     private static func runBatch(prefixURL: URL, wineExecutable: String, enabled: Bool) throws {

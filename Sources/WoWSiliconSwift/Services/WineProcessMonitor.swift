@@ -11,8 +11,39 @@ enum WineProcessMonitor {
         "wineloader2"
     ]
 
+    private static let wineWindowsExecutables: Set<String> = [
+        "explorer.exe",
+        "plugplay.exe",
+        "rpcss.exe",
+        "services.exe",
+        "start.exe",
+        "svchost.exe",
+        "winedevice.exe",
+        "wineboot.exe"
+    ]
+
     static func currentProcessCount() -> Int? {
         currentProcessIDs()?.count
+    }
+
+    static func persistentProcessCount(confirmAfter delay: TimeInterval = 0.75) -> Int? {
+        guard let initialCount = currentProcessCount() else { return nil }
+        guard initialCount > 0 else { return 0 }
+
+        Thread.sleep(forTimeInterval: delay)
+        return currentProcessCount()
+    }
+
+    static func waitForProcessExit(timeout: TimeInterval = 3) -> Int? {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while true {
+            guard let processCount = currentProcessCount() else { return nil }
+            if processCount == 0 || Date() >= deadline {
+                return processCount
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
     }
 
     static func currentProcessIDs() -> Set<Int32>? {
@@ -70,6 +101,9 @@ enum WineProcessMonitor {
                 .lastPathComponent
                 .lowercased()
             if wineHostExecutables.contains(executableName) {
+                return true
+            }
+            if wineWindowsExecutables.contains(executableName) {
                 return true
             }
         }

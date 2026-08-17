@@ -24,8 +24,10 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var isLauncherLoading: Bool = false
     @Published private(set) var wineProcessCount: Int = 0
     @Published private(set) var isForceQuittingWine: Bool = false
+    @Published private(set) var isCheckingWineProcesses: Bool = false
     @Published private(set) var shouldShowVanillaTweaksPrompt: Bool = false
     @Published private(set) var shouldShowVersionMismatchPrompt: Bool = false
+    @Published private(set) var shouldShowExistingWinePrompt: Bool = false
     @Published private(set) var versionMismatchData: (base: String, tweaked: String)?
     @Published var shouldShowMigrationPrompt: Bool = false
     @Published var shouldShowTelemetryConsentPrompt: Bool = false
@@ -51,6 +53,7 @@ final class MainDashboardViewModel: ObservableObject {
     private var versionManager: VersionManager
     private var userPrefs: UserPrefs
     private var pendingVanillaTweaksLaunch = false
+    private var pendingWineLaunchVersion: GameVersion?
     private var optionsSessionInitialVanillaTweaksParameters: String?
     private var optionsSessionInitialVersionID: String?
     private var hasActiveOptionsSession = false
@@ -241,17 +244,24 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     func forceQuitWine() {
+        forceQuitWine(launchAfter: nil)
+    }
+
+    private func forceQuitWine(launchAfter version: GameVersion?) {
         guard !isForceQuittingWine else { return }
         isForceQuittingWine = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             LaunchService.forceQuitWine()
-            let remainingProcessCount = WineProcessMonitor.currentProcessCount()
+            let remainingProcessCount = WineProcessMonitor.waitForProcessExit()
             DispatchQueue.main.async {
                 self?.isForceQuittingWine = false
                 if let remainingProcessCount {
                     self?.wineProcessCount = remainingProcessCount
                 }
                 self?.refreshSnapshot()
+                if let version {
+                    self?.continueLaunch(version)
+                }
             }
         }
     }
@@ -259,10 +269,10 @@ final class MainDashboardViewModel: ObservableObject {
     func monitorWineProcesses() async {
         while !Task.isCancelled {
             let processCount = await Task.detached(priority: .utility) {
-                WineProcessMonitor.currentProcessCount()
+                WineProcessMonitor.persistentProcessCount()
             }.value
 
-            if let processCount {
+            if !isForceQuittingWine, let processCount {
                 wineProcessCount = processCount
             }
 
@@ -379,8 +389,46 @@ final class MainDashboardViewModel: ObservableObject {
             patchFeedback = PatchFeedback(title: "Cannot Launch", message: "Ensure the game path is set and the game patch is applied.", isError: true)
             return
         }
+        guard !isCheckingWineProcesses else { return }
 
         patchFeedback = nil
+        isCheckingWineProcesses = true
+
+        Task { [weak self] in
+            let liveProcessCount = await Task.detached(priority: .userInitiated) {
+                WineProcessMonitor.persistentProcessCount()
+            }.value
+
+            guard let self else { return }
+            self.isCheckingWineProcesses = false
+
+            if let liveProcessCount {
+                self.wineProcessCount = liveProcessCount
+            }
+
+            if let liveProcessCount, liveProcessCount > 0 {
+                self.pendingWineLaunchVersion = currentVersion
+                self.shouldShowExistingWinePrompt = true
+            } else {
+                self.continueLaunch(currentVersion)
+            }
+        }
+    }
+
+    func handleExistingWineBeforeLaunch(cleanUp: Bool?) {
+        shouldShowExistingWinePrompt = false
+        guard let pendingVersion = pendingWineLaunchVersion else { return }
+        pendingWineLaunchVersion = nil
+
+        guard let cleanUp else { return }
+        if cleanUp {
+            forceQuitWine(launchAfter: pendingVersion)
+        } else {
+            continueLaunch(pendingVersion)
+        }
+    }
+
+    private func continueLaunch(_ currentVersion: GameVersion) {
 
         // Check for version mismatch if using vanilla tweaks
         if currentVersion.settings.enableVanillaTweaks {

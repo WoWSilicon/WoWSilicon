@@ -494,11 +494,18 @@ final class LaunchService: @unchecked Sendable {
     // MARK: - Force quit
 
     static func forceQuitWine() {
-        guard let processIDs = WineProcessMonitor.currentProcessIDs() else { return }
         let currentProcessID = ProcessInfo.processInfo.processIdentifier
 
-        for processID in processIDs where processID != currentProcessID {
-            kill(processID, SIGKILL)
+        // A Wine helper can create another child while the session is being torn down.
+        // Rescan briefly so the button also catches that final helper process.
+        for pass in 0..<3 {
+            guard let processIDs = WineProcessMonitor.currentProcessIDs() else { return }
+            for processID in processIDs where processID != currentProcessID {
+                kill(processID, SIGKILL)
+            }
+            if pass < 2 {
+                usleep(250_000)
+            }
         }
     }
 }
