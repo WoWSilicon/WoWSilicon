@@ -27,6 +27,9 @@ jobs:
           sw_vers
           xcodebuild -version
 
+      - name: Restore and validate Wine runtime
+        run: tools/wine-runtime/restore.sh --runtime "$GITHUB_WORKSPACE/.wine-runtime"
+
       - name: Resolve version
         id: version
         shell: bash
