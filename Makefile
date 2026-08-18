@@ -25,7 +25,7 @@ SWIFT_BUILD := $(SWIFT_ENV) swift build --arch arm64 --disable-sandbox --build-p
 RESOURCE_BUNDLE := $(BUILD_DIR)/arm64-apple-macosx/release/WoWSilicon-swift_WoWSiliconSwift.bundle
 WINE_RUNTIME_DIR ?= $(CURDIR)/.wine-runtime
 
-.PHONY: all build debug run bundle dmg appcast clean app_icon validate_wine_runtime update-mtld3d update-x87sidecar
+.PHONY: all build debug run bundle dmg appcast clean app_icon validate_wine_runtime package_wine_runtime update-mtld3d update-x87sidecar
 
 all: bundle
 
@@ -48,6 +48,9 @@ run: bundle
 validate_wine_runtime:
 	@test -d "$(WINE_RUNTIME_DIR)" || (echo "Wine runtime not found at $(WINE_RUNTIME_DIR)" >&2; exit 1)
 	@tools/wine-runtime/validate.sh --runtime "$(WINE_RUNTIME_DIR)"
+
+package_wine_runtime:
+	@tools/wine-runtime/package.sh --runtime "$(WINE_RUNTIME_DIR)"
 
 update-mtld3d:
 	@tools/wine-runtime/update-mtld3d.sh $(if $(TAG),--tag $(TAG),)
