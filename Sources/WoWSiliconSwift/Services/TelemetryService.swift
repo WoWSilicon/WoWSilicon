@@ -4,15 +4,17 @@ struct TelemetryEventContext: Sendable {
     let appVersion: String
     let wowVersion: String?
     let renderer: String
+    let x87Translation: String
     let macOSVersion: String
     let realmlist: String?
 
     init(version: GameVersion?) {
         appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? appVersionFallback
-        wowVersion = version?.wowVersion
-        renderer = "d9vk"
+        wowVersion = version?.isWorldOfWarcraft == true ? version?.wowVersion : nil
+        renderer = version?.settings.graphicsSettings.backend.rawValue ?? GraphicsBackend.d9vk.rawValue
+        x87Translation = version?.settings.x87Backend.rawValue ?? X87Backend.rosettaX87.rawValue
         macOSVersion = TelemetryEventContext.makeMacOSVersion()
-        if let gamePath = version?.gamePath {
+        if version?.supportsRealmlist == true, let gamePath = version?.gamePath {
             realmlist = RealmlistService.currentRealmValue(gamePath: gamePath)
         } else {
             realmlist = nil
@@ -86,6 +88,7 @@ final class TelemetryService: @unchecked Sendable {
                         appVersion: context.appVersion,
                         wowVersion: context.wowVersion,
                         renderer: context.renderer,
+                        x87Translation: context.x87Translation,
                         macOSVersion: context.macOSVersion,
                         realmlist: context.realmlist
                     )
@@ -191,6 +194,7 @@ private struct TelemetryPayload: Encodable, Sendable {
     let appVersion: String
     let wowVersion: String?
     let renderer: String
+    let x87Translation: String
     let macOSVersion: String
     let realmlist: String?
 
@@ -201,6 +205,7 @@ private struct TelemetryPayload: Encodable, Sendable {
         case appVersion = "app_version"
         case wowVersion = "wow_version"
         case renderer
+        case x87Translation = "x87_translation"
         case macOSVersion = "macos_version"
         case realmlist
     }

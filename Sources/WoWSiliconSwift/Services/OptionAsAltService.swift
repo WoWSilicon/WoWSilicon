@@ -8,7 +8,7 @@ enum OptionAsAltServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .wineMissing:
-            return "CrossOver wineloader not found. Please ensure you have applied the CrossOver patch."
+            return "Bundled Wine executable not found. Reinstall WoWSilicon and try again."
         case .commandFailed(let output):
             return output.isEmpty ? "Failed to update Wine registry." : output
         case .registryWriteFailed(let reason):
@@ -21,8 +21,8 @@ enum OptionAsAltService {
     private static let leftOptionLine = #""LeftOptionIsAlt"="Y""#
     private static let rightOptionLine = #""RightOptionIsAlt"="Y""#
 
-    static func setOptionAsAlt(enabled: Bool, crossOverPath: String? = nil) throws {
-        guard let wineExecutable = WineRegistrySupport.wineloaderPath(from: crossOverPath) else {
+    static func setOptionAsAlt(enabled: Bool) throws {
+        guard let wineExecutable = WineRegistrySupport.wineExecutablePath() else {
             throw OptionAsAltServiceError.wineMissing
         }
 
@@ -57,11 +57,8 @@ enum OptionAsAltService {
         }
     }
 
-    static func isOptionAsAltEnabled(crossOverPath: String? = nil) -> Bool {
-        if let accurate = isOptionAsAltEnabledAccurately(crossOverPath: crossOverPath) {
-            return accurate
-        }
-        return isOptionAsAltEnabledFast()
+    static func isOptionAsAltEnabled() -> Bool {
+        isOptionAsAltEnabledFast()
     }
 
     static func isOptionAsAltEnabledFast() -> Bool {
@@ -80,36 +77,6 @@ enum OptionAsAltService {
     }
 
     // MARK: - Helpers
-    private static func isOptionAsAltEnabledAccurately(crossOverPath: String? = nil) -> Bool? {
-        guard let wineExecutable = WineRegistrySupport.wineloaderPath(from: crossOverPath) else {
-            return nil
-        }
-
-        let prefixURL = WineRegistrySupport.winePrefixURL()
-        let left = queryRegistryValue(prefixURL: prefixURL, wineExecutable: wineExecutable, valueName: "LeftOptionIsAlt")
-        let right = queryRegistryValue(prefixURL: prefixURL, wineExecutable: wineExecutable, valueName: "RightOptionIsAlt")
-
-        return left && right
-    }
-
-    private static func queryRegistryValue(prefixURL: URL, wineExecutable: String, valueName: String) -> Bool {
-        guard let result = try? ProcessRunner.run(
-            executablePath: wineExecutable,
-            arguments: ["reg", "query", WineRegistrySupport.macDriverRegistryKey, "/v", valueName],
-            environment: WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable),
-            timeout: 10
-        ) else {
-            return false
-        }
-
-        guard result.exitCode == 0 else {
-            return false
-        }
-
-        let output = result.stdout
-        return output.contains(valueName) && output.contains("Y")
-    }
-
     private static func runBatch(prefixURL: URL, wineExecutable: String, enabled: Bool) throws {
         let batchContent = makeBatchScript(enable: enabled)
         let batchURL = FileManager.default.temporaryDirectory.appendingPathComponent(enabled ? "wine_registry_add.bat" : "wine_registry_delete.bat")

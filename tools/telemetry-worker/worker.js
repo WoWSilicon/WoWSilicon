@@ -216,6 +216,7 @@ function normalizedDimensions(input) {
     app_version: sanitizeText(input.app_version, 32),
     wow_version: sanitizeText(input.wow_version, 32),
     renderer: sanitizeText(input.renderer || "d9vk", 32),
+    x87_translation: sanitizeEnum(input.x87_translation, ["disabled", "rosettax87", "x87sidecar"]),
     macos_version: sanitizeText(input.macos_version, 32),
     realmlist: sanitizeRealm(input.realmlist),
   };

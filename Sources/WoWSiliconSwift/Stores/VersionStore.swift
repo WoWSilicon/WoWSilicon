@@ -140,13 +140,6 @@ struct VersionStore {
                     }
                 }
 
-                if let rawCrossOverPath = dict["crossover_path"] as? String {
-                    let trimmed = rawCrossOverPath.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty {
-                        version.crossOverPath = trimmed
-                    }
-                }
-
                 if let settings = dict["settings"] as? [String: Any] {
                     if let value = settings["environment_variables"] as? String {
                         version.settings.environmentVariables = value
@@ -211,11 +204,6 @@ struct VersionStore {
             if target.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                !legacyVersion.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 target.gamePath = legacyVersion.gamePath
-            }
-
-            if target.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-               !legacyVersion.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                target.crossOverPath = legacyVersion.crossOverPath
             }
 
             // Merge settings (legacy values take precedence if set)

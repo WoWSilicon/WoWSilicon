@@ -1,0 +1,12 @@
+diff --git a/dlls/winemac.drv/macdrv_main.c b/dlls/winemac.drv/macdrv_main.c
+index 81c015b4e0a..c73907853de 100644
+--- a/dlls/winemac.drv/macdrv_main.c
++++ b/dlls/winemac.drv/macdrv_main.c
+@@ -709,6 +709,6 @@ static struct dxmt_macdrv_win_data *my_get_win_data(HWND hwnd)
+      * get_win_data() -> create_metal_device() -> create_metal_view() -> get_metal_layer() -> release_win_data()
+      */
+-    client_surface = macdrv_CreateClientSurface(hwnd, 0);
++    client_surface = impl_from_client_surface(macdrv_CreateClientSurface(hwnd, 0));
+ 
+     /* get_win_data() needs to happen after client_surface creation to avoid deadlocks */
+     data = get_win_data(hwnd);

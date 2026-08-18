@@ -8,7 +8,7 @@ enum RetinaModeServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .wineMissing:
-            return "CrossOver wineloader not found. Please ensure you have applied the CrossOver patch."
+            return "Bundled Wine executable not found. Reinstall WoWSilicon and try again."
         case .commandFailed(let output):
             return output.isEmpty ? "Failed to update Wine registry." : output
         case .registryWriteFailed(let reason):
@@ -20,8 +20,8 @@ enum RetinaModeServiceError: LocalizedError {
 enum RetinaModeService {
     private static let retinaLineY = #""RetinaMode"="Y""#
 
-    static func setRetinaMode(enabled: Bool, crossOverPath: String? = nil) throws {
-        guard let wineExecutable = WineRegistrySupport.wineloaderPath(from: crossOverPath) else {
+    static func setRetinaMode(enabled: Bool) throws {
+        guard let wineExecutable = WineRegistrySupport.wineExecutablePath() else {
             throw RetinaModeServiceError.wineMissing
         }
 
@@ -32,11 +32,8 @@ enum RetinaModeService {
         try setRegistryValueFast(enabled: enabled)
     }
 
-    static func isRetinaModeEnabled(crossOverPath: String? = nil) -> Bool {
-        if let accurate = isRetinaModeEnabledAccurately(crossOverPath: crossOverPath) {
-            return accurate
-        }
-        return isRetinaModeEnabledFast()
+    static func isRetinaModeEnabled() -> Bool {
+        isRetinaModeEnabledFast()
     }
 
     static func isRetinaModeEnabledFast() -> Bool {
@@ -64,24 +61,6 @@ enum RetinaModeService {
         }
 
         return lastValue == "Y"
-    }
-
-    private static func isRetinaModeEnabledAccurately(crossOverPath: String? = nil) -> Bool? {
-        guard let wineExecutable = WineRegistrySupport.wineloaderPath(from: crossOverPath) else { return nil }
-
-        let prefixURL = WineRegistrySupport.winePrefixURL()
-        guard let result = try? ProcessRunner.run(
-            executablePath: wineExecutable,
-            arguments: ["reg", "query", WineRegistrySupport.macDriverRegistryKey, "/v", "RetinaMode"],
-            environment: WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable),
-            timeout: 10
-        ) else {
-            return nil
-        }
-        guard result.exitCode == 0 else { return false }
-
-        let output = result.stdout
-        return output.contains("RetinaMode") && output.contains("Y")
     }
 
     private static func runBatch(prefixURL: URL, wineExecutable: String, enabled: Bool) throws {

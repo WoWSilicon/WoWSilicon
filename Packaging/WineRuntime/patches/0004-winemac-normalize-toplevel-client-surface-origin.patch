@@ -1,0 +1,44 @@
+diff --git a/dlls/winemac.drv/window.c b/dlls/winemac.drv/window.c
+index 81d20a4..5dfce9d 100644
+--- a/dlls/winemac.drv/window.c
++++ b/dlls/winemac.drv/window.c
+@@ -1105,11 +1105,13 @@ static void macdrv_client_surface_update(struct client_surface *client)
+     struct macdrv_client_surface *surface = impl_from_client_surface(client);
+     HWND hwnd = client->hwnd, toplevel = NtUserGetAncestor(hwnd, GA_ROOT);
+     struct macdrv_win_data *data;
++    RECT rect = client->monitor_rect;
+ 
+     TRACE("%s\n", debugstr_client_surface(client));
+ 
+     if (!(data = get_win_data(toplevel))) return;
+-    macdrv_set_view_frame(surface->cocoa_view, cgrect_from_rect(client->monitor_rect));
++    if (toplevel == hwnd) OffsetRect(&rect, -rect.left, -rect.top);
++    macdrv_set_view_frame(surface->cocoa_view, cgrect_from_rect(rect));
+     macdrv_set_view_superview(surface->cocoa_view, toplevel == hwnd ? NULL : data->client_view, data->cocoa_window, NULL, NULL);
+     release_win_data(data);
+ }
+@@ -1150,16 +1152,18 @@ struct macdrv_client_surface *impl_from_client_surface(struct client_surface *cl
+ struct client_surface *macdrv_CreateClientSurface(HWND hwnd, int pixel_format)
+ {
+     struct macdrv_client_surface *surface;
++    RECT rect;
+ 
+     surface = client_surface_create(sizeof(*surface), &macdrv_client_surface_funcs, hwnd);
+-    surface->cocoa_view = macdrv_create_view(cgrect_from_rect(surface->client.monitor_rect));
++    if (!surface) return NULL;
++
++    rect = surface->client.monitor_rect;
++    if (surface->client.toplevel == hwnd) OffsetRect(&rect, -rect.left, -rect.top);
++    surface->cocoa_view = macdrv_create_view(cgrect_from_rect(rect));
+     macdrv_set_view_hidden(surface->cocoa_view, TRUE);
+ 
+-    if (surface)
+-    {
+-        macdrv_client_surface_update(&surface->client);
+-        macdrv_client_surface_present(&surface->client, 0);
+-    }
++    macdrv_client_surface_update(&surface->client);
++    macdrv_client_surface_present(&surface->client, 0);
+ 
+     return &surface->client;
+ }

@@ -9,6 +9,7 @@ struct MainDashboardView: View {
     @State private var patchAlertMessage = ""
     @State private var vanillaTweaksAlert = false
     @State private var versionMismatchAlert = false
+    @State private var existingWineAlert = false
     @State private var troubleshootingViewModel: TroubleshootingViewModel?
     @State private var addonManagerViewModel: AddonManagerViewModel?
     @State private var modManagerViewModel: ModManagerViewModel?
@@ -33,36 +34,42 @@ struct MainDashboardView: View {
                     isLauncherLoading: viewModel.isLauncherLoading,
                     onOpenLauncher: viewModel.launchThirdPartyLauncher,
                     onInstallLauncher: viewModel.installLauncher,
+                    wineProcessCount: viewModel.wineProcessCount,
+                    isForceQuittingWine: viewModel.isForceQuittingWine,
                     onForceQuitWine: viewModel.forceQuitWine
                 )
                 .padding(.top, 24)
                 .padding(.horizontal, 32)
 
                 MainContentView(
+                    gamePathLabel: viewModel.currentVersion?.isWorldOfWarcraft == false ? "Executable:" : "Game Path:",
+                    gamePatchLabel: viewModel.currentVersion?.isWorldOfWarcraft == false ? "D3D9 Patch:" : "Game Patch:",
                     gameStatus: viewModel.gamePathStatus,
-                    crossOverStatus: viewModel.crossOverPathStatus,
                     gamePatchStatus: viewModel.gamePatchStatus,
-                    crossOverPatchStatus: viewModel.crossOverPatchStatus,
                     onSelectGamePath: viewModel.selectGamePath,
-                    onSelectCrossOverPath: viewModel.selectCrossOverPath,
+                    onOpenGamePath: viewModel.openGameDirectory,
+                    canOpenGamePath: viewModel.canOpenGameDirectory,
+                    onClearGamePath: viewModel.clearGamePath,
+                    canClearGamePath: viewModel.canClearGamePath,
                     isGamePatched: viewModel.isGamePatched,
                     isGamePatchActionable: viewModel.isGamePatchActionable,
-                    isCrossOverPatched: viewModel.isCrossOverPatched,
-                    isCrossOverPatchActionable: viewModel.isCrossOverPatchActionable,
                     isGameOperationInProgress: viewModel.isGameOperationInProgress,
                     onPatchGame: viewModel.patchGame,
                     onUnpatchGame: viewModel.unpatchGame,
-                    onPatchCrossOver: viewModel.patchCrossOver,
-                    onUnpatchCrossOver: viewModel.unpatchCrossOver,
                     wantsLauncher: viewModel.currentVersionWantsLauncher,
                     launcherPathStatus: viewModel.launcherPathStatus,
-                    onSelectLauncherPath: viewModel.selectLauncherPath
+                    onSelectLauncherPath: viewModel.selectLauncherPath,
+                    onOpenLauncherPath: viewModel.openLauncherDirectory,
+                    canOpenLauncherPath: viewModel.canOpenLauncherDirectory,
+                    onClearLauncherPath: viewModel.clearLauncherPath,
+                    canClearLauncherPath: viewModel.canClearLauncherPath
                 )
                 .padding(.horizontal, 32)
                 .padding(.vertical, 24)
                 .frame(minHeight: 0, maxHeight: .infinity)
 
                 BottomBarView(
+                    supportsAddons: viewModel.supportsAddons,
                     supportsMods: viewModel.supportsMods,
                     onOptions: { showOptionsSheet = true },
                     onTroubleshooting: {
@@ -80,11 +87,16 @@ struct MainDashboardView: View {
                     onPlay: viewModel.launchGame,
                     canPlay: viewModel.canLaunch,
                     isBusy: viewModel.isGameOperationInProgress
+                        || viewModel.isForceQuittingWine
+                        || viewModel.isCheckingWineProcesses
                 )
                 .padding(.horizontal, 32)
                 .padding(.bottom, 24)
             }
 
+        }
+        .task {
+            await viewModel.monitorWineProcesses()
         }
         .sheet(isPresented: $showOptionsSheet) {
             OptionsView(
@@ -131,7 +143,7 @@ struct MainDashboardView: View {
                 viewModel.handleTelemetryConsent(accepted: true)
             }
         } message: {
-            Text("Help us show anonymous WoWSilicon usage stats, like how many people use the launcher, which WoW versions are used, macOS version, renderer, and configured realmlist server. We do not collect your IP address, username, account name, character name, file paths, or hardware identifiers.")
+            Text("Help us show anonymous WoWSilicon usage stats, like how many people use the launcher, which WoW versions are used, macOS version, renderer, x87 translation, and configured realmlist server. We do not collect your IP address, username, account name, character name, file paths, or hardware identifiers.")
         }
         .alert("Apply vanilla-tweaks?", isPresented: $vanillaTweaksAlert) {
             Button("Cancel", role: .cancel) {
@@ -157,6 +169,21 @@ struct MainDashboardView: View {
                 Text("Your tweaked executable is out of sync with WoW.exe. Would you like to re-generate it?")
             }
         }
+        .alert("Wine Is Already Running", isPresented: $existingWineAlert) {
+            Button("Cancel", role: .cancel) {
+                viewModel.handleExistingWineBeforeLaunch(cleanUp: nil)
+            }
+            Button("Launch Another") {
+                viewModel.handleExistingWineBeforeLaunch(cleanUp: false)
+            }
+            Button("Close and Launch", role: .destructive) {
+                viewModel.handleExistingWineBeforeLaunch(cleanUp: true)
+            }
+        } message: {
+            let count = viewModel.wineProcessCount
+            let noun = count == 1 ? "process is" : "processes are"
+            Text("\(count) Wine-related \(noun) already running. You can close the existing Wine session first or launch another game instance.")
+        }
         .onChange(of: viewModel.patchFeedback) { _, feedback in
             guard let feedback else { return }
             patchAlertTitle = feedback.title
@@ -169,6 +196,9 @@ struct MainDashboardView: View {
         }
         .onChange(of: viewModel.shouldShowVersionMismatchPrompt) { _, shouldShow in
             versionMismatchAlert = shouldShow
+        }
+        .onChange(of: viewModel.shouldShowExistingWinePrompt) { _, shouldShow in
+            existingWineAlert = shouldShow
         }
         .sheet(isPresented: Binding.constant(viewModel.isApplyingVanillaTweaks)) {
             VanillaTweaksLoadingView()
@@ -238,6 +268,8 @@ struct HeaderView: View {
     let isLauncherLoading: Bool
     let onOpenLauncher: () -> Void
     let onInstallLauncher: () -> Void
+    let wineProcessCount: Int
+    let isForceQuittingWine: Bool
     let onForceQuitWine: () -> Void
     @State private var showVersionPicker = false
     @State private var showAddVersionSheet = false
@@ -253,17 +285,42 @@ struct HeaderView: View {
                 Button {
                     showForceQuitConfirm = true
                 } label: {
-                    Image(systemName: "xmark.octagon.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(Color.red)
+                    HStack(spacing: 7) {
+                        if isForceQuittingWine {
+                            ProgressView()
+                                .controlSize(.mini)
+                        } else {
+                            Circle()
+                                .fill(wineProcessCount > 0 ? Color.orange : Color.secondary.opacity(0.45))
+                                .frame(width: 7, height: 7)
+                        }
+
+                        Text(wineProcessLabel)
+                            .font(.caption.weight(.semibold))
+
+                        if wineProcessCount > 0 && !isForceQuittingWine {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(Color.red)
+                        }
+                    }
+                    .foregroundStyle(wineProcessCount > 0 ? Color.primary : Color.secondary)
+                    .padding(.horizontal, 10)
+                    .frame(height: 27)
+                    .background(.thinMaterial, in: Capsule())
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(Color.primary.opacity(wineProcessCount > 0 ? 0.16 : 0.08))
+                    }
                 }
                 .buttonStyle(.plain)
-                .help("Force quit Wine session")
+                .disabled(wineProcessCount == 0 || isForceQuittingWine)
+                .help(wineProcessHelp)
                 .alert("Force Quit Wine?", isPresented: $showForceQuitConfirm) {
                     Button("Cancel", role: .cancel) { }
                     Button("Force Quit", role: .destructive) { onForceQuitWine() }
                 } message: {
-                    Text("This will immediately force quit all Wine processes and the wineserver. Useful when the game has frozen.")
+                    Text("This will immediately force quit all detected Wine processes, including any running game or other Wine application. Use it when Wine remains active after the game closes or the game has frozen.")
                 }
 
                 Button {
@@ -336,27 +393,48 @@ struct HeaderView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
         }
     }
+
+    private var wineProcessLabel: String {
+        if isForceQuittingWine {
+            return "Stopping Wine…"
+        }
+        if wineProcessCount == 0 {
+            return "Wine idle"
+        }
+        return "Wine · \(wineProcessCount)"
+    }
+
+    private var wineProcessHelp: String {
+        if wineProcessCount == 0 {
+            return "No Wine processes detected"
+        }
+        let noun = wineProcessCount == 1 ? "process is" : "processes are"
+        return "\(wineProcessCount) Wine-related \(noun) running. Click to force quit them."
+    }
 }
 
 struct MainContentView: View {
+    let gamePathLabel: String
+    let gamePatchLabel: String
     let gameStatus: StatusValue
-    let crossOverStatus: StatusValue
     let gamePatchStatus: StatusValue
-    let crossOverPatchStatus: StatusValue
     let onSelectGamePath: () -> Void
-    let onSelectCrossOverPath: () -> Void
+    let onOpenGamePath: () -> Void
+    let canOpenGamePath: Bool
+    let onClearGamePath: () -> Void
+    let canClearGamePath: Bool
     let isGamePatched: Bool
     let isGamePatchActionable: Bool
-    let isCrossOverPatched: Bool
-    let isCrossOverPatchActionable: Bool
     let isGameOperationInProgress: Bool
     let onPatchGame: () -> Void
     let onUnpatchGame: () -> Void
-    let onPatchCrossOver: () -> Void
-    let onUnpatchCrossOver: () -> Void
     let wantsLauncher: Bool
     let launcherPathStatus: StatusValue
     let onSelectLauncherPath: () -> Void
+    let onOpenLauncherPath: () -> Void
+    let canOpenLauncherPath: Bool
+    let onClearLauncherPath: () -> Void
+    let canClearLauncherPath: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -367,19 +445,21 @@ struct MainContentView: View {
                         label: "Launcher Path:",
                         status: launcherPathStatus,
                         buttonTitle: "Set/Change",
+                        onOpen: onOpenLauncherPath,
+                        canOpen: canOpenLauncherPath,
+                        onClear: onClearLauncherPath,
+                        canClear: canClearLauncherPath,
                         action: onSelectLauncherPath
                     )
                 }
                 PathRow(
-                    label: "CrossOver:",
-                    status: crossOverStatus,
-                    buttonTitle: "Set/Change",
-                    action: onSelectCrossOverPath
-                )
-                PathRow(
-                    label: "Game Path:",
+                    label: gamePathLabel,
                     status: gameStatus,
                     buttonTitle: "Set/Change",
+                    onOpen: onOpenGamePath,
+                    canOpen: canOpenGamePath,
+                    onClear: onClearGamePath,
+                    canClear: canClearGamePath,
                     action: onSelectGamePath
                 )
             }
@@ -389,21 +469,11 @@ struct MainContentView: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 PatchRow(
-                    label: "CrossOver Patch:",
-                    status: crossOverPatchStatus,
-                    primaryActionTitle: "Patch",
-                    secondaryActionTitle: "Unpatch",
-                    primaryDisabled: isGameOperationInProgress || !isCrossOverPatchActionable || isCrossOverPatched,
-                    secondaryDisabled: isGameOperationInProgress || !isCrossOverPatchActionable || !isCrossOverPatched,
-                    primaryAction: onPatchCrossOver,
-                    secondaryAction: onUnpatchCrossOver
-                )
-                PatchRow(
-                    label: "Game Patch:",
+                    label: gamePatchLabel,
                     status: gamePatchStatus,
                     primaryActionTitle: "Patch",
                     secondaryActionTitle: "Unpatch",
-                    primaryDisabled: isGameOperationInProgress || !isGamePatchActionable || isGamePatched || !isCrossOverPatched,
+                    primaryDisabled: isGameOperationInProgress || !isGamePatchActionable || isGamePatched,
                     secondaryDisabled: isGameOperationInProgress || !isGamePatchActionable || !isGamePatched,
                     primaryAction: onPatchGame,
                     secondaryAction: onUnpatchGame
@@ -451,6 +521,10 @@ struct PathRow: View {
     let label: String
     let status: StatusValue
     let buttonTitle: String
+    let onOpen: () -> Void
+    let canOpen: Bool
+    let onClear: () -> Void
+    let canClear: Bool
     let action: () -> Void
 
     var body: some View {
@@ -462,8 +536,30 @@ struct PathRow: View {
 
             Spacer(minLength: 12)
 
-            Button(buttonTitle, action: action)
+            HStack(spacing: 8) {
+                Button(action: onOpen) {
+                    Image(systemName: "folder")
+                        .frame(width: 16, height: 16)
+                }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!canOpen)
+                .help("Open in Finder")
+                .accessibilityLabel("Open in Finder")
+
+                Button(role: .destructive, action: onClear) {
+                    Image(systemName: "trash")
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!canClear)
+                .help("Clear selected path (files are not deleted)")
+                .accessibilityLabel("Clear selected path")
+
+                Button(buttonTitle, action: action)
+                    .buttonStyle(.bordered)
+            }
         }
     }
 }
@@ -501,6 +597,7 @@ struct PatchRow: View {
 }
 
 struct BottomBarView: View {
+    let supportsAddons: Bool
     let supportsMods: Bool
     let onOptions: () -> Void
     let onTroubleshooting: () -> Void
@@ -514,11 +611,8 @@ struct BottomBarView: View {
             HStack(spacing: 12) {
                 BottomActionButton(title: "Options", action: onOptions)
                 BottomActionButton(title: "Troubleshooting", action: onTroubleshooting)
-                BottomActionButton(title: "Addons", action: onAddons)
-
-                if supportsMods {
-                    BottomActionButton(title: "Mods", action: onMods)
-                }
+                BottomActionButton(title: "Addons", action: onAddons, disabled: !supportsAddons)
+                BottomActionButton(title: "Mods", action: onMods, disabled: !supportsMods)
             }
 
             Spacer(minLength: 20)
@@ -577,6 +671,7 @@ private struct AppVersionBadge: View {
 private struct BottomActionButton: View {
     let title: String
     let action: () -> Void
+    var disabled: Bool = false
 
     var body: some View {
         Button(title, action: action)
@@ -585,6 +680,7 @@ private struct BottomActionButton: View {
             .padding(.vertical, 6)
             .buttonStyle(.bordered)
             .controlSize(.large)
+            .disabled(disabled)
     }
 }
 
@@ -595,7 +691,8 @@ private struct AddVersionSheet: View {
     private let baseOptions: [(id: String, label: String)] = [
         ("vanillasilicon", "VanillaSilicon (1.12.1)"),
         ("burningsilicon", "BurningSilicon (2.4.3)"),
-        ("wrathsilicon", "WrathSilicon (3.3.5a)")
+        ("wrathsilicon", "WrathSilicon (3.3.5a)"),
+        (VersionManager.genericD3D9TemplateID, "Non-WoW game (32-bit D3D9)")
     ]
 
     @State private var customName: String = ""
@@ -626,16 +723,24 @@ private struct AddVersionSheet: View {
                     }
                 }
                 .pickerStyle(.radioGroup)
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 4) {
-                Toggle("Use third-party launcher", isOn: $useLauncher)
-                if useLauncher {
-                    Text("You can install the launcher after setting up CrossOver.")
+                if selectedBaseID == VersionManager.genericD3D9TemplateID {
+                    Text("For standalone 32-bit Direct3D 9 games. Select the game's .exe after creating the profile.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if selectedBaseID != VersionManager.genericD3D9TemplateID {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Use third-party launcher", isOn: $useLauncher)
+                    if useLauncher {
+                        Text("You can install the launcher after creating this profile.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -646,7 +751,11 @@ private struct AddVersionSheet: View {
                 Button("Add") {
                     let name = customName.trimmingCharacters(in: .whitespaces)
                     guard !name.isEmpty else { return }
-                    onAdd(name, selectedBaseID, useLauncher)
+                    onAdd(
+                        name,
+                        selectedBaseID,
+                        selectedBaseID == VersionManager.genericD3D9TemplateID ? false : useLauncher
+                    )
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(customName.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -655,6 +764,7 @@ private struct AddVersionSheet: View {
         .padding(24)
         .frame(width: 360)
         .animation(.default, value: useLauncher)
+        .animation(.default, value: selectedBaseID)
     }
 }
 

@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 @MainActor
 final class ModManagerViewModel: ObservableObject, Identifiable {
@@ -22,6 +23,25 @@ final class ModManagerViewModel: ObservableObject, Identifiable {
     init(version: GameVersion, supportsDLL: Bool) {
         self.version = version
         self.supportsDLL = supportsDLL
+    }
+
+    var canOpenModsDirectory: Bool {
+        guard let directory = modsDirectoryURL else { return false }
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
+    }
+
+    func openModsDirectory() {
+        guard canOpenModsDirectory, let directory = modsDirectoryURL else { return }
+        NSWorkspace.shared.open(directory)
+    }
+
+    private var modsDirectoryURL: URL? {
+        let path = version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+            .appendingPathComponent("mods", isDirectory: true)
     }
 
     func refresh() {

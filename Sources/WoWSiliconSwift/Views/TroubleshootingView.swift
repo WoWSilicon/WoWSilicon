@@ -3,6 +3,7 @@ import SwiftUI
 struct TroubleshootingView: View {
     @ObservedObject var viewModel: TroubleshootingViewModel
     let onClose: () -> Void
+    @State private var showingWineBottleDeletionConfirmation = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -10,7 +11,7 @@ struct TroubleshootingView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    crossoverSection
+                    wineRuntimeSection
                     actionsSection
                     debugLogSection
                 }
@@ -21,6 +22,12 @@ struct TroubleshootingView: View {
         .onAppear { viewModel.refresh() }
         .alert(item: $viewModel.alert) { alert in
             Alert(title: Text("Troubleshooting"), message: Text(alert.message), dismissButton: .default(Text("OK")))
+        }
+        .alert("Delete default Wine bottle?", isPresented: $showingWineBottleDeletionConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete Bottle", role: .destructive, action: viewModel.deleteDefaultWineBottle)
+        } message: {
+            Text("This permanently deletes ~/.wine. Any Windows programs installed in this bottle will be deleted, including third-party launchers. This cannot be undone.")
         }
     }
 
@@ -40,17 +47,12 @@ struct TroubleshootingView: View {
         }
     }
 
-    private var crossoverSection: some View {
+    private var wineRuntimeSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("CrossOver").font(.headline)
+            Text("Bundled Wine").font(.headline)
             HStack {
-                Text("Version: \(viewModel.crossoverVersion)")
+                Text("Runtime: \(viewModel.wineRuntimeStatus)")
                 Spacer()
-                if viewModel.crossoverRecommended {
-                    Text("Recommended").foregroundColor(.green)
-                } else {
-                    Text("Update recommended").foregroundColor(.orange)
-                }
             }
         }
     }
@@ -60,7 +62,9 @@ struct TroubleshootingView: View {
             Text("Actions").font(.headline)
             Button("Delete WDB Cache", action: viewModel.deleteWDB)
                 .buttonStyle(.bordered)
-            Button("Delete Wine Prefixes", action: viewModel.deleteWinePrefixes)
+            Button("Delete default Wine bottle", role: .destructive) {
+                showingWineBottleDeletionConfirmation = true
+            }
                 .buttonStyle(.bordered)
             Button("Delete vanilla-tweaks", action: viewModel.deleteVanillaTweaks)
                 .buttonStyle(.bordered)

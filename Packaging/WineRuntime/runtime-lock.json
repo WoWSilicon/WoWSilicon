@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "runtimeRevision": 4,
+  "wine": {
+    "version": "11.13",
+    "repository": "https://github.com/WineAndAqua/wine.git",
+    "branch": "wine-11.13-macos",
+    "commit": "37540b5d94ac1c86e2599ef55d7f3a15e3237ce8"
+  },
+  "mtld3d": {
+    "version": "v0.6.0"
+  },
+  "overlays": {
+    "winerosetta": [],
+    "mtld3d": [
+      {
+        "source": "mtld3d.conf",
+        "destination": "lib/mtld3d.conf",
+        "sha256": "c25dee8867133ab500daeb439edc6f6c0e6d32f5339d08b3dd014afb582cdc33"
+      },
+      {
+        "source": "wine/i386-windows/d3d9.dll",
+        "destination": "lib/wine/i386-windows/d3d9.dll",
+        "sha256": "1929cd3d5c592a7b672111c41ba28c82e64b8976b4096914c9b9f611e579231b"
+      },
+      {
+        "source": "wine/i386-windows/mtld3d.dll",
+        "destination": "lib/wine/i386-windows/mtld3d.dll",
+        "sha256": "c87683fc5bcd7c8af0c44c78879fa667ec3e65f4b9bf977e4f9ecfba2eb11f66"
+      },
+      {
+        "source": "wine/x86_64-unix/mtld3d.so",
+        "destination": "lib/wine/x86_64-unix/mtld3d.so",
+        "sha256": "0b5a52e61e7ee8c82a03acd1e92d3a5ed9a034970850c4240909add116969f60"
+      }
+    ],
+    "external": [
+      {
+        "source": "libMoltenVK.dylib",
+        "destination": "lib/external/libMoltenVK.dylib",
+        "sha256": "db1a839363fd92d0ca002b2c229469710fff105583594f03066e30a9b21926b7"
+      },
+      {
+        "source": "libSDL2-2.0.0.dylib",
+        "destination": "lib/external/libSDL2-2.0.0.dylib",
+        "sha256": "443e677dccb485b427b5a2252461ca81aebaaf00f6ef3594b32acff5982913f4"
+      },
+      {
+        "source": "libfreetype.6.dylib",
+        "destination": "lib/external/libfreetype.6.dylib",
+        "sha256": "2980d8899432e746602f6990bc57981d747ea5180bd7dc32e7221f1b46ee627f"
+      },
+      {
+        "source": "libgmp.10.dylib",
+        "destination": "lib/external/libgmp.10.dylib",
+        "sha256": "1c996fa58eac75de4022c1a324e36c7fb3d04e39012cdaa0210185a87b0a4377"
+      },
+      {
+        "source": "libgnutls.30.dylib",
+        "destination": "lib/external/libgnutls.30.dylib",
+        "sha256": "ebf3fb20fe9ff0731c724e57710b891710d32fee521e6a52db8f2deb6e9cb2a5"
+      },
+      {
+        "source": "libhogweed.6.dylib",
+        "destination": "lib/external/libhogweed.6.dylib",
+        "sha256": "0fc8f19aea5b6a1352ead2a000a4f89f5cb4f93c3ae5c7e4a86f637a8992a327"
+      },
+      {
+        "source": "libidn2.0.dylib",
+        "destination": "lib/external/libidn2.0.dylib",
+        "sha256": "8d588802b401059cc8d64d4845ca154806f98447990c5d6c1214decb0b3deb9a"
+      },
+      {
+        "source": "libintl.8.dylib",
+        "destination": "lib/external/libintl.8.dylib",
+        "sha256": "8915ffc68ff111a56ac3c0da138823bf2fb898af09329c300447d8ecaf57efcf"
+      },
+      {
+        "source": "libnettle.8.dylib",
+        "destination": "lib/external/libnettle.8.dylib",
+        "sha256": "a34914a2829a6e7ac0aa64f4d908adc50428d6f76b997ada335b5a7f8627c703"
+      },
+      {
+        "source": "libp11-kit.0.dylib",
+        "destination": "lib/external/libp11-kit.0.dylib",
+        "sha256": "4ba447ce08b3287249c935ffbde40daf55af82c3bed5edfa5d58cf9334dc3f55"
+      },
+      {
+        "source": "libpng16.16.dylib",
+        "destination": "lib/external/libpng16.16.dylib",
+        "sha256": "130da76cce17abc7b75b73df49a3f433bb9fe731a5248305bf839ed8620b5ed2"
+      },
+      {
+        "source": "libtasn1.6.dylib",
+        "destination": "lib/external/libtasn1.6.dylib",
+        "sha256": "f4afa379a06a14277e6496a15e423220dde7422460ad928f5ec9e6e2f3826e6c"
+      },
+      {
+        "source": "libunistring.5.dylib",
+        "destination": "lib/external/libunistring.5.dylib",
+        "sha256": "1c6ad5ca707d27a1a87e0dd351898366bff69a43b4cb86e1c41d66299fc29f40"
+      }
+    ]
+  }
+}

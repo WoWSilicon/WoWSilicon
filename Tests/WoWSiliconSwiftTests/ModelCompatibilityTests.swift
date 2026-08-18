@@ -24,6 +24,8 @@ final class ModelCompatibilityTests: XCTestCase {
         XCTAssertFalse(prefs.autoDeleteWdb)
         XCTAssertEqual(prefs.environmentVariables, "A=B")
         XCTAssertEqual(prefs.vanillaTweaksParameters, "--flag")
+        XCTAssertTrue(prefs.enableRosettaX87)
+        XCTAssertEqual(prefs.x87Backend, .rosettaX87)
     }
 
     func testVersionSettingsDecodesFilesContainingRemovedSaveSudoPasswordKey() throws {
@@ -43,5 +45,62 @@ final class ModelCompatibilityTests: XCTestCase {
         XCTAssertTrue(settings.showTerminalNormally)
         XCTAssertEqual(settings.cursorSizeMultiplier, 4)
         XCTAssertTrue(settings.enableLibSiliconPatch)
+        XCTAssertTrue(settings.enableRosettaX87)
+        XCTAssertEqual(settings.x87Backend, .rosettaX87)
+    }
+
+    func testLegacyDisabledRosettaMigratesToDisabledBackend() throws {
+        let prefs = try JSONDecoder().decode(
+            UserPrefs.self,
+            from: Data(#"{"enable_rosetta_x87":false}"#.utf8)
+        )
+        let settings = try JSONDecoder().decode(
+            VersionSettings.self,
+            from: Data(#"{"enableRosettaX87":false}"#.utf8)
+        )
+
+        XCTAssertEqual(prefs.x87Backend, .disabled)
+        XCTAssertEqual(settings.x87Backend, .disabled)
+    }
+
+    func testX87SidecarBackendRoundTrips() throws {
+        let prefs = UserPrefs(x87Backend: .x87Sidecar)
+        let settings = VersionSettings(x87Backend: .x87Sidecar)
+
+        XCTAssertEqual(
+            try JSONDecoder().decode(UserPrefs.self, from: JSONEncoder().encode(prefs)).x87Backend,
+            .x87Sidecar
+        )
+        XCTAssertEqual(
+            try JSONDecoder().decode(VersionSettings.self, from: JSONEncoder().encode(settings)).x87Backend,
+            .x87Sidecar
+        )
+    }
+
+    func testGameVersionExecutableAndDirectoryPathResolution() {
+        var version = GameVersion(
+            id: "test",
+            displayName: "Test",
+            wowVersion: "1.12.1",
+            gamePath: "/Games/WorldOfWarcraft/WoW.exe",
+            executableName: "WoW.exe",
+            supportsVanillaTweaks: true,
+            supportsDLLLoading: true,
+            usesRosettaPatching: true,
+            usesDivxDecoderPatch: false
+        )
+
+        XCTAssertEqual(version.gameDirectoryPath, "/Games/WorldOfWarcraft")
+        XCTAssertEqual(version.gameExecutablePath, "/Games/WorldOfWarcraft/WoW.exe")
+        XCTAssertEqual(version.effectiveExecutableName, "WoW.exe")
+
+        version.gamePath = "/Games/CustomWoW/Ascension.exe"
+        XCTAssertEqual(version.gameDirectoryPath, "/Games/CustomWoW")
+        XCTAssertEqual(version.gameExecutablePath, "/Games/CustomWoW/Ascension.exe")
+        XCTAssertEqual(version.effectiveExecutableName, "Ascension.exe")
+
+        version.gamePath = "/Games/LegacyFolder"
+        XCTAssertEqual(version.gameDirectoryPath, "/Games/LegacyFolder")
+        XCTAssertEqual(version.effectiveExecutableName, "WoW.exe")
     }
 }

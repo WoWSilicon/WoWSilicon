@@ -2,6 +2,46 @@ import Foundation
 
 // MARK: - Graphics settings
 
+enum GraphicsBackend: String, Codable, CaseIterable, Sendable {
+    case d9vk
+    case mtld3d
+
+    var displayName: String {
+        switch self {
+        case .d9vk: return "D9VK"
+        case .mtld3d: return "MTLD3D"
+        }
+    }
+
+    var wineDLLOverride: String {
+        switch self {
+        case .d9vk: return "d3d9=n"
+        case .mtld3d: return "d3d9=b"
+        }
+    }
+
+    var wineDLLOverrideWithBuiltinFallback: String {
+        switch self {
+        case .d9vk: return "d3d9=n,b"
+        case .mtld3d: return "d3d9=b"
+        }
+    }
+}
+
+enum X87Backend: String, Codable, CaseIterable, Sendable {
+    case disabled
+    case rosettaX87 = "rosettax87"
+    case x87Sidecar = "x87sidecar"
+
+    var displayName: String {
+        switch self {
+        case .disabled: return "Stock Rosetta"
+        case .rosettaX87: return "rosettax87 JIT"
+        case .x87Sidecar: return "x87sidecar"
+        }
+    }
+}
+
 enum WindowMode: String, Codable, CaseIterable, Sendable {
     case windowed
     case fullscreen
@@ -68,6 +108,8 @@ enum ShadowQuality: String, Codable, CaseIterable, Sendable {
 }
 
 struct GraphicsSettings: Codable, Equatable, Sendable {
+    var backend: GraphicsBackend
+    var hdrEnabled: Bool
     var windowMode: WindowMode
     var resolution: String
     var refreshRate: Int
@@ -83,6 +125,8 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
     var shadowQuality: ShadowQuality
 
     static let `default` = GraphicsSettings(
+        backend: .d9vk,
+        hdrEnabled: false,
         windowMode: .windowed,
         resolution: "",
         refreshRate: 60,
@@ -106,12 +150,14 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
     static let commonRefreshRates = [30, 60, 120, 144, 165, 240]
 
     enum CodingKeys: String, CodingKey {
-        case windowMode, resolution, refreshRate, vsync, multisampling
+        case backend, hdrEnabled, windowMode, resolution, refreshRate, vsync, multisampling
         case textureFiltering, specular, projectedTextures
         case viewDistance, groundEffectDensity, weatherDensity, particleDensity, shadowQuality
     }
 
     init(
+        backend: GraphicsBackend = .d9vk,
+        hdrEnabled: Bool = false,
         windowMode: WindowMode = .windowed,
         resolution: String = "",
         refreshRate: Int = 60,
@@ -126,6 +172,8 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
         particleDensity: Double = 1.0,
         shadowQuality: ShadowQuality = .off
     ) {
+        self.backend = backend
+        self.hdrEnabled = hdrEnabled
         self.windowMode = windowMode
         self.resolution = resolution
         self.refreshRate = refreshRate
@@ -143,6 +191,8 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        backend = try c.decodeIfPresent(GraphicsBackend.self, forKey: .backend) ?? .d9vk
+        hdrEnabled = try c.decodeIfPresent(Bool.self, forKey: .hdrEnabled) ?? false
         windowMode = try c.decodeIfPresent(WindowMode.self, forKey: .windowMode) ?? .windowed
         resolution = try c.decodeIfPresent(String.self, forKey: .resolution) ?? ""
         refreshRate = try c.decodeIfPresent(Int.self, forKey: .refreshRate) ?? 60
@@ -185,6 +235,12 @@ struct VersionSettings: Codable, Equatable, Sendable {
     var graphicsSettings: GraphicsSettings
     var enableLibSiliconPatch: Bool
     var userDisabledLibSiliconPatch: Bool
+    var x87Backend: X87Backend
+
+    var enableRosettaX87: Bool {
+        get { x87Backend != .disabled }
+        set { x87Backend = newValue ? .rosettaX87 : .disabled }
+    }
 
     init(
         enableVanillaTweaks: Bool = false,
@@ -197,7 +253,9 @@ struct VersionSettings: Codable, Equatable, Sendable {
         cursorSizeMultiplier: Int = 1,
         graphicsSettings: GraphicsSettings = GraphicsSettings(),
         enableLibSiliconPatch: Bool = false,
-        userDisabledLibSiliconPatch: Bool = false
+        userDisabledLibSiliconPatch: Bool = false,
+        enableRosettaX87: Bool = true,
+        x87Backend: X87Backend? = nil
     ) {
         self.enableVanillaTweaks = enableVanillaTweaks
         self.remapOptionAsAlt = remapOptionAsAlt
@@ -210,6 +268,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
         self.graphicsSettings = graphicsSettings
         self.enableLibSiliconPatch = enableLibSiliconPatch
         self.userDisabledLibSiliconPatch = userDisabledLibSiliconPatch
+        self.x87Backend = x87Backend ?? (enableRosettaX87 ? .rosettaX87 : .disabled)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -218,6 +277,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
         case vanillaTweaksParameters, cursorSizeMultiplier
         case graphicsSettings
         case enableLibSiliconPatch, userDisabledLibSiliconPatch
+        case x87Backend, enableRosettaX87
         // Legacy keys kept for migration only
         case reduceTerrainDistance, setMultisampleTo2x, setShadowLOD0, userDisabledShadowLOD
     }
@@ -234,6 +294,12 @@ struct VersionSettings: Codable, Equatable, Sendable {
         cursorSizeMultiplier = try container.decodeIfPresent(Int.self, forKey: .cursorSizeMultiplier) ?? 1
         enableLibSiliconPatch = try container.decodeIfPresent(Bool.self, forKey: .enableLibSiliconPatch) ?? false
         userDisabledLibSiliconPatch = try container.decodeIfPresent(Bool.self, forKey: .userDisabledLibSiliconPatch) ?? false
+        if let backend = try container.decodeIfPresent(X87Backend.self, forKey: .x87Backend) {
+            x87Backend = backend
+        } else {
+            let enabled = try container.decodeIfPresent(Bool.self, forKey: .enableRosettaX87) ?? true
+            x87Backend = enabled ? .rosettaX87 : .disabled
+        }
 
         if let gs = try container.decodeIfPresent(GraphicsSettings.self, forKey: .graphicsSettings) {
             graphicsSettings = gs
@@ -266,6 +332,8 @@ struct VersionSettings: Codable, Equatable, Sendable {
         try container.encode(graphicsSettings, forKey: .graphicsSettings)
         try container.encode(enableLibSiliconPatch, forKey: .enableLibSiliconPatch)
         try container.encode(userDisabledLibSiliconPatch, forKey: .userDisabledLibSiliconPatch)
+        try container.encode(x87Backend, forKey: .x87Backend)
+        try container.encode(enableRosettaX87, forKey: .enableRosettaX87)
     }
 
     func mergedWithDefaults(_ defaults: VersionSettings) -> VersionSettings {
@@ -283,12 +351,17 @@ enum OptimizationLevel: String, Codable, Sendable {
     case high
 }
 
+enum GameProfileKind: String, Codable, Sendable {
+    case worldOfWarcraft = "world_of_warcraft"
+    case genericD3D9 = "generic_d3d9"
+}
+
 struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     var id: String
     var displayName: String
+    var profileKind: GameProfileKind
     var wowVersion: String
     var gamePath: String
-    var crossOverPath: String
     var executableName: String
     var supportsVanillaTweaks: Bool
     var supportsDLLLoading: Bool
@@ -300,6 +373,10 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     var wantsLauncher: Bool
 
     var hasLauncher: Bool { !launcherExePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var isWorldOfWarcraft: Bool { profileKind == .worldOfWarcraft }
+    var supportsAddons: Bool { isWorldOfWarcraft }
+    var supportsRealmlist: Bool { isWorldOfWarcraft }
+    var supportsCustomGraphicsSettings: Bool { isWorldOfWarcraft }
 
     var libSiliconPatchSubdirectory: String? {
         switch wowVersion {
@@ -309,12 +386,75 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         }
     }
 
+    var gameDirectoryURL: URL? {
+        let trimmed = gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: trimmed, isDirectory: &isDir) {
+            if isDir.boolValue {
+                return URL(fileURLWithPath: trimmed, isDirectory: true)
+            } else {
+                return URL(fileURLWithPath: trimmed).deletingLastPathComponent()
+            }
+        }
+        let url = URL(fileURLWithPath: trimmed)
+        if url.pathExtension.lowercased() == "exe" {
+            return url.deletingLastPathComponent()
+        }
+        return url
+    }
+
+    var gameDirectoryPath: String? {
+        gameDirectoryURL?.path
+    }
+
+    var gameExecutableURL: URL? {
+        let trimmed = gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: trimmed, isDirectory: &isDir) {
+            if !isDir.boolValue {
+                return URL(fileURLWithPath: trimmed)
+            } else {
+                let dirURL = URL(fileURLWithPath: trimmed, isDirectory: true)
+                let exeURL = dirURL.appendingPathComponent(executableName)
+                if FileManager.default.fileExists(atPath: exeURL.path) {
+                    return exeURL
+                }
+                let wowExe = dirURL.appendingPathComponent("WoW.exe")
+                if FileManager.default.fileExists(atPath: wowExe.path) {
+                    return wowExe
+                }
+                return exeURL
+            }
+        }
+        let url = URL(fileURLWithPath: trimmed)
+        if url.pathExtension.lowercased() == "exe" {
+            return url
+        }
+        return url.appendingPathComponent(executableName)
+    }
+
+    var gameExecutablePath: String? {
+        gameExecutableURL?.path
+    }
+
+    var effectiveExecutableName: String {
+        let trimmed = gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return executableName }
+        let url = URL(fileURLWithPath: trimmed)
+        if url.pathExtension.lowercased() == "exe" {
+            return url.lastPathComponent
+        }
+        return executableName
+    }
+
     init(
         id: String,
         displayName: String,
+        profileKind: GameProfileKind = .worldOfWarcraft,
         wowVersion: String,
         gamePath: String = "",
-        crossOverPath: String = "",
         executableName: String,
         supportsVanillaTweaks: Bool,
         supportsDLLLoading: Bool,
@@ -327,9 +467,9 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     ) {
         self.id = id
         self.displayName = displayName
+        self.profileKind = profileKind
         self.wowVersion = wowVersion
         self.gamePath = gamePath
-        self.crossOverPath = crossOverPath
         self.executableName = executableName
         self.supportsVanillaTweaks = supportsVanillaTweaks
         self.supportsDLLLoading = supportsDLLLoading
@@ -344,9 +484,9 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id
         case displayName = "display_name"
+        case profileKind = "profile_kind"
         case wowVersion = "wow_version"
         case gamePath = "game_path"
-        case crossOverPath = "crossover_path"
         case executableName
         case supportsVanillaTweaks = "supports_vanilla_tweaks"
         case supportsDLLLoading = "supports_dll_loading"
@@ -362,9 +502,9 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         displayName = try container.decode(String.self, forKey: .displayName)
+        profileKind = try container.decodeIfPresent(GameProfileKind.self, forKey: .profileKind) ?? .worldOfWarcraft
         wowVersion = try container.decode(String.self, forKey: .wowVersion)
         gamePath = try container.decodeIfPresent(String.self, forKey: .gamePath) ?? ""
-        crossOverPath = try container.decodeIfPresent(String.self, forKey: .crossOverPath) ?? ""
         executableName = try container.decodeIfPresent(String.self, forKey: .executableName) ?? "WoW.exe"
         supportsVanillaTweaks = try container.decodeIfPresent(Bool.self, forKey: .supportsVanillaTweaks) ?? false
         supportsDLLLoading = try container.decodeIfPresent(Bool.self, forKey: .supportsDLLLoading) ?? false
@@ -377,6 +517,7 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     }
 
     mutating func syncCapabilities(with defaults: GameVersion) {
+        profileKind = defaults.profileKind
         executableName = defaults.executableName
         supportsVanillaTweaks = defaults.supportsVanillaTweaks
         supportsDLLLoading = defaults.supportsDLLLoading
@@ -395,6 +536,7 @@ struct VersionManager: Codable, Sendable {
     var versions: [String: GameVersion]
 
     static let defaultCurrentVersionID = "vanillasilicon"
+    static let genericD3D9TemplateID = "genericd3d9"
     static let defaultOrder = [
         "vanillasilicon",
         "burningsilicon",
@@ -439,6 +581,25 @@ struct VersionManager: Codable, Sendable {
             settings: VersionSettings(autoDeleteWdb: true, enableLibSiliconPatch: true)
         )
     ]
+
+    static let genericD3D9Template = GameVersion(
+        id: genericD3D9TemplateID,
+        displayName: "Non-WoW game (32-bit D3D9)",
+        profileKind: .genericD3D9,
+        wowVersion: "",
+        executableName: "Game.exe",
+        supportsVanillaTweaks: false,
+        supportsDLLLoading: false,
+        usesRosettaPatching: false,
+        usesDivxDecoderPatch: false,
+        settings: VersionSettings(autoDeleteWdb: false)
+    )
+
+    static var profileTemplates: [String: GameVersion] {
+        var templates = defaultVersions
+        templates[genericD3D9TemplateID] = genericD3D9Template
+        return templates
+    }
 
     static func makeDefault() -> VersionManager {
         VersionManager(

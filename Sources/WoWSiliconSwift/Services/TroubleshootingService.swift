@@ -25,13 +25,24 @@ struct TroubleshootingContext: Sendable {
 
 enum TroubleshootingService {
 
+    private static func gameDirectoryURL(from path: String) -> URL {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: trimmed, isDirectory: &isDir) {
+            return isDir.boolValue ? URL(fileURLWithPath: trimmed, isDirectory: true) : URL(fileURLWithPath: trimmed).deletingLastPathComponent()
+        }
+        let url = URL(fileURLWithPath: trimmed)
+        return url.pathExtension.lowercased() == "exe" ? url.deletingLastPathComponent() : url
+    }
+
     static func deleteWDBDirectories(gamePath: String?) throws -> [String] {
         guard let path = gamePath?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else {
             throw TroubleshootingServiceError.gamePathMissing
         }
         let fm = FileManager.default
-        let primary = URL(fileURLWithPath: path, isDirectory: true).appendingPathComponent("WDB", isDirectory: true)
-        let cache = URL(fileURLWithPath: path, isDirectory: true).appendingPathComponent("Cache", isDirectory: true).appendingPathComponent("WDB", isDirectory: true)
+        let gameDir = gameDirectoryURL(from: path)
+        let primary = gameDir.appendingPathComponent("WDB", isDirectory: true)
+        let cache = gameDir.appendingPathComponent("Cache", isDirectory: true).appendingPathComponent("WDB", isDirectory: true)
 
         var deleted: [String] = []
         if fm.fileExists(atPath: primary.path) {
@@ -48,35 +59,23 @@ enum TroubleshootingService {
         return deleted
     }
 
-    static func deleteWinePrefixes(gamePath: String?) throws -> [String] {
-        guard let path = gamePath?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else {
-            throw TroubleshootingServiceError.gamePathMissing
-        }
+    static func deleteDefaultWineBottle(
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) throws -> String {
         let fm = FileManager.default
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let userWine = home.appendingPathComponent(".wine", isDirectory: true)
-        let gameWine = URL(fileURLWithPath: path, isDirectory: true).appendingPathComponent(".wine", isDirectory: true)
-
-        var deleted: [String] = []
-        if fm.fileExists(atPath: userWine.path) {
-            try fm.removeItem(at: userWine)
-            deleted.append(userWine.path)
-        }
-        if fm.fileExists(atPath: gameWine.path) {
-            try fm.removeItem(at: gameWine)
-            deleted.append(gameWine.path)
-        }
-        if deleted.isEmpty {
+        let wineBottle = homeDirectory.appendingPathComponent(".wine", isDirectory: true)
+        guard fm.fileExists(atPath: wineBottle.path) else {
             throw TroubleshootingServiceError.nothingToDelete
         }
-        return deleted
+        try fm.removeItem(at: wineBottle)
+        return wineBottle.path
     }
 
     static func deleteVanillaTweaks(gamePath: String?) throws {
         guard let path = gamePath?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else {
             throw TroubleshootingServiceError.gamePathMissing
         }
-        let tweaked = URL(fileURLWithPath: path, isDirectory: true).appendingPathComponent("WoW_tweaked.exe")
+        let tweaked = gameDirectoryURL(from: path).appendingPathComponent("WoW_tweaked.exe")
         guard FileManager.default.fileExists(atPath: tweaked.path) else {
             throw TroubleshootingServiceError.nothingToDelete
         }
@@ -115,7 +114,10 @@ enum TroubleshootingService {
         baseLog += "\n=== WoWSilicon Configuration ===\n"
         if let version = context.currentVersion {
             baseLog += "Current Game Version: \(version.displayName) (\(version.id))\n"
-            baseLog += "WoW Version: \(version.wowVersion)\n"
+            baseLog += "Profile Type: \(version.profileKind.rawValue)\n"
+            if version.isWorldOfWarcraft {
+                baseLog += "WoW Version: \(version.wowVersion)\n"
+            }
             baseLog += "Game Path: \(version.gamePath)\n"
             baseLog += "Executable: \(version.executableName)\n"
             baseLog += "Supports Vanilla Tweaks: \(version.supportsVanillaTweaks)\n"
@@ -125,6 +127,7 @@ enum TroubleshootingService {
 
             baseLog += "\nVersion Settings:\n"
             let settings = version.settings
+            baseLog += "  x87 Translation: \(settings.x87Backend.displayName) (\(settings.x87Backend.rawValue))\n"
             baseLog += "  Vanilla Tweaks: \(settings.enableVanillaTweaks)\n"
             baseLog += "  Remap Option as Alt: \(settings.remapOptionAsAlt)\n"
             baseLog += "  Auto Delete WDB: \(settings.autoDeleteWdb)\n"
@@ -132,16 +135,20 @@ enum TroubleshootingService {
             baseLog += "  Show Terminal Normally: \(settings.showTerminalNormally)\n"
             baseLog += "  Environment Variables: \(settings.environmentVariables)\n"
             let gs = settings.graphicsSettings
-            baseLog += "  Window Mode: \(gs.windowMode.rawValue)\n"
-            baseLog += "  Resolution: \(gs.resolution.isEmpty ? "default" : gs.resolution)\n"
-            baseLog += "  Refresh Rate: \(gs.refreshRate)Hz\n"
-            baseLog += "  VSync: \(gs.vsync)\n"
-            baseLog += "  Multisampling: \(gs.multisampling.rawValue)\n"
-            baseLog += "  Texture Filtering: \(gs.textureFiltering.rawValue)\n"
-            baseLog += "  Shadow Quality: \(gs.shadowQuality.rawValue)\n"
-            baseLog += "  View Distance: \(gs.viewDistance)\n"
-            baseLog += "  Particle Density: \(gs.particleDensity)\n"
-            baseLog += "  Enable LibSilicon Patch: \(settings.enableLibSiliconPatch)\n"
+            baseLog += "  Graphics Backend: \(gs.backend.displayName)\n"
+            if version.supportsCustomGraphicsSettings {
+                baseLog += "  HDR Mode: \(gs.backend == .mtld3d && gs.hdrEnabled)\n"
+                baseLog += "  Window Mode: \(gs.windowMode.rawValue)\n"
+                baseLog += "  Resolution: \(gs.resolution.isEmpty ? "default" : gs.resolution)\n"
+                baseLog += "  Refresh Rate: \(gs.refreshRate)Hz\n"
+                baseLog += "  VSync: \(gs.vsync)\n"
+                baseLog += "  Multisampling: \(gs.multisampling.rawValue)\n"
+                baseLog += "  Texture Filtering: \(gs.textureFiltering.rawValue)\n"
+                baseLog += "  Shadow Quality: \(gs.shadowQuality.rawValue)\n"
+                baseLog += "  View Distance: \(gs.viewDistance)\n"
+                baseLog += "  Particle Density: \(gs.particleDensity)\n"
+                baseLog += "  Enable LibSilicon Patch: \(settings.enableLibSiliconPatch)\n"
+            }
         } else {
             baseLog += "Current Game Version: none selected\n"
         }
@@ -155,52 +162,30 @@ enum TroubleshootingService {
         var fullLog = baseLog
         var previewLog = baseLog
         
-        baseLog = "\n=== CrossOver Information ===\n"
-        if let version = context.currentVersion {
-            let crossOverPath = version.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty 
-                ? "/Applications/CrossOver.app" 
-                : version.crossOverPath
-            baseLog += "Path: \(crossOverPath)\n"
-            
-            let crossOverURL = URL(fileURLWithPath: crossOverPath, isDirectory: true)
-            let cxVersion = PatchService.detectCrossOverVersion(at: crossOverURL)
-            let cxVersionStr: String
-            switch cxVersion {
-            case .v25OrLower:
-                cxVersionStr = "25 or older"
-            case .v26:
-                cxVersionStr = "26"
-            case .v27OrHigher:
-                cxVersionStr = "27 or newer"
-            }
-            baseLog += "Detected Version: \(cxVersionStr)\n"
-            
-            let wineloaderPath = crossOverPath + "/Contents/SharedSupport/CrossOver/CrossOver-Hosted Application/wineloader2"
-            if FileManager.default.fileExists(atPath: wineloaderPath) {
-                baseLog += "wineloader2: Found\n"
+        baseLog = "\n=== Bundled Wine Runtime ===\n"
+        if let runtimeURL = BundledWineRuntime.rootURL() {
+            baseLog += "Path: \(runtimeURL.path)\n"
+            baseLog += "Wine executable: \(BundledWineRuntime.wineExecutableURL() == nil ? "Missing" : "Found")\n"
+
+            let lockURL = runtimeURL
+                .appendingPathComponent("share", isDirectory: true)
+                .appendingPathComponent("wowsilicon", isDirectory: true)
+                .appendingPathComponent("runtime-lock.json", isDirectory: false)
+            if let data = try? Data(contentsOf: lockURL),
+               let lock = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                baseLog += "Runtime revision: \(lock["runtimeRevision"] ?? "Unknown")\n"
+                if let wine = lock["wine"] as? [String: Any] {
+                    baseLog += "Wine version: \(wine["version"] ?? "Unknown")\n"
+                    baseLog += "Wine commit: \(wine["commit"] ?? "Unknown")\n"
+                }
+                if let mtld3d = lock["mtld3d"] as? [String: Any] {
+                    baseLog += "MTLd3D version: \(mtld3d["version"] ?? "Unknown")\n"
+                }
             } else {
-                baseLog += "wineloader2: Not found\n"
-            }
-            
-            if cxVersion == .v26 {
-                let cxUnixDir = crossOverURL
-                    .appendingPathComponent("Contents", isDirectory: true)
-                    .appendingPathComponent("SharedSupport", isDirectory: true)
-                    .appendingPathComponent("CrossOver", isDirectory: true)
-                    .appendingPathComponent("lib", isDirectory: true)
-                    .appendingPathComponent("wine", isDirectory: true)
-                    .appendingPathComponent("x86_64-unix", isDirectory: true)
-                
-                let wineBackup = cxUnixDir.appendingPathComponent("wine.bak", isDirectory: false)
-                let ntdllBackup = cxUnixDir.appendingPathComponent("ntdll.so.bak", isDirectory: false)
-                let ntdllActive = cxUnixDir.appendingPathComponent("ntdll.so", isDirectory: false)
-                
-                baseLog += "wine backup: " + (FileManager.default.fileExists(atPath: wineBackup.path) ? "✓ Found\n" : "✗ Missing\n")
-                baseLog += "ntdll.so backup: " + (FileManager.default.fileExists(atPath: ntdllBackup.path) ? "✓ Found\n" : "✗ Missing\n")
-                baseLog += "active ntdll.so: " + (FileManager.default.fileExists(atPath: ntdllActive.path) ? "✓ Found\n" : "✗ Missing\n")
+                baseLog += "Runtime lock: Missing\n"
             }
         } else {
-            baseLog += "CrossOver Path: Unknown (No version selected)\n"
+            baseLog += "Path: Missing\n"
         }
 
         baseLog += "\n=== Patch Status ===\n"

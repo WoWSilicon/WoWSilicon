@@ -27,8 +27,20 @@ struct ModManagerView: View {
                 Spacer()
                 Button("Install DLL...") { installDLL() }
                     .disabled(viewModel.isPerformingAction)
-                Button("Refresh") { viewModel.refresh() }
+                Button(action: viewModel.openModsDirectory) {
+                    Image(systemName: "folder")
+                }
+                    .buttonStyle(.bordered)
+                    .disabled(!viewModel.canOpenModsDirectory)
+                    .help("Open mods folder in Finder")
+                    .accessibilityLabel("Open mods folder in Finder")
+                Button(action: viewModel.refresh) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                    .buttonStyle(.bordered)
                     .disabled(viewModel.isPerformingAction)
+                    .help("Refresh mods")
+                    .accessibilityLabel("Refresh mods")
                 Button("Close", action: onClose)
             }
 
@@ -58,8 +70,17 @@ struct ModManagerView: View {
                             .disabled(mod.required || viewModel.isPerformingAction)
 
                             Spacer()
-                            Button("Delete") { modPendingDeletion = mod }
+                            Button(role: .destructive) {
+                                modPendingDeletion = mod
+                            } label: {
+                                Image(systemName: "trash")
+                                    .frame(width: 16, height: 16)
+                            }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
                                 .disabled(mod.required || viewModel.isPerformingAction)
+                                .help("Delete mod")
+                                .accessibilityLabel("Delete mod")
                         }
                     }
                 }

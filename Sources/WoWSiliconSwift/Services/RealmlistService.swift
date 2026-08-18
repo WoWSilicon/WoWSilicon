@@ -14,7 +14,17 @@ struct RealmlistService {
         let trimmed = gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .none }
 
-        let root = URL(fileURLWithPath: trimmed, isDirectory: true)
+        let url = URL(fileURLWithPath: trimmed)
+        var isDir: ObjCBool = false
+        let root: URL
+        if FileManager.default.fileExists(atPath: trimmed, isDirectory: &isDir) {
+            root = isDir.boolValue ? url : url.deletingLastPathComponent()
+        } else if url.pathExtension.lowercased() == "exe" {
+            root = url.deletingLastPathComponent()
+        } else {
+            root = url
+        }
+
         let candidates = findCandidates(under: root)
 
         switch candidates.count {

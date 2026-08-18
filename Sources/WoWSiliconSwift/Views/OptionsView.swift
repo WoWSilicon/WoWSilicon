@@ -12,14 +12,21 @@ struct OptionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Options")
-                .font(.title2)
-                .fontWeight(.semibold)
+            HStack {
+                Text("Options")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                Spacer()
+                Button("Close", role: .cancel) {
+                    viewModel.completeOptionsSession()
+                    onClose()
+                }
+            }
 
             HStack {
                 Spacer()
                 Picker("", selection: $selectedTab) {
-                    ForEach(OptionsTab.allCases) { tab in
+                    ForEach(availableTabs) { tab in
                         Text(tab.title).tag(tab)
                     }
                 }
@@ -49,16 +56,6 @@ struct OptionsView: View {
                 .padding(.trailing, 18)
             }
 
-            Divider()
-
-            HStack {
-                Spacer()
-                Button("Close", role: .cancel) {
-                    viewModel.completeOptionsSession()
-                    onClose()
-                }
-                    .buttonStyle(.borderedProminent)
-            }
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -94,6 +91,7 @@ struct OptionsView: View {
             }
             optionAsAltControls
             retinaModeControls
+            rosettaX87Controls
             Divider()
                 .padding(.vertical, 4)
             telemetryControls
@@ -105,10 +103,25 @@ struct OptionsView: View {
     }
 
     private var graphicsSection: some View {
-        GraphicsSectionView(settings: viewModel.graphicsSettingsBinding())
+        GraphicsSectionView(
+            settings: viewModel.graphicsSettingsBinding(),
+            showsWoWSettings: viewModel.currentVersion?.supportsCustomGraphicsSettings ?? true
+        )
+    }
+
+    private var availableTabs: [OptionsTab] {
+        OptionsTab.allCases.filter { tab in
+            tab != .realmlist || viewModel.currentVersion?.supportsRealmlist != false
+        }
     }
 
     private func refreshRealmlist() {
+        guard viewModel.currentVersion?.supportsRealmlist != false else {
+            realmlistURL = nil
+            realmlistMultipleURLs = []
+            realmlistContent = ""
+            return
+        }
         guard let gamePath = viewModel.currentVersion?.gamePath else { return }
         switch RealmlistService.find(gamePath: gamePath) {
         case .none:
@@ -252,6 +265,26 @@ struct OptionsView: View {
                 .padding(.vertical, 4)
 
             dependencyStatusRow(
+                title: "Wine Mono",
+                status: viewModel.wineMonoStatus,
+                isBusy: viewModel.isWineMonoInstallInProgress
+            )
+
+            Button("Install Wine Mono") {
+                viewModel.installWineMono()
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!viewModel.canInstallWineMono || viewModel.wineMonoStatus == .installed)
+
+            Text("Provides .NET support for third-party launchers. Wine downloads the compatible package and opens its installer.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+                .padding(.vertical, 4)
+
+            dependencyStatusRow(
                 title: "Git",
                 status: viewModel.gitStatus,
                 isBusy: viewModel.isGitInstallInProgress
@@ -279,10 +312,7 @@ struct OptionsView: View {
     }
 
     private var dependenciesHelpText: String {
-        if viewModel.isCrossOverPatched {
-            return "Installs Microsoft's x86 Visual C++ Runtime into ~/.wine using the patched CrossOver wineloader."
-        }
-        return "Set and patch CrossOver before installing dependencies."
+        "Installs Microsoft's x86 Visual C++ Runtime into ~/.wine using the bundled Wine runtime."
     }
 
     private var visualCppRuntimeStatusColor: Color {
@@ -354,10 +384,43 @@ struct OptionsView: View {
                 "Share Anonymous Usage Statistics",
                 binding: viewModel.telemetryEnabledBinding()
             )
-            Text("Shares app version, WoW version, macOS version, renderer, and configured realmlist server for public aggregate stats. No IP address, username, account name, character name, file paths, or hardware identifiers are collected.")
+            Text("Shares app version, WoW version, macOS version, renderer, x87 translation, and configured realmlist server for public aggregate stats. No IP address, username, account name, character name, file paths, or hardware identifiers are collected.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var rosettaX87Controls: some View {
+        let selection = viewModel.x87BackendBinding()
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("x87 Translation")
+                Spacer()
+                Picker("", selection: selection) {
+                    ForEach(X87Backend.allCases, id: \.self) { backend in
+                        Text(backend.displayName).tag(backend)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+            Text(x87BackendDescription(selection.wrappedValue))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func x87BackendDescription(_ backend: X87Backend) -> String {
+        switch backend {
+        case .disabled:
+            return "Uses stock Rosetta translation. This is significantly slower and intended for testing."
+        case .rosettaX87:
+            return "Uses rosettax87_jit for accelerated x87 translation."
+        case .x87Sidecar:
+            return "Runs accelerated x87 translation in an isolated helper process."
         }
     }
 

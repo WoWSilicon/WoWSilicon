@@ -31,6 +31,26 @@ final class AddonManagerViewModel: ObservableObject, Identifiable {
         self.gamePath = gamePath
     }
 
+    var canOpenAddonsDirectory: Bool {
+        guard let directory = addonsDirectoryURL else { return false }
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
+    }
+
+    func openAddonsDirectory() {
+        guard canOpenAddonsDirectory, let directory = addonsDirectoryURL else { return }
+        NSWorkspace.shared.open(directory)
+    }
+
+    private var addonsDirectoryURL: URL? {
+        guard let path = gamePath?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+            .appendingPathComponent("Interface", isDirectory: true)
+            .appendingPathComponent("AddOns", isDirectory: true)
+    }
+
     func promptToInstallGitIfMissing() {
         _ = ensureGitAvailableOrPrompt(force: false)
     }
@@ -250,6 +270,16 @@ final class AddonManagerViewModel: ObservableObject, Identifiable {
             }
             return a.name.lowercased() < b.name.lowercased()
         }
+    }
+
+    var installedAddonCount: Int {
+        addons.reduce(0) { count, addon in
+            count + (addon.isManagedRepository ? addon.installedAddonNames.count : 1)
+        }
+    }
+
+    var gitRepositoryCount: Int {
+        addons.filter(\.hasGitRepo).count
     }
 
     func updateAll() {

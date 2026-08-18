@@ -27,8 +27,8 @@ struct AddonManagerView: View {
         }
         .alert(item: $addonPendingDeletion) { addon in
             Alert(
-                title: Text("Delete Addon?"),
-                message: Text("This will remove \(addon.name) from the AddOns folder."),
+                title: Text(addon.isManagedRepository ? "Delete Addon Repository?" : "Delete Addon?"),
+                message: Text(deletionMessage(for: addon)),
                 primaryButton: .destructive(Text("Delete")) {
                     viewModel.delete(addon: addon)
                 },
@@ -64,7 +64,7 @@ struct AddonManagerView: View {
                 Text("Addon Manager").font(.title2).bold()
                 switch viewModel.status {
                 case .ready:
-                    Text("Found \(viewModel.addons.count) addons, \(viewModel.addons.filter { $0.hasGitRepo }.count) git repos")
+                    Text("Found \(viewModel.installedAddonCount) addons, \(viewModel.gitRepositoryCount) git repos")
                         .italic()
                 case .loading(let message):
                     Text(message).italic()
@@ -79,8 +79,20 @@ struct AddonManagerView: View {
                 .toggleStyle(.switch)
             Button("Update All") { viewModel.updateAll() }
                 .disabled(viewModel.isPerformingAction || viewModel.filteredAddons.filter { $0.hasGitRepo && $0.needsUpdate }.isEmpty)
-            Button("Refresh") { viewModel.refresh(checkUpdates: true) }
+            Button(action: viewModel.openAddonsDirectory) {
+                Image(systemName: "folder")
+            }
+                .buttonStyle(.bordered)
+                .disabled(!viewModel.canOpenAddonsDirectory)
+                .help("Open AddOns folder in Finder")
+                .accessibilityLabel("Open AddOns folder in Finder")
+            Button { viewModel.refresh(checkUpdates: true) } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+                .buttonStyle(.bordered)
                 .disabled(viewModel.isPerformingAction)
+                .help("Refresh addons")
+                .accessibilityLabel("Refresh addons")
             Button("Close", action: onClose)
         }
     }
@@ -131,6 +143,14 @@ struct AddonManagerView: View {
                                     .background(Color.blue.opacity(0.18))
                                     .cornerRadius(4)
                             }
+                            if addon.installedAddonNames.count > 1 {
+                                Text("\(addon.installedAddonNames.count) addons")
+                                    .font(.caption2)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.secondary.opacity(0.14))
+                                    .cornerRadius(4)
+                            }
                             if addon.needsUpdate {
                                 Text("Update available")
                                     .font(.caption)
@@ -159,14 +179,31 @@ struct AddonManagerView: View {
                                 Button("Update") { viewModel.update(addon: addon) }
                                     .disabled(viewModel.isPerformingAction)
                             }
-                            Button("Delete") { addonPendingDeletion = addon }
+                            Button(role: .destructive) {
+                                addonPendingDeletion = addon
+                            } label: {
+                                Image(systemName: "trash")
+                                    .frame(width: 16, height: 16)
+                            }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
                                 .disabled(viewModel.isPerformingAction)
+                                .help("Delete addon")
+                                .accessibilityLabel("Delete addon")
                         }
                     }
                 }
                 .listStyle(.plain)
             }
         }
+    }
+
+    private func deletionMessage(for addon: AddonInfo) -> String {
+        guard addon.isManagedRepository else {
+            return "This will remove \(addon.name) from the AddOns folder."
+        }
+        let names = addon.installedAddonNames.joined(separator: ", ")
+        return "This will remove the \(addon.name) repository and its installed addons: \(names)."
     }
 }
 

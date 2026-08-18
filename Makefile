@@ -23,8 +23,9 @@ ICON_SCRIPT := $(BUILD_DIR)/make_icns.py
 SWIFT_ENV := SWIFT_MODULECACHE_PATH="$(BUILD_DIR)/swift-module-cache" CLANG_MODULE_CACHE_PATH="$(BUILD_DIR)/clang-module-cache"
 SWIFT_BUILD := $(SWIFT_ENV) swift build --arch arm64 --disable-sandbox --build-path "$(BUILD_DIR)" --cache-path "$(BUILD_DIR)/spm-cache" --manifest-cache none
 RESOURCE_BUNDLE := $(BUILD_DIR)/arm64-apple-macosx/release/WoWSilicon-swift_WoWSiliconSwift.bundle
+WINE_RUNTIME_DIR ?= $(CURDIR)/.wine-runtime
 
-.PHONY: all build debug run bundle dmg appcast clean app_icon
+.PHONY: all build debug run bundle dmg appcast clean app_icon validate_wine_runtime package_wine_runtime update-mtld3d update-x87sidecar
 
 all: bundle
 
@@ -44,9 +45,23 @@ run: bundle
 	@echo "Launching $(APP_NAME).app..."
 	open "$(APP_BUNDLE)"
 
-bundle: build
+validate_wine_runtime:
+	@test -d "$(WINE_RUNTIME_DIR)" || (echo "Wine runtime not found at $(WINE_RUNTIME_DIR)" >&2; exit 1)
+	@tools/wine-runtime/validate.sh --runtime "$(WINE_RUNTIME_DIR)"
+
+package_wine_runtime:
+	@tools/wine-runtime/package.sh --runtime "$(WINE_RUNTIME_DIR)"
+
+update-mtld3d:
+	@tools/wine-runtime/update-mtld3d.sh $(if $(TAG),--tag $(TAG),)
+
+update-x87sidecar:
+	@tools/wine-runtime/update-x87sidecar.sh $(if $(TAG),--tag $(TAG),)
+
+bundle: build validate_wine_runtime
 	@$(MAKE) app_icon
 	@echo "Staging $(APP_NAME).app..."
+
 	@rm -rf "$(APP_BUNDLE)"
 	@mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
 	@mkdir -p "$(APP_BUNDLE)/Contents/Frameworks"
@@ -63,7 +78,11 @@ bundle: build
 		echo "warning: resource bundle not found at $(RESOURCE_BUNDLE)"; \
 		rsync -a Sources/WoWSiliconSwift/Resources/ "$(APP_BUNDLE)/Contents/Resources/"; \
 	fi
+	@mkdir -p "$(APP_BUNDLE)/Contents/Resources/Wine"
+	@cp -R "$(WINE_RUNTIME_DIR)/." "$(APP_BUNDLE)/Contents/Resources/Wine/"
+	@find "$(APP_BUNDLE)/Contents/Resources/Wine" -name '.DS_Store' -delete
 	@cp "$(APP_ICON)" "$(APP_BUNDLE)/Contents/Resources/turtle.icns"
+	@xattr -cr "$(APP_BUNDLE)"
 	@if [ -n "$(CODESIGN_IDENTITY)" ]; then \
 		echo "Signing $(APP_BUNDLE) with identity $(CODESIGN_IDENTITY)..."; \
 		codesign --force --deep --sign "$(CODESIGN_IDENTITY)" "$(APP_BUNDLE)"; \

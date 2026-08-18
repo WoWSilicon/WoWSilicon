@@ -86,6 +86,52 @@ struct ConfigService {
         applyShadowSettings(version: version, quality: gs.shadowQuality, set: set, remove: remove)
 
         try content.write(to: configURL, atomically: true, encoding: .utf8)
+        try applyMtld3dSettings(for: version)
+    }
+
+    static func applyMtld3dSettings(for version: GameVersion) throws {
+        guard let gameURL = version.gameDirectoryURL else { return }
+        let configURL = gameURL.appendingPathComponent("mtld3d.conf", isDirectory: false)
+        guard FileManager.default.fileExists(atPath: configURL.path) else { return }
+
+        do {
+            let content = try String(contentsOf: configURL, encoding: .utf8)
+            let graphics = version.settings.graphicsSettings
+            let hdrEnabled = graphics.backend == .mtld3d && graphics.hdrEnabled
+            let updated = updateMtld3dSetting(
+                content: content,
+                key: "color.hdr.enable",
+                value: hdrEnabled ? "true" : "false"
+            )
+            try updated.write(to: configURL, atomically: true, encoding: .utf8)
+        } catch {
+            throw ConfigServiceError.writeFailed("Failed to update mtld3d.conf: \(error.localizedDescription)")
+        }
+    }
+
+    static func updateMtld3dSetting(content: String, key: String, value: String) -> String {
+        var lines = content.components(separatedBy: .newlines)
+        let replacement = "\(key) = \(value)"
+
+        if let index = lines.firstIndex(where: { line in
+            var candidate = line.trimmingCharacters(in: .whitespaces)
+            if candidate.hasPrefix("#") {
+                candidate.removeFirst()
+                candidate = candidate.trimmingCharacters(in: .whitespaces)
+            }
+            guard let rawKey = candidate.split(separator: "=", maxSplits: 1).first else {
+                return false
+            }
+            return String(rawKey).trimmingCharacters(in: .whitespaces) == key
+        }) {
+            lines[index] = replacement
+        } else {
+            if lines.last?.isEmpty == false {
+                lines.append("")
+            }
+            lines.append(replacement)
+        }
+        return lines.joined(separator: "\n")
     }
 
     static func readGraphicsSettings(for version: GameVersion) -> GraphicsSettings {
@@ -252,9 +298,9 @@ struct ConfigService {
 
     private static func configFileURL(for version: GameVersion) throws -> URL {
         let trimmed = version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw ConfigServiceError.gamePathMissing }
+        guard !trimmed.isEmpty, let gameURL = version.gameDirectoryURL else { throw ConfigServiceError.gamePathMissing }
 
-        let wtfDir = URL(fileURLWithPath: trimmed, isDirectory: true).appendingPathComponent("WTF", isDirectory: true)
+        let wtfDir = gameURL.appendingPathComponent("WTF", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: wtfDir, withIntermediateDirectories: true)
         } catch {

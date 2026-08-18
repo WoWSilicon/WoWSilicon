@@ -9,14 +9,10 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var subtitleText: String = "Launch World Of Warcraft from 2006-2010 on Apple Silicon Macs"
 
     @Published private(set) var gamePathStatus = StatusValue(text: "Not set", level: .error)
-    @Published private(set) var crossOverPathStatus = StatusValue(text: "Not set", level: .error)
 
     @Published private(set) var gamePatchStatus = StatusValue(text: "Not Applied", level: .error)
     @Published private(set) var isGamePatched: Bool = false
     @Published private(set) var isGamePatchActionable: Bool = false
-    @Published private(set) var crossOverPatchStatus = StatusValue(text: "Not Applied", level: .error)
-    @Published private(set) var isCrossOverPatched: Bool = false
-    @Published private(set) var isCrossOverPatchActionable: Bool = false
     @Published private(set) var isGameOperationInProgress: Bool = false
     @Published private(set) var isUnpatchingOperation: Bool = false
     @Published private(set) var patchFeedback: PatchFeedback?
@@ -26,8 +22,12 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var launcherPathStatus: StatusValue = StatusValue(text: "Not set", level: .error)
     @Published private(set) var currentVersionLauncherName: String = "Open Launcher"
     @Published private(set) var isLauncherLoading: Bool = false
+    @Published private(set) var wineProcessCount: Int = 0
+    @Published private(set) var isForceQuittingWine: Bool = false
+    @Published private(set) var isCheckingWineProcesses: Bool = false
     @Published private(set) var shouldShowVanillaTweaksPrompt: Bool = false
     @Published private(set) var shouldShowVersionMismatchPrompt: Bool = false
+    @Published private(set) var shouldShowExistingWinePrompt: Bool = false
     @Published private(set) var versionMismatchData: (base: String, tweaked: String)?
     @Published var shouldShowMigrationPrompt: Bool = false
     @Published var shouldShowTelemetryConsentPrompt: Bool = false
@@ -38,9 +38,12 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var retinaModeStatus: OptionAsAltStatus = .unknown
     @Published private(set) var isDependencyInstallInProgress: Bool = false
     @Published private(set) var visualCppRuntimeStatus: DependencyInstallStatus = .unknown
+    @Published private(set) var isWineMonoInstallInProgress: Bool = false
+    @Published private(set) var wineMonoStatus: DependencyInstallStatus = .unknown
     @Published private(set) var isGitInstallInProgress: Bool = false
     @Published private(set) var gitStatus: DependencyInstallStatus = .unknown
     @Published private(set) var currentVersion: GameVersion?
+    @Published private(set) var supportsAddons: Bool = false
     @Published private(set) var supportsMods: Bool = false
     @Published private(set) var versions: [GameVersion] = []
     @Published private(set) var currentVersionID: String = VersionManager.defaultCurrentVersionID
@@ -50,6 +53,7 @@ final class MainDashboardViewModel: ObservableObject {
     private var versionManager: VersionManager
     private var userPrefs: UserPrefs
     private var pendingVanillaTweaksLaunch = false
+    private var pendingWineLaunchVersion: GameVersion?
     private var optionsSessionInitialVanillaTweaksParameters: String?
     private var optionsSessionInitialVersionID: String?
     private var hasActiveOptionsSession = false
@@ -97,6 +101,7 @@ final class MainDashboardViewModel: ObservableObject {
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
         refreshVisualCppRuntimeStatus()
+        refreshWineMonoStatus()
         refreshGitStatus()
     }
 
@@ -110,18 +115,18 @@ final class MainDashboardViewModel: ObservableObject {
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
         refreshVisualCppRuntimeStatus()
+        refreshWineMonoStatus()
         refreshGitStatus()
     }
 
     func addVersion(name: String, baseID: String, wantsLauncher: Bool) {
-        guard let base = VersionManager.defaultVersions[baseID] else { return }
+        guard let base = VersionManager.profileTemplates[baseID] else { return }
         let newID = UUID().uuidString
         var newVersion = base
         newVersion.id = newID
         newVersion.displayName = name
         newVersion.gamePath = ""
-        newVersion.crossOverPath = ""
-        newVersion.wantsLauncher = wantsLauncher
+        newVersion.wantsLauncher = newVersion.isWorldOfWarcraft && wantsLauncher
         newVersion.launcherExePath = ""
         versionManager.versions[newID] = newVersion
         versionManager.setCurrentVersion(id: newID)
@@ -191,6 +196,34 @@ final class MainDashboardViewModel: ObservableObject {
         }
     }
 
+    var canOpenLauncherDirectory: Bool {
+        guard let path = versionManager.currentVersion?.launcherExePath
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else {
+            return false
+        }
+        let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
+    }
+
+    var canClearLauncherPath: Bool {
+        !(versionManager.currentVersion?.launcherExePath
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+    }
+
+    func openLauncherDirectory() {
+        guard canOpenLauncherDirectory,
+              let path = versionManager.currentVersion?.launcherExePath else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path).deletingLastPathComponent())
+    }
+
+    func clearLauncherPath() {
+        guard canClearLauncherPath else { return }
+        updateCurrentVersion { $0.launcherExePath = "" }
+    }
+
     func launchThirdPartyLauncher() {
         guard let version = versionManager.currentVersion, version.hasLauncher else { return }
         patchFeedback = nil
@@ -211,46 +244,87 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     func forceQuitWine() {
-        let crossOverPath = versionManager.currentVersion?.crossOverPath
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        forceQuitWine(launchAfter: nil)
+    }
+
+    private func forceQuitWine(launchAfter version: GameVersion?) {
+        guard !isForceQuittingWine else { return }
+        isForceQuittingWine = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            LaunchService.forceQuitWine(crossOverPath: crossOverPath.isEmpty ? nil : crossOverPath)
-            DispatchQueue.main.async { self?.refreshSnapshot() }
+            LaunchService.forceQuitWine()
+            let remainingProcessCount = WineProcessMonitor.waitForProcessExit()
+            DispatchQueue.main.async {
+                self?.isForceQuittingWine = false
+                if let remainingProcessCount {
+                    self?.wineProcessCount = remainingProcessCount
+                }
+                self?.refreshSnapshot()
+                if let version {
+                    self?.continueLaunch(version)
+                }
+            }
+        }
+    }
+
+    func monitorWineProcesses() async {
+        while !Task.isCancelled {
+            let processCount = await Task.detached(priority: .utility) {
+                WineProcessMonitor.persistentProcessCount()
+            }.value
+
+            if !isForceQuittingWine, let processCount {
+                wineProcessCount = processCount
+            }
+
+            do {
+                try await Task.sleep(for: .seconds(3))
+            } catch {
+                return
+            }
         }
     }
 
     func selectGamePath() {
         let panel = NSOpenPanel()
-        panel.title = "Select Game Folder"
+        panel.title = "Select Game Executable"
         panel.prompt = "Choose"
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [UTType(filenameExtension: "exe")].compactMap { $0 }
         panel.level = .modalPanel
 
         if panel.runModal() == .OK, let url = panel.url {
             updateCurrentVersion { version in
                 version.gamePath = url.path
+                version.executableName = url.lastPathComponent
             }
         }
     }
 
-    func selectCrossOverPath() {
-        let panel = NSOpenPanel()
-        panel.title = "Select CrossOver Application"
-        panel.prompt = "Choose"
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.treatsFilePackagesAsDirectories = true
-        panel.level = .modalPanel
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-
-        if panel.runModal() == .OK, let url = panel.url {
-            updateCurrentVersion { version in
-                version.crossOverPath = url.path
-            }
+    var canOpenGameDirectory: Bool {
+        guard let dirPath = versionManager.currentVersion?.gameDirectoryPath else {
+            return false
         }
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDirectory)
+            && isDirectory.boolValue
+    }
+
+    var canClearGamePath: Bool {
+        !(versionManager.currentVersion?.gamePath
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+    }
+
+    func openGameDirectory() {
+        guard canOpenGameDirectory,
+              let dirPath = versionManager.currentVersion?.gameDirectoryPath else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: dirPath, isDirectory: true))
+    }
+
+    func clearGamePath() {
+        guard canClearGamePath else { return }
+        updateCurrentVersion { $0.gamePath = "" }
     }
 
     func beginOptionsSession() {
@@ -312,11 +386,49 @@ final class MainDashboardViewModel: ObservableObject {
 
     func launchGame() {
         guard canLaunch, let currentVersion = versionManager.currentVersion else {
-            patchFeedback = PatchFeedback(title: "Cannot Launch", message: "Ensure the game path is set, Wine is installed, and both patches are applied.", isError: true)
+            patchFeedback = PatchFeedback(title: "Cannot Launch", message: "Ensure the game path is set and the game patch is applied.", isError: true)
             return
         }
+        guard !isCheckingWineProcesses else { return }
 
         patchFeedback = nil
+        isCheckingWineProcesses = true
+
+        Task { [weak self] in
+            let liveProcessCount = await Task.detached(priority: .userInitiated) {
+                WineProcessMonitor.persistentProcessCount()
+            }.value
+
+            guard let self else { return }
+            self.isCheckingWineProcesses = false
+
+            if let liveProcessCount {
+                self.wineProcessCount = liveProcessCount
+            }
+
+            if let liveProcessCount, liveProcessCount > 0 {
+                self.pendingWineLaunchVersion = currentVersion
+                self.shouldShowExistingWinePrompt = true
+            } else {
+                self.continueLaunch(currentVersion)
+            }
+        }
+    }
+
+    func handleExistingWineBeforeLaunch(cleanUp: Bool?) {
+        shouldShowExistingWinePrompt = false
+        guard let pendingVersion = pendingWineLaunchVersion else { return }
+        pendingWineLaunchVersion = nil
+
+        guard let cleanUp else { return }
+        if cleanUp {
+            forceQuitWine(launchAfter: pendingVersion)
+        } else {
+            continueLaunch(pendingVersion)
+        }
+    }
+
+    private func continueLaunch(_ currentVersion: GameVersion) {
 
         // Check for version mismatch if using vanilla tweaks
         if currentVersion.settings.enableVanillaTweaks {
@@ -371,7 +483,6 @@ final class MainDashboardViewModel: ObservableObject {
                 DispatchQueue.main.async {
                     self.pendingVanillaTweaksLaunch = false
                     self.isApplyingVanillaTweaks = false
-                    self.refreshSnapshot()
                     self.isGameOperationInProgress = false
                     self.launchGame()
                 }
@@ -412,7 +523,6 @@ final class MainDashboardViewModel: ObservableObject {
                 
                 DispatchQueue.main.async {
                     self.isApplyingVanillaTweaks = false
-                    self.refreshSnapshot()
                     self.isGameOperationInProgress = false
                     self.versionMismatchData = nil
                     self.launchGame()
@@ -446,6 +556,19 @@ final class MainDashboardViewModel: ObservableObject {
         )
     }
 
+    func x87BackendBinding() -> Binding<X87Backend> {
+        Binding(
+            get: {
+                self.versionManager.currentVersion?.settings.x87Backend ?? .rosettaX87
+            },
+            set: { newValue in
+                self.updateCurrentVersion { version in
+                    version.settings.x87Backend = newValue
+                }
+            }
+        )
+    }
+
     func graphicsSettingsBinding() -> Binding<GraphicsSettings> {
         Binding(
             get: {
@@ -453,8 +576,13 @@ final class MainDashboardViewModel: ObservableObject {
             },
             set: { newValue in
                 guard var version = self.versionManager.currentVersion else { return }
-                version.settings.graphicsSettings = newValue
+                var normalizedValue = newValue
+                if normalizedValue.backend != .mtld3d {
+                    normalizedValue.hdrEnabled = false
+                }
+                version.settings.graphicsSettings = normalizedValue
                 self.updateCurrentVersion { current in current = version }
+                guard version.supportsCustomGraphicsSettings else { return }
                 let versionForWork = version
                 DispatchQueue.global(qos: .userInitiated).async {
                     do {
@@ -479,23 +607,18 @@ final class MainDashboardViewModel: ObservableObject {
     func disableRetinaMode() { setRetinaMode(false) }
 
     var canInstallDependencies: Bool {
-        guard let currentVersion else { return false }
-        let hasCrossOverPath = !currentVersion.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return hasCrossOverPath && isCrossOverPatched && !isDependencyInstallInProgress
+        BundledWineRuntime.wineExecutableURL() != nil && !isDependencyInstallInProgress
     }
 
     func installVisualCppRuntime() {
         guard canInstallDependencies else { return }
-        guard let currentVersion else { return }
-
-        let crossOverPath = currentVersion.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines)
         isDependencyInstallInProgress = true
         visualCppRuntimeStatus = .inProgress("Installing...")
         patchFeedback = nil
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                try DependencyService.installVisualCppRuntime(crossOverPath: crossOverPath)
+                try DependencyService.installVisualCppRuntime()
                 DispatchQueue.main.async {
                     self?.isDependencyInstallInProgress = false
                     self?.visualCppRuntimeStatus = DependencyService.isVisualCppRuntimeInstalled() ? .installed : .missing
@@ -519,6 +642,46 @@ final class MainDashboardViewModel: ObservableObject {
             let installed = DependencyService.isVisualCppRuntimeInstalled()
             DispatchQueue.main.async {
                 self?.visualCppRuntimeStatus = installed ? .installed : .missing
+            }
+        }
+    }
+
+    var canInstallWineMono: Bool {
+        BundledWineRuntime.wineExecutableURL() != nil && !isWineMonoInstallInProgress
+    }
+
+    func installWineMono() {
+        guard canInstallWineMono else { return }
+        isWineMonoInstallInProgress = true
+        wineMonoStatus = .inProgress("Waiting for installer...")
+        patchFeedback = nil
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                try DependencyService.installWineMono()
+                DispatchQueue.main.async {
+                    self?.isWineMonoInstallInProgress = false
+                    self?.wineMonoStatus = .installed
+                    self?.patchFeedback = PatchFeedback(title: "Dependencies", message: "Wine Mono installed successfully.", isError: false)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.isWineMonoInstallInProgress = false
+                    self?.wineMonoStatus = .error(error.localizedDescription)
+                    self?.patchFeedback = PatchFeedback(title: "Wine Mono Install Failed", message: error.localizedDescription, isError: true)
+                    self?.refreshWineMonoStatus()
+                }
+            }
+        }
+    }
+
+    func refreshWineMonoStatus() {
+        guard !isWineMonoInstallInProgress else { return }
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let installed = DependencyService.isWineMonoInstalled()
+            DispatchQueue.main.async {
+                self?.wineMonoStatus = installed ? .installed : .missing
             }
         }
     }
@@ -562,18 +725,15 @@ final class MainDashboardViewModel: ObservableObject {
 
     private func setOptionAsAlt(_ enabled: Bool) {
         guard !isOptionAsAltBusy else { return }
-        guard let currentVersion = versionManager.currentVersion else { return }
 
         isOptionAsAltBusy = true
         optionAsAltStatus = .inProgress(enabled ? "Enabling…" : "Disabling…")
 
-        let crossOverPath = currentVersion.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : currentVersion.crossOverPath
-
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {
-                try OptionAsAltService.setOptionAsAlt(enabled: enabled, crossOverPath: crossOverPath)
-                let actual = OptionAsAltService.isOptionAsAltEnabled(crossOverPath: crossOverPath)
+                try OptionAsAltService.setOptionAsAlt(enabled: enabled)
+                let actual = OptionAsAltService.isOptionAsAltEnabled()
                 DispatchQueue.main.async {
                     self.isOptionAsAltBusy = false
                     self.optionAsAltStatus = actual ? .enabled : .disabled
@@ -611,18 +771,15 @@ final class MainDashboardViewModel: ObservableObject {
 
     private func setRetinaMode(_ enabled: Bool) {
         guard !isRetinaModeBusy else { return }
-        guard let currentVersion = versionManager.currentVersion else { return }
 
         isRetinaModeBusy = true
         retinaModeStatus = .inProgress(enabled ? "Enabling…" : "Disabling…")
 
-        let crossOverPath = currentVersion.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : currentVersion.crossOverPath
-
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {
-                try RetinaModeService.setRetinaMode(enabled: enabled, crossOverPath: crossOverPath)
-                let actual = RetinaModeService.isRetinaModeEnabled(crossOverPath: crossOverPath)
+                try RetinaModeService.setRetinaMode(enabled: enabled)
+                let actual = RetinaModeService.isRetinaModeEnabled()
                 DispatchQueue.main.async {
                     self.isRetinaModeBusy = false
                     self.retinaModeStatus = actual ? .enabled : .disabled
@@ -656,7 +813,8 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     func refreshGraphicsSettings() {
-        guard let version = versionManager.currentVersion else { return }
+        guard let version = versionManager.currentVersion,
+              version.supportsCustomGraphicsSettings else { return }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let gs = ConfigService.readGraphicsSettings(for: version)
             DispatchQueue.main.async {
@@ -807,9 +965,9 @@ final class MainDashboardViewModel: ObservableObject {
         Task.detached { [weak self] in
             do {
                 try PatchService.applyGamePatch(for: versionSnapshot)
-                await self?.handlePatchCompletion(successTitle: "Game Patch", message: "Game patch applied successfully.", isGame: true)
+                await self?.handlePatchCompletion(successTitle: "Game Patch", message: "Game patch applied successfully.")
             } catch {
-                await self?.handlePatchError(error, title: "Game Patch Failed", isGame: true)
+                await self?.handlePatchError(error, title: "Game Patch Failed")
             }
         }
     }
@@ -826,53 +984,9 @@ final class MainDashboardViewModel: ObservableObject {
         Task.detached { [weak self] in
             do {
                 try PatchService.removeGamePatch(for: versionSnapshot)
-                await self?.handlePatchCompletion(successTitle: "Game Unpatch", message: "Game unpatched successfully.", isGame: true)
+                await self?.handlePatchCompletion(successTitle: "Game Unpatch", message: "Game unpatched successfully.")
             } catch {
-                await self?.handlePatchError(error, title: "Game Unpatch Failed", isGame: true)
-            }
-        }
-    }
-
-    func patchCrossOver() {
-        guard !isGameOperationInProgress, let version = versionManager.currentVersion else {
-            return
-        }
-
-        isGameOperationInProgress = true
-        isUnpatchingOperation = false
-
-        Task.detached { [weak self] in
-            do {
-                let crossOverPath = version.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !crossOverPath.isEmpty else {
-                    throw PatchServiceError.crossOverNotFound
-                }
-                try PatchService.applyCrossOverPatch(crossOverPath: crossOverPath)
-                await self?.handlePatchCompletion(successTitle: "CrossOver Patch", message: "CrossOver patch applied successfully.", isGame: false)
-            } catch {
-                await self?.handlePatchError(error, title: "CrossOver Patch Failed", isGame: false)
-            }
-        }
-    }
-
-    func unpatchCrossOver() {
-        guard !isGameOperationInProgress, let version = versionManager.currentVersion else {
-            return
-        }
-
-        isGameOperationInProgress = true
-        isUnpatchingOperation = true
-
-        Task.detached { [weak self] in
-            do {
-                let crossOverPath = version.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !crossOverPath.isEmpty else {
-                    throw PatchServiceError.crossOverNotFound
-                }
-                try PatchService.removeCrossOverPatch(crossOverPath: crossOverPath)
-                await self?.handlePatchCompletion(successTitle: "CrossOver Unpatch", message: "CrossOver unpatched successfully.", isGame: false)
-            } catch {
-                await self?.handlePatchError(error, title: "CrossOver Unpatch Failed", isGame: false)
+                await self?.handlePatchError(error, title: "Game Unpatch Failed")
             }
         }
     }
@@ -882,7 +996,7 @@ final class MainDashboardViewModel: ObservableObject {
         patchFeedback = nil
     }
 
-    private func handlePatchCompletion(successTitle: String, message: String, isGame: Bool) async {
+    private func handlePatchCompletion(successTitle: String, message: String) async {
         await MainActor.run {
             isGameOperationInProgress = false
             isUnpatchingOperation = false
@@ -891,7 +1005,7 @@ final class MainDashboardViewModel: ObservableObject {
         }
     }
 
-    private func handlePatchError(_ error: Error, title: String, isGame: Bool) async {
+    private func handlePatchError(_ error: Error, title: String) async {
         await MainActor.run {
             isGameOperationInProgress = false
             isUnpatchingOperation = false
@@ -903,19 +1017,17 @@ final class MainDashboardViewModel: ObservableObject {
     private func refreshSnapshot() {
         guard var currentVersion = versionManager.currentVersion else {
             versionDisplayName = "WoWSilicon"
+            subtitleText = "Launch World Of Warcraft from 2006-2010 on Apple Silicon Macs"
+            supportsAddons = false
             supportsMods = false
             self.currentVersion = nil
             gamePathStatus = StatusValue(text: "Not set", level: .error)
-            crossOverPathStatus = StatusValue(text: "Not set", level: .error)
             gamePatchStatus = StatusValue(text: "Not Applied", level: .error)
-            crossOverPatchStatus = StatusValue(text: "Not Applied", level: .error)
             versions = versionManager.orderedVersions()
             currentVersionID = versionManager.currentVersionID
             patchStatusRefreshID += 1
             isGamePatched = false
             isGamePatchActionable = false
-            isCrossOverPatched = false
-            isCrossOverPatchActionable = false
             canLaunch = false
             currentVersionHasLauncher = false
             currentVersionWantsLauncher = false
@@ -927,22 +1039,21 @@ final class MainDashboardViewModel: ObservableObject {
         currentVersion = syncCursorSizeMultiplierFromConfig(for: currentVersion)
 
         versionDisplayName = currentVersion.displayName
+        subtitleText = currentVersion.isWorldOfWarcraft
+            ? "Launch World Of Warcraft from 2006-2010 on Apple Silicon Macs"
+            : "Launch a 32-bit Direct3D 9 game on Apple Silicon"
         self.currentVersion = currentVersion
-        supportsMods = currentVersion.supportsDLLLoading
+        supportsAddons = currentVersion.supportsAddons
+        supportsMods = currentVersion.isWorldOfWarcraft && currentVersion.supportsDLLLoading
         versions = versionManager.orderedVersions()
         currentVersionID = versionManager.currentVersionID
         gamePathStatus = makePathStatus(for: currentVersion.gamePath)
-        crossOverPathStatus = makePathStatus(for: currentVersion.crossOverPath)
 
-        let crossOverPathSet = !currentVersion.crossOverPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         gamePatchStatus = StatusValue(text: "Checking...", level: .info)
-        crossOverPatchStatus = StatusValue(text: crossOverPathSet ? "Checking..." : "Not Applied", level: crossOverPathSet ? .info : .error)
         isGamePatched = false
         isGamePatchActionable = false
-        isCrossOverPatched = false
-        isCrossOverPatchActionable = false
         canLaunch = false
-        refreshPatchStatuses(for: currentVersion, crossOverPathSet: crossOverPathSet)
+        refreshPatchStatuses(for: currentVersion)
 
         if currentVersion.hasLauncher && !FileManager.default.fileExists(atPath: currentVersion.launcherExePath) {
             versionManager.updateCurrentVersion { $0.launcherExePath = "" }
@@ -961,15 +1072,12 @@ final class MainDashboardViewModel: ObservableObject {
         }
     }
 
-    private func refreshPatchStatuses(for version: GameVersion, crossOverPathSet: Bool) {
+    private func refreshPatchStatuses(for version: GameVersion) {
         patchStatusRefreshID += 1
         let refreshID = patchStatusRefreshID
 
-        Task.detached { [version, crossOverPathSet] in
+        Task.detached { [version] in
             let gamePatchDescriptor = PatchingStatusChecker.evaluateGamePatch(for: version)
-            let crossOverPatchDescriptor = PatchingStatusChecker.evaluateCrossOverPatch(
-                crossOverPath: crossOverPathSet ? version.crossOverPath : nil
-            )
 
             await MainActor.run { [weak self] in
                 guard let self else { return }
@@ -980,12 +1088,8 @@ final class MainDashboardViewModel: ObservableObject {
                 self.isGamePatched = gamePatchDescriptor.applied
                 self.isGamePatchActionable = gamePatchDescriptor.actionable
 
-                self.crossOverPatchStatus = StatusValue(text: crossOverPatchDescriptor.text, level: crossOverPatchDescriptor.level)
-                self.isCrossOverPatched = crossOverPatchDescriptor.applied
-                self.isCrossOverPatchActionable = crossOverPatchDescriptor.actionable && crossOverPathSet
-
                 let gamePathReady = !version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                self.canLaunch = gamePathReady && gamePatchDescriptor.applied && crossOverPatchDescriptor.applied && crossOverPathSet
+                self.canLaunch = gamePathReady && gamePatchDescriptor.applied
             }
         }
     }
@@ -1005,12 +1109,13 @@ final class MainDashboardViewModel: ObservableObject {
             } else {
                 version.settings.enableVanillaTweaks = false
             }
-            version.settings.autoDeleteWdb = true
+            version.settings.autoDeleteWdb = version.isWorldOfWarcraft
             version.settings.remapOptionAsAlt = userPrefs.remapOptionAsAlt
             if !userPrefs.environmentVariables.isEmpty {
                 version.settings.environmentVariables = userPrefs.environmentVariables
             }
             version.settings.vanillaTweaksParameters = userPrefs.vanillaTweaksParameters
+            version.settings.x87Backend = userPrefs.x87Backend
             if version.libSiliconPatchSubdirectory != nil {
                 if !version.settings.userDisabledLibSiliconPatch {
                     version.settings.enableLibSiliconPatch = true
@@ -1063,6 +1168,7 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     private func applyCursorSizeMultiplier(for version: GameVersion) {
+        guard version.supportsCustomGraphicsSettings else { return }
         let trimmedPath = version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPath.isEmpty else { return }
         let multiplier = version.settings.cursorSizeMultiplier
@@ -1079,6 +1185,7 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     private func syncCursorSizeMultiplierFromConfig(for version: GameVersion) -> GameVersion {
+        guard version.supportsCustomGraphicsSettings else { return version }
         var updated = version
         let trimmedPath = version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPath.isEmpty else { return version }
@@ -1105,6 +1212,7 @@ final class MainDashboardViewModel: ObservableObject {
         updated.telemetryInstallID = userPrefs.telemetryInstallID
         updated.environmentVariables = settings.environmentVariables
         updated.vanillaTweaksParameters = settings.vanillaTweaksParameters
+        updated.x87Backend = settings.x87Backend
 
         if updated != userPrefs {
             userPrefs = updated

@@ -24,7 +24,7 @@
 
 WoWSilicon is a macOS launcher for older World of Warcraft clients on Apple Silicon Macs.
 
-It is built around CrossOver, RosettaX87, DX9 translation, and runtime patching so clients from the 2006-2010 era can run more efficiently on modern macOS hardware.
+It bundles a customized Wine runtime alongside RosettaX87, DX9 translation, and game patching so clients from the 2006-2010 era can run efficiently on modern macOS hardware.
 
 <p align="center">
   <img src="docs/assets/launcher-preview.png" alt="WoWSilicon launcher preview" width="760">
@@ -36,11 +36,12 @@ It is built around CrossOver, RosettaX87, DX9 translation, and runtime patching 
 - The Burning Crusade 2.4.3
 - Wrath of the Lich King 3.3.5a
 - Custom profiles based on the supported client families
+- Other 32-bit Direct3D 9 games through Non-WoW profiles
 
 ## Features
 
 - Version profiles for separate client folders
-- CrossOver patching for the RosettaX87 launch path
+- Bundled Wine runtime for game, launcher, installer, and registry operations
 - Game-folder patching for required runtime files
 - libSiliconPatch mod (reducing x87-heavy runtime paths)
 - Addon manager with Git URL installs, updates, bulk import, and bulk export
@@ -53,9 +54,8 @@ It is built around CrossOver, RosettaX87, DX9 translation, and runtime patching 
 
 - Apple Silicon Mac
 - macOS 15 or newer
-- CrossOver 26 installed and opened at least once
 - A legally acquired local World of Warcraft client folder
-- Permission to modify the selected game folder and CrossOver app bundle
+- Permission to modify the selected game folder
 
 ## Installation
 
@@ -68,10 +68,10 @@ Move `WoWSilicon.app` to `/Applications`.
 If macOS blocks the app because the build is unsigned, remove the quarantine attribute after moving it:
 
 ```sh
-xattr -cr /Applications/WoWSilicon.app
+xattr -dr com.apple.quarantine /Applications/WoWSilicon.app
 ```
 
-Then open WoWSilicon, select the game folder and CrossOver app path, apply the required patches, and launch the selected client profile.
+Then open WoWSilicon, select the game folder, apply the required game patch, and launch the selected client profile.
 
 ## Development
 
@@ -105,6 +105,16 @@ make run
 Release automation is handled through GitHub Actions. A version tag such as `v2.6.0` builds the DMG, creates or updates the GitHub Release, generates the signed update feed, and publishes `appcast.xml` to the Pages repository.
 
 See [docs/releasing.md](docs/releasing.md) for the release flow and required repository secrets.
+
+## Credits
+
+WoWSilicon builds on the work of these open-source projects:
+
+- [D9VK](https://github.com/Sikarugir-App/d9vk) — Direct3D 9 translation through Vulkan
+- [rosettax87_jit](https://github.com/Lifeisawful/rosettax87_jit) — accelerated x87 translation for Rosetta 2
+- [vanilla-tweaks](https://github.com/brndd/vanilla-tweaks) — quality-of-life patches for the Vanilla WoW client
+- [x87sidecar](https://github.com/athei/x87sidecar) — isolated, cooperative x87 acceleration
+- [MTLd3D](https://github.com/athei/mtld3d) — Direct3D 9 translation through Metal
 
 ## Disclaimer
 
