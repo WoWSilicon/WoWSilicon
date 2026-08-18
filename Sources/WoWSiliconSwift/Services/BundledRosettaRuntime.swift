@@ -8,6 +8,15 @@ enum BundledX87Runtime {
 
     static let rosettaEnvironmentOverride = "WOWSILICON_ROSETTA_X87_PATH"
     static let sidecarEnvironmentOverride = "WOWSILICON_X87_SIDECAR_PATH"
+    static let wineEnvironmentKeys = ["ROSETTA_X87_PATH", "X87_SIDECAR_PATH"]
+
+    static func removingWineEnvironmentKeys(from environment: [String: String]) -> [String: String] {
+        var result = environment
+        for key in wineEnvironmentKeys {
+            result.removeValue(forKey: key)
+        }
+        return result
+    }
 
     static func resolve(
         _ backend: X87Backend,

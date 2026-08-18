@@ -326,22 +326,7 @@ final class LaunchService: @unchecked Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
-        let gamePatched = PatchingStatusChecker.evaluateGamePatch(for: version).applied
-
-        let shellCommand: String
-        if gamePatched && version.settings.x87Backend != .disabled {
-            guard let x87Runtime = BundledX87Runtime.resolve(version.settings.x87Backend) else {
-                DispatchQueue.main.async {
-                    completion(.failure(.x87RuntimeMissing(
-                        BundledX87Runtime.expectedBundlePath(for: version.settings.x87Backend)
-                    )))
-                }
-                return
-            }
-            shellCommand = "cd \(launcherDir) && \(x87Runtime.wineEnvironmentKey)=\(doubleQuote(x87Runtime.executableURL.path)) \(envPart) \(wine) \(exeName) --disable-gpu --in-process-gpu"
-        } else {
-            shellCommand = "cd \(launcherDir) && \(envPart) \(wine) \(exeName) --disable-gpu --in-process-gpu"
-        }
+        let shellCommand = "cd \(launcherDir) && \(envPart) \(wine) \(exeName) --disable-gpu --in-process-gpu"
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")

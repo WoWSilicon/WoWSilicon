@@ -42,14 +42,14 @@ enum BundledWineRuntime {
         resourceURL: URL? = Bundle.main.resourceURL,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> [String: String] {
+        var result = BundledX87Runtime.removingWineEnvironmentKeys(from: environment)
         guard let externalURL = externalLibraryDirectoryURL(
             resourceURL: resourceURL,
             environment: environment
         ) else {
-            return environment
+            return result
         }
 
-        var result = environment
         let existing = environment["DYLD_LIBRARY_PATH"]?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if let existing, !existing.isEmpty {

@@ -36,6 +36,21 @@ final class BundledWineRuntimeTests: XCTestCase {
         )
     }
 
+    func testEnvironmentRemovesX87TranslationFromHelperProcesses() {
+        let environment = BundledWineRuntime.makeEnvironment(
+            resourceURL: nil,
+            environment: [
+                "ROSETTA_X87_PATH": "/tmp/rosettax87",
+                "X87_SIDECAR_PATH": "/tmp/x87sidecar",
+                "PRESERVED": "value",
+            ]
+        )
+
+        XCTAssertNil(environment["ROSETTA_X87_PATH"])
+        XCTAssertNil(environment["X87_SIDECAR_PATH"])
+        XCTAssertEqual(environment["PRESERVED"], "value")
+    }
+
     func testWineExecutableRequiresExecutableFile() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
