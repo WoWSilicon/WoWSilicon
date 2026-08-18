@@ -23,6 +23,20 @@ struct TroubleshootingContext: Sendable {
     let isGamePatched: Bool
 }
 
+struct PermissionAccessCheck: Identifiable, Equatable, Sendable {
+    enum State: Equatable, Sendable {
+        case passed
+        case failed
+        case unavailable
+    }
+
+    let id: String
+    let name: String
+    let status: String
+    let detail: String?
+    let state: State
+}
+
 enum TroubleshootingService {
 
     private static func gameDirectoryURL(from path: String) -> URL {
@@ -33,6 +47,144 @@ enum TroubleshootingService {
         }
         let url = URL(fileURLWithPath: trimmed)
         return url.pathExtension.lowercased() == "exe" ? url.deletingLastPathComponent() : url
+    }
+
+    static func checkPermissions(context: TroubleshootingContext) -> [PermissionAccessCheck] {
+        var checks: [PermissionAccessCheck] = []
+        let fileManager = FileManager.default
+
+        guard let path = context.gamePath?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else {
+            return [PermissionAccessCheck(
+                id: "game-folder",
+                name: "Game folder",
+                status: "Not configured",
+                detail: nil,
+                state: .unavailable
+            )] + runtimeAndLauncherChecks(context: context)
+        }
+
+        let gameDirectory = gameDirectoryURL(from: path)
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: gameDirectory.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            return [PermissionAccessCheck(
+                id: "game-folder",
+                name: "Game folder",
+                status: "Missing",
+                detail: gameDirectory.path,
+                state: .failed
+            )] + runtimeAndLauncherChecks(context: context)
+        }
+
+        do {
+            _ = try fileManager.contentsOfDirectory(atPath: gameDirectory.path)
+            checks.append(PermissionAccessCheck(
+                id: "game-folder-read",
+                name: "Game folder read access",
+                status: "Available",
+                detail: gameDirectory.path,
+                state: .passed
+            ))
+        } catch {
+            checks.append(PermissionAccessCheck(
+                id: "game-folder-read",
+                name: "Game folder read access",
+                status: "Denied",
+                detail: error.localizedDescription,
+                state: .failed
+            ))
+        }
+
+        let probeURL = gameDirectory.appendingPathComponent(".wowsilicon-access-check-\(UUID().uuidString)")
+        do {
+            try Data("WoWSilicon access check".utf8).write(to: probeURL, options: .withoutOverwriting)
+            try fileManager.removeItem(at: probeURL)
+            checks.append(PermissionAccessCheck(
+                id: "game-folder-write",
+                name: "Game folder write access",
+                status: "Available",
+                detail: "Temporary file creation succeeded",
+                state: .passed
+            ))
+        } catch {
+            try? fileManager.removeItem(at: probeURL)
+            checks.append(PermissionAccessCheck(
+                id: "game-folder-write",
+                name: "Game folder write access",
+                status: "Denied",
+                detail: error.localizedDescription,
+                state: .failed
+            ))
+        }
+
+        if let executableURL = context.currentVersion?.gameExecutableURL {
+            checks.append(readAccessCheck(id: "game-executable", name: "Game executable", url: executableURL))
+        }
+
+        if context.currentVersion?.isWorldOfWarcraft == true {
+            checks.append(readAccessCheck(
+                id: "divx-decoder",
+                name: "DivxDecoder.dll",
+                url: gameDirectory.appendingPathComponent("DivxDecoder.dll")
+            ))
+        }
+
+        checks.append(contentsOf: runtimeAndLauncherChecks(context: context))
+        return checks
+    }
+
+    private static func readAccessCheck(id: String, name: String, url: URL) -> PermissionAccessCheck {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return PermissionAccessCheck(id: id, name: name, status: "Missing", detail: url.path, state: .unavailable)
+        }
+
+        do {
+            let handle = try FileHandle(forReadingFrom: url)
+            try handle.close()
+            return PermissionAccessCheck(id: id, name: name, status: "Readable", detail: nil, state: .passed)
+        } catch {
+            return PermissionAccessCheck(id: id, name: name, status: "Denied", detail: error.localizedDescription, state: .failed)
+        }
+    }
+
+    private static func runtimeAndLauncherChecks(context: TroubleshootingContext) -> [PermissionAccessCheck] {
+        var checks: [PermissionAccessCheck] = []
+        if let launcherPath = context.currentVersion?.launcherExePath.trimmingCharacters(in: .whitespacesAndNewlines),
+           !launcherPath.isEmpty {
+            checks.append(readAccessCheck(
+                id: "launcher-executable",
+                name: "Launcher executable",
+                url: URL(fileURLWithPath: launcherPath)
+            ))
+        } else {
+            checks.append(PermissionAccessCheck(
+                id: "launcher-executable",
+                name: "Launcher executable",
+                status: "Not configured",
+                detail: nil,
+                state: .unavailable
+            ))
+        }
+
+        if BundledWineRuntime.wineExecutableURL() != nil {
+            checks.append(PermissionAccessCheck(
+                id: "wine-runtime",
+                name: "Bundled Wine",
+                status: "Executable",
+                detail: nil,
+                state: .passed
+            ))
+        } else {
+            checks.append(PermissionAccessCheck(
+                id: "wine-runtime",
+                name: "Bundled Wine",
+                status: "Missing or not executable",
+                detail: nil,
+                state: .failed
+            ))
+        }
+        return checks
     }
 
     static func deleteWDBDirectories(gamePath: String?) throws -> [String] {
@@ -91,7 +243,12 @@ enum TroubleshootingService {
         try FileManager.default.removeItem(at: support)
     }
 
-    static func generateDebugLog(context: TroubleshootingContext, hideMacUserName: Bool, includeLatestErrorLog: Bool) -> (full: String, preview: String) {
+    static func generateDebugLog(
+        context: TroubleshootingContext,
+        hideMacUserName: Bool,
+        includeLatestErrorLog: Bool,
+        permissionChecks: [PermissionAccessCheck]? = nil
+    ) -> (full: String, preview: String) {
         var baseLog = "=== WoWSilicon Debug Log ===\n"
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -157,6 +314,14 @@ enum TroubleshootingService {
         baseLog += "Game Path: \(context.gamePath ?? "Not set")\n"
         if let game = context.gamePath {
             baseLog += FileManager.default.fileExists(atPath: game) ? "  Game path exists\n" : "  Game path missing\n"
+        }
+
+        baseLog += "\n=== Permissions & Access ===\n"
+        for check in permissionChecks ?? checkPermissions(context: context) {
+            baseLog += "\(check.name): \(check.status)\n"
+            if let detail = check.detail {
+                baseLog += "  \(detail)\n"
+            }
         }
 
         var fullLog = baseLog

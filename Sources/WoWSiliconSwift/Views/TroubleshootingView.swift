@@ -12,6 +12,7 @@ struct TroubleshootingView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     wineRuntimeSection
+                    permissionsSection
                     actionsSection
                     debugLogSection
                 }
@@ -54,6 +55,62 @@ struct TroubleshootingView: View {
                 Text("Runtime: \(viewModel.wineRuntimeStatus)")
                 Spacer()
             }
+        }
+    }
+
+    private var permissionsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Permissions & Access").font(.headline)
+            Text("These checks verify effective file access. macOS does not let WoWSilicon read the Privacy & Security switches directly.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ForEach(viewModel.permissionChecks) { check in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: permissionIcon(for: check.state))
+                        .foregroundStyle(permissionColor(for: check.state))
+                        .frame(width: 16)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(check.name)
+                            Spacer()
+                            Text(check.status)
+                                .foregroundStyle(permissionColor(for: check.state))
+                        }
+                        if let detail = check.detail {
+                            Text(detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+            }
+
+            HStack {
+                Button("Test Again", action: viewModel.refresh)
+                    .buttonStyle(.bordered)
+                Button("Re-select Game…", action: viewModel.reselectGamePath)
+                    .buttonStyle(.bordered)
+                Button("Open Privacy Settings", action: viewModel.openPrivacySettings)
+                    .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private func permissionIcon(for state: PermissionAccessCheck.State) -> String {
+        switch state {
+        case .passed: return "checkmark.circle.fill"
+        case .failed: return "xmark.circle.fill"
+        case .unavailable: return "minus.circle.fill"
+        }
+    }
+
+    private func permissionColor(for state: PermissionAccessCheck.State) -> Color {
+        switch state {
+        case .passed: return .green
+        case .failed: return .red
+        case .unavailable: return .secondary
         }
     }
 

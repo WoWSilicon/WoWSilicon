@@ -15,6 +15,7 @@ final class TroubleshootingViewModel: ObservableObject, Identifiable {
 
     @Published var status: Status = .idle
     @Published var wineRuntimeStatus: String = "Checking..."
+    @Published var permissionChecks: [PermissionAccessCheck] = []
     @Published var debugLog: String = ""
     private var fullDebugLog: String = ""
     @Published var alert: ManagerAlert?
@@ -26,10 +27,12 @@ final class TroubleshootingViewModel: ObservableObject, Identifiable {
         didSet { if oldValue != includeLatestErrorLog { refresh() } }
     }
 
-    private let context: TroubleshootingContext
+    private var context: TroubleshootingContext
+    private let onGamePathSelected: ((URL) -> Void)?
 
-    init(context: TroubleshootingContext) {
+    init(context: TroubleshootingContext, onGamePathSelected: ((URL) -> Void)? = nil) {
         self.context = context
+        self.onGamePathSelected = onGamePathSelected
     }
 
     func refresh() {
@@ -41,21 +44,60 @@ final class TroubleshootingViewModel: ObservableObject, Identifiable {
             // Capture current toggle states
             let hideName = await self.hideMacUserName
             let includeLog = await self.includeLatestErrorLog
-            
-            
+            let permissionChecks = TroubleshootingService.checkPermissions(context: context)
+
             let result = TroubleshootingService.generateDebugLog(
                 context: context,
                 hideMacUserName: hideName,
-                includeLatestErrorLog: includeLog
+                includeLatestErrorLog: includeLog,
+                permissionChecks: permissionChecks
             )
 
             Task { @MainActor in
                 self.wineRuntimeStatus = BundledWineRuntime.wineExecutableURL() == nil ? "Missing" : "Available"
+                self.permissionChecks = permissionChecks
                 self.debugLog = result.preview
                 self.fullDebugLog = result.full
                 self.status = .ready
             }
         }
+    }
+
+    func reselectGamePath() {
+#if canImport(AppKit)
+        let panel = NSOpenPanel()
+        panel.title = "Re-select Game Executable"
+        panel.message = "Select the configured game executable to grant WoWSilicon access again."
+        panel.prompt = "Grant Access"
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.init(filenameExtension: "exe")].compactMap { $0 }
+        panel.directoryURL = context.currentVersion?.gameDirectoryURL
+        panel.level = .modalPanel
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        onGamePathSelected?(url)
+
+        var updatedVersion = context.currentVersion
+        updatedVersion?.gamePath = url.path
+        updatedVersion?.executableName = url.lastPathComponent
+        context = TroubleshootingContext(
+            gamePath: url.path,
+            currentVersion: updatedVersion,
+            isGamePatched: context.isGamePatched
+        )
+        refresh()
+#endif
+    }
+
+    func openPrivacySettings() {
+#if canImport(AppKit)
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension") else { return }
+        if !NSWorkspace.shared.open(url) {
+            alert = ManagerAlert(message: "Open System Settings > Privacy & Security, then review Files & Folders and App Management for WoWSilicon.")
+        }
+#endif
     }
 
     func deleteWDB() {

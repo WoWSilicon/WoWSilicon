@@ -74,7 +74,8 @@ struct MainDashboardView: View {
                     onOptions: { showOptionsSheet = true },
                     onTroubleshooting: {
                         troubleshootingViewModel = TroubleshootingViewModel(
-                            context: viewModel.makeTroubleshootingContext()
+                            context: viewModel.makeTroubleshootingContext(),
+                            onGamePathSelected: viewModel.setGamePath
                         )
                     },
                     onAddons: {

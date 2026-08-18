@@ -295,10 +295,14 @@ final class MainDashboardViewModel: ObservableObject {
         panel.level = .modalPanel
 
         if panel.runModal() == .OK, let url = panel.url {
-            updateCurrentVersion { version in
-                version.gamePath = url.path
-                version.executableName = url.lastPathComponent
-            }
+            setGamePath(url)
+        }
+    }
+
+    func setGamePath(_ url: URL) {
+        updateCurrentVersion { version in
+            version.gamePath = url.path
+            version.executableName = url.lastPathComponent
         }
     }
 
