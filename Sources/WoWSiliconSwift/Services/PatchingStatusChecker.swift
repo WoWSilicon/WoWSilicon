@@ -97,11 +97,11 @@ enum PatchingStatusChecker {
                 requiredFiles.append(gamePath.appendingPathComponent("mods/libSiliconPatch.dll"))
             }
 
-            if let missingPath = requiredFiles.first(where: { !fileExists(at: $0) }) {
+            if requiredFiles.contains(where: { !fileExists(at: $0) }) {
                 return PatchStatusDescriptor(
                     applied: false,
-                    text: "Missing \(missingPath.lastPathComponent)",
-                    level: .error,
+                    text: "Not patched",
+                    level: .info,
                     actionable: true
                 )
             }

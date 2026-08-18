@@ -130,6 +130,35 @@ enum PatchService {
             if result.exitCode != 0 {
                 throw PatchServiceError.fileOperationFailed("Failed to run \(patch.entry): \(result.combinedOutput)")
             }
+
+            try validatePatchedDLL(named: patch.file, in: gameURL)
+        }
+    }
+
+    static func validatePatchedDLL(named name: String, in gameURL: URL) throws {
+        let fileURL = gameURL.appendingPathComponent(name)
+        let backupURL = gameURL.appendingPathComponent("\(name).bak")
+
+        guard FileManager.default.fileExists(atPath: backupURL.path) else {
+            throw PatchServiceError.fileOperationFailed(
+                "The patch helper did not create \(name).bak. Verify that the game folder is writable and try again."
+            )
+        }
+
+        do {
+            let original = try Data(contentsOf: backupURL)
+            let patched = try Data(contentsOf: fileURL)
+            guard original != patched else {
+                throw PatchServiceError.fileOperationFailed(
+                    "The patch helper did not modify \(name). The file may be unsupported or read-only."
+                )
+            }
+        } catch let error as PatchServiceError {
+            throw error
+        } catch {
+            throw PatchServiceError.fileOperationFailed(
+                "Could not verify the patch for \(name): \(error.localizedDescription)"
+            )
         }
     }
 
