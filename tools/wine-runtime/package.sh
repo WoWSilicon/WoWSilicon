@@ -35,7 +35,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for command in jq rsync shasum tar xz; do
+for command in jq shasum tar xz; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "Required packaging command not found: $command" >&2
     exit 1
@@ -56,7 +56,8 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$work_dir/staging/.wine-runtime" "$work_dir/verify" "$output_dir"
-rsync -a --exclude '.DS_Store' "$runtime/" "$work_dir/staging/.wine-runtime/"
+cp -Rp "$runtime/." "$work_dir/staging/.wine-runtime/"
+find "$work_dir/staging/.wine-runtime" -name '.DS_Store' -delete
 
 # Fixed timestamps, ownership and ordering keep the archive stable when the
 # same assembled runtime is packaged again.
@@ -69,7 +70,7 @@ TZ=UTC find -s "$work_dir/staging/.wine-runtime" -exec touch -h -t 202001010000 
     --uid 0 --gid 0 --uname root --gname wheel \
     --no-acls --no-fflags --no-xattrs \
     --null -T "$work_dir/archive-files"
-) | xz -9 --threads=1 > "$work_dir/$artifact_name"
+) | xz -6 --threads=1 > "$work_dir/$artifact_name"
 
 mv "$work_dir/$artifact_name" "$artifact_path"
 artifact_sha256="$(shasum -a 256 "$artifact_path" | awk '{print $1}')"

@@ -26,7 +26,7 @@ done
 
 [[ -n "$runtime" ]] || usage
 
-for command in file jq otool shasum; do
+for command in file jq otool shasum strings; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "Required validation command not found: $command" >&2
     exit 1
@@ -167,6 +167,17 @@ while IFS= read -r binary; do
     reading && $1 == "name" { print $2; reading = 0 }
   ')
 done < "$mach_o_list"
+
+secur32="$runtime/lib/wine/x86_64-unix/secur32.so"
+[[ -f "$secur32" ]] || {
+  echo "Wine secur32 backend is missing: $secur32" >&2
+  exit 1
+}
+
+strings -a "$secur32" | grep 'gnutls_global_init' >/dev/null || {
+  echo "Wine secur32 was built without GnuTLS; HTTPS will not work." >&2
+  exit 1
+}
 
 arch -x86_64 "$runtime/bin/wine" --version >/dev/null
 

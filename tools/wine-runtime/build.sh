@@ -87,8 +87,8 @@ file "$CC" | grep -q 'x86_64' || {
   exit 1
 }
 
-pkg-config --exists freetype2 vulkan || {
-  echo "x86_64 FreeType and Vulkan development packages are required under $toolchain_prefix" >&2
+pkg-config --exists freetype2 gnutls vulkan || {
+  echo "x86_64 FreeType, GnuTLS, and Vulkan development packages are required under $toolchain_prefix" >&2
   exit 1
 }
 
@@ -118,7 +118,7 @@ configure_options=(
   --without-fontconfig
   --without-gettext
   --without-gphoto
-  --without-gnutls
+  --with-gnutls
   --without-gssapi
   --without-gstreamer
   --without-hwloc
