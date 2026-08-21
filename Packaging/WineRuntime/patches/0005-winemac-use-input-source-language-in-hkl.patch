@@ -1,5 +1,5 @@
 diff --git a/dlls/winemac.drv/keyboard.c b/dlls/winemac.drv/keyboard.c
-index b4085c1..1c61eb2 100644
+index b4085c1..1f517fc 100644
 --- a/dlls/winemac.drv/keyboard.c
 +++ b/dlls/winemac.drv/keyboard.c
 @@ -442,10 +442,10 @@ static DWORD get_lcid(CFStringRef lang)
@@ -54,7 +54,20 @@ index b4085c1..1c61eb2 100644
  
      pthread_mutex_unlock(&layout_list_mutex);
  
-@@ -1496,7 +1494,6 @@ INT macdrv_GetKeyNameText(LONG lparam, LPWSTR buffer, INT size)
+@@ -1442,3 +1440,11 @@ INT macdrv_GetKeyNameText(LONG lparam, LPWSTR buffer, INT size)
+             if (scan & 0x100) vkey |= 0x100;
+-
++
++            if ('A' <= vkey && vkey <= 'Z')
++            {
++                if (size < 2) return 0;
++                buffer[0] = vkey;
++                buffer[1] = 0;
++                return 1;
++            }
++
+             for (i = 0; i < ARRAY_SIZE(vkey_names); i++)
+@@ -1496,7 +1502,6 @@ INT macdrv_GetKeyNameText(LONG lparam, LPWSTR buffer, INT size)
   */
  UINT macdrv_GetKeyboardLayoutList(INT size, HKL *list)
  {
@@ -62,7 +75,7 @@ index b4085c1..1c61eb2 100644
      int count = 0;
      struct layout *layout;
  
-@@ -1512,7 +1509,7 @@ UINT macdrv_GetKeyboardLayoutList(INT size, HKL *list)
+@@ -1512,7 +1517,7 @@ UINT macdrv_GetKeyboardLayoutList(INT size, HKL *list)
          if (list)
          {
              if (count >= size) break;
@@ -71,3 +84,16 @@ index b4085c1..1c61eb2 100644
              TRACE("\t%d: %p\n", count, list[count]);
          }
          count++;
+@@ -1602,5 +1607,11 @@ UINT macdrv_MapVirtualKeyEx(UINT wCode, UINT wMapType, HKL hkl)
+             UniCharCount len;
+             BOOL deadKey = FALSE;
+-
++
++            if ('A' <= wCode && wCode <= 'Z')
++            {
++                ret = wCode;
++                break;
++            }
++
+             if ((VK_PRIOR <= wCode && wCode <= VK_HELP) ||
+                 (VK_F1 <= wCode && wCode <= VK_F24))
