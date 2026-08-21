@@ -619,10 +619,11 @@ final class MainDashboardViewModel: ObservableObject {
         isDependencyInstallInProgress = true
         visualCppRuntimeStatus = .inProgress("Installing...")
         patchFeedback = nil
+        let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                try DependencyService.installVisualCppRuntime()
+                try DependencyService.installVisualCppRuntime(customVariables: customVariables)
                 DispatchQueue.main.async {
                     self?.isDependencyInstallInProgress = false
                     self?.visualCppRuntimeStatus = DependencyService.isVisualCppRuntimeInstalled() ? .installed : .missing
@@ -659,10 +660,11 @@ final class MainDashboardViewModel: ObservableObject {
         isWineMonoInstallInProgress = true
         wineMonoStatus = .inProgress("Waiting for installer...")
         patchFeedback = nil
+        let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                try DependencyService.installWineMono()
+                try DependencyService.installWineMono(customVariables: customVariables)
                 DispatchQueue.main.async {
                     self?.isWineMonoInstallInProgress = false
                     self?.wineMonoStatus = .installed
@@ -732,11 +734,15 @@ final class MainDashboardViewModel: ObservableObject {
 
         isOptionAsAltBusy = true
         optionAsAltStatus = .inProgress(enabled ? "Enabling…" : "Disabling…")
+        let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {
-                try OptionAsAltService.setOptionAsAlt(enabled: enabled)
+                try OptionAsAltService.setOptionAsAlt(
+                    enabled: enabled,
+                    customVariables: customVariables
+                )
                 let actual = OptionAsAltService.isOptionAsAltEnabled()
                 DispatchQueue.main.async {
                     self.isOptionAsAltBusy = false
@@ -778,11 +784,15 @@ final class MainDashboardViewModel: ObservableObject {
 
         isRetinaModeBusy = true
         retinaModeStatus = .inProgress(enabled ? "Enabling…" : "Disabling…")
+        let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {
-                try RetinaModeService.setRetinaMode(enabled: enabled)
+                try RetinaModeService.setRetinaMode(
+                    enabled: enabled,
+                    customVariables: customVariables
+                )
                 let actual = RetinaModeService.isRetinaModeEnabled()
                 DispatchQueue.main.async {
                     self.isRetinaModeBusy = false

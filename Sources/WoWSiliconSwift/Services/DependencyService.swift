@@ -142,7 +142,7 @@ enum DependencyService {
         return hasX86Runtime && (!needsX64Runtime || hasX64Runtime) && hasVisualCppOverrides()
     }
 
-    static func installVisualCppRuntime() throws {
+    static func installVisualCppRuntime(customVariables: String = "") throws {
         guard let wineExecutable = WineRegistrySupport.wineExecutablePath() else {
             throw DependencyServiceError.wineMissing
         }
@@ -150,16 +150,30 @@ enum DependencyService {
         let prefixURL = WineRegistrySupport.winePrefixURL()
         try FileManager.default.createDirectory(at: prefixURL, withIntermediateDirectories: true)
 
-        try applyVisualCppOverrides(prefixURL: prefixURL, wineExecutable: wineExecutable)
+        try applyVisualCppOverrides(
+            prefixURL: prefixURL,
+            wineExecutable: wineExecutable,
+            customVariables: customVariables
+        )
 
         let x86InstallerURL = try downloadVisualCppRedistributable(from: visualCppX86RedistURL, name: "vc_redist.x86.exe")
         defer { try? FileManager.default.removeItem(at: x86InstallerURL) }
-        try runInstaller(installerURL: x86InstallerURL, prefixURL: prefixURL, wineExecutable: wineExecutable)
+        try runInstaller(
+            installerURL: x86InstallerURL,
+            prefixURL: prefixURL,
+            wineExecutable: wineExecutable,
+            customVariables: customVariables
+        )
 
         if isWin64Prefix(prefixURL: prefixURL) {
             let x64InstallerURL = try downloadVisualCppRedistributable(from: visualCppX64RedistURL, name: "vc_redist.x64.exe")
             defer { try? FileManager.default.removeItem(at: x64InstallerURL) }
-            try runInstaller(installerURL: x64InstallerURL, prefixURL: prefixURL, wineExecutable: wineExecutable)
+            try runInstaller(
+                installerURL: x64InstallerURL,
+                prefixURL: prefixURL,
+                wineExecutable: wineExecutable,
+                customVariables: customVariables
+            )
         }
 
         guard waitForVisualCppRuntimeInstalled() else {
@@ -184,7 +198,7 @@ enum DependencyService {
         }
     }
 
-    static func installWineMono() throws {
+    static func installWineMono(customVariables: String = "") throws {
         guard let wineExecutable = WineRegistrySupport.wineExecutablePath() else {
             throw DependencyServiceError.wineMissing
         }
@@ -192,7 +206,11 @@ enum DependencyService {
         let prefixURL = WineRegistrySupport.winePrefixURL()
         try FileManager.default.createDirectory(at: prefixURL, withIntermediateDirectories: true)
 
-        var environment = WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable)
+        var environment = WineRegistrySupport.makeWineEnvironment(
+            prefixURL: prefixURL,
+            wineExecutable: wineExecutable,
+            customVariables: customVariables
+        )
         environment["WINEDLLOVERRIDES"] = "winemenubuilder.exe=d;mshtml=d"
 
         let result: ProcessRunResult
@@ -227,8 +245,17 @@ enum DependencyService {
         }
     }
 
-    private static func runInstaller(installerURL: URL, prefixURL: URL, wineExecutable: String) throws {
-        var environment = WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable)
+    private static func runInstaller(
+        installerURL: URL,
+        prefixURL: URL,
+        wineExecutable: String,
+        customVariables: String
+    ) throws {
+        var environment = WineRegistrySupport.makeWineEnvironment(
+            prefixURL: prefixURL,
+            wineExecutable: wineExecutable,
+            customVariables: customVariables
+        )
         environment["WINEDLLOVERRIDES"] = "winemenubuilder.exe=d;mscoree=d;mshtml=d"
 
         let result: ProcessRunResult
@@ -248,7 +275,11 @@ enum DependencyService {
         }
     }
 
-    private static func applyVisualCppOverrides(prefixURL: URL, wineExecutable: String) throws {
+    private static func applyVisualCppOverrides(
+        prefixURL: URL,
+        wineExecutable: String,
+        customVariables: String
+    ) throws {
         let regURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("wowsilicon-vcrun2022-overrides.reg", isDirectory: false)
         let overrideLines = overrideDLLs
@@ -269,7 +300,11 @@ enum DependencyService {
             result = try ProcessRunner.run(
                 executablePath: wineExecutable,
                 arguments: ["regedit", regURL.path],
-                environment: WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable),
+                environment: WineRegistrySupport.makeWineEnvironment(
+                    prefixURL: prefixURL,
+                    wineExecutable: wineExecutable,
+                    customVariables: customVariables
+                ),
                 timeout: 30
             )
         } catch {

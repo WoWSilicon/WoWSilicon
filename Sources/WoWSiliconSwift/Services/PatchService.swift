@@ -91,20 +91,20 @@ enum PatchService {
         try updateDllsTxt(in: gameURL, enableLibSiliconPatch: version.settings.enableLibSiliconPatch && version.libSiliconPatchSubdirectory != nil)
 
         if version.usesRosettaPatching && version.supportsDLLLoading {
-            try patchDivxDecoder(gameURL: gameURL)
+            try patchDivxDecoder(gameURL: gameURL, customVariables: version.settings.environmentVariables)
         }
 
         ensureGxResolution(in: gameURL)
     }
 
-    private static func patchDivxDecoder(gameURL: URL) throws {
+    private static func patchDivxDecoder(gameURL: URL, customVariables: String) throws {
         guard let wineExecutable = BundledWineRuntime.wineExecutableURL() else {
             let expectedPath = BundledWineRuntime.rootURL()?
                 .appendingPathComponent("bin/wine", isDirectory: false).path ?? "Contents/Resources/Wine/bin/wine"
             throw PatchServiceError.bundledWineMissing(expectedPath)
         }
 
-        var env = BundledWineRuntime.makeEnvironment()
+        var env = BundledWineRuntime.makeEnvironment(customVariables: customVariables)
         env["WINEDLLOVERRIDES"] = "winemenubuilder.exe=d;mscoree=d;mshtml=d"
         env["WINEDEBUG"] = "-all"
         env["WINE_LARGE_ADDRESS_AWARE"] = "1"

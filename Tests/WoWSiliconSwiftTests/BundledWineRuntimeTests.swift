@@ -51,6 +51,53 @@ final class BundledWineRuntimeTests: XCTestCase {
         XCTAssertEqual(environment["PRESERVED"], "value")
     }
 
+    func testEnvironmentIncludesCustomLocaleVariables() {
+        let environment = BundledWineRuntime.makeEnvironment(
+            customVariables: "LANG=ru_RU.UTF-8\nLC_ALL=ru_RU.UTF-8",
+            resourceURL: nil,
+            environment: [BundledWineRuntime.environmentOverride: "/tmp/custom-wine"]
+        )
+
+        XCTAssertEqual(environment["LANG"], "ru_RU.UTF-8")
+        XCTAssertEqual(environment["LC_ALL"], "ru_RU.UTF-8")
+    }
+
+    func testCustomEnvironmentParserSupportsDocumentedAndLegacySeparators() {
+        let environment = BundledWineRuntime.parseEnvironmentVariables("""
+        LANG=ru_RU.UTF-8
+        TOKEN=value=with=equals;LC_ALL=ru_RU.UTF-8
+        # COMMENTED=value
+        INVALID KEY=value
+        """)
+
+        XCTAssertEqual(environment["LANG"], "ru_RU.UTF-8")
+        XCTAssertEqual(environment["LC_ALL"], "ru_RU.UTF-8")
+        XCTAssertEqual(environment["TOKEN"], "value=with=equals")
+        XCTAssertNil(environment["COMMENTED"])
+        XCTAssertNil(environment["INVALID KEY"])
+    }
+
+    func testCustomEnvironmentCannotEnableX87ForHelperProcesses() {
+        let environment = BundledWineRuntime.makeEnvironment(
+            customVariables: "ROSETTA_X87_PATH=/tmp/rosettax87\nLANG=ru_RU.UTF-8",
+            resourceURL: nil,
+            environment: [:]
+        )
+
+        XCTAssertNil(environment["ROSETTA_X87_PATH"])
+        XCTAssertEqual(environment["LANG"], "ru_RU.UTF-8")
+    }
+
+    func testShellEnvironmentAssignmentsQuoteValues() {
+        let assignments = BundledWineRuntime.shellEnvironmentAssignments("""
+        LANG=ru_RU.UTF-8
+        MESSAGE=it's safe
+        ROSETTA_X87_PATH=/tmp/rosettax87
+        """)
+
+        XCTAssertEqual(assignments, "LANG='ru_RU.UTF-8' MESSAGE='it'\\''s safe'")
+    }
+
     func testWineExecutableRequiresExecutableFile() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

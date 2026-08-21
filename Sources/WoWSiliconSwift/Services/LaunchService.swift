@@ -155,7 +155,9 @@ final class LaunchService: @unchecked Sendable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", configuration.shellCommand]
-        process.environment = BundledWineRuntime.makeEnvironment()
+        process.environment = BundledWineRuntime.makeEnvironment(
+            customVariables: configuration.version.settings.environmentVariables
+        )
 
         let stdout = Pipe()
         let stderr = Pipe()
@@ -243,10 +245,7 @@ final class LaunchService: @unchecked Sendable {
         let dllOverride = settings.graphicsSettings.backend.wineDLLOverride
         let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let baseEnv = "DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
-        let custom = settings.environmentVariables
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: ";", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let custom = BundledWineRuntime.shellEnvironmentAssignments(settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
         if let x87Runtime {
@@ -273,12 +272,17 @@ final class LaunchService: @unchecked Sendable {
         let wine = doubleQuote(wineExecutableURL.path)
         let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverrideWithBuiltinFallback
         let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
-        let shellCommand = "DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINEDLLOVERRIDES=\"\(dllOverride)\" \(wine) \(installer)"
+        let custom = BundledWineRuntime.shellEnvironmentAssignments(version.settings.environmentVariables)
+        let baseEnv = "DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINEDLLOVERRIDES=\"\(dllOverride)\""
+        let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
+        let shellCommand = "\(envPart) \(wine) \(installer)"
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", shellCommand]
-        process.environment = BundledWineRuntime.makeEnvironment()
+        process.environment = BundledWineRuntime.makeEnvironment(
+            customVariables: version.settings.environmentVariables
+        )
 
         process.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async { [weak self] in
@@ -320,10 +324,7 @@ final class LaunchService: @unchecked Sendable {
         let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverrideWithBuiltinFallback
         let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let baseEnv = "DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_D3D_CONFIG=renderer=vulkan WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
-        let custom = version.settings.environmentVariables
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: ";", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let custom = BundledWineRuntime.shellEnvironmentAssignments(version.settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
         let shellCommand = "cd \(launcherDir) && \(envPart) \(wine) \(exeName) --disable-gpu --in-process-gpu"
@@ -331,7 +332,9 @@ final class LaunchService: @unchecked Sendable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", shellCommand]
-        process.environment = BundledWineRuntime.makeEnvironment()
+        process.environment = BundledWineRuntime.makeEnvironment(
+            customVariables: version.settings.environmentVariables
+        )
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
 

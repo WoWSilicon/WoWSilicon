@@ -21,7 +21,7 @@ enum OptionAsAltService {
     private static let leftOptionLine = #""LeftOptionIsAlt"="Y""#
     private static let rightOptionLine = #""RightOptionIsAlt"="Y""#
 
-    static func setOptionAsAlt(enabled: Bool) throws {
+    static func setOptionAsAlt(enabled: Bool, customVariables: String = "") throws {
         guard let wineExecutable = WineRegistrySupport.wineExecutablePath() else {
             throw OptionAsAltServiceError.wineMissing
         }
@@ -31,12 +31,22 @@ enum OptionAsAltService {
 
         if enabled {
             try? setRegistryValuesFast(enabled: false)
-            try runBatch(prefixURL: prefixURL, wineExecutable: wineExecutable, enabled: true)
+            try runBatch(
+                prefixURL: prefixURL,
+                wineExecutable: wineExecutable,
+                enabled: true,
+                customVariables: customVariables
+            )
             try setRegistryValuesFast(enabled: true)
         } else {
             var batchError: Error?
             do {
-                try runBatch(prefixURL: prefixURL, wineExecutable: wineExecutable, enabled: false)
+                try runBatch(
+                    prefixURL: prefixURL,
+                    wineExecutable: wineExecutable,
+                    enabled: false,
+                    customVariables: customVariables
+                )
             } catch {
                 batchError = error
             }
@@ -77,13 +87,22 @@ enum OptionAsAltService {
     }
 
     // MARK: - Helpers
-    private static func runBatch(prefixURL: URL, wineExecutable: String, enabled: Bool) throws {
+    private static func runBatch(
+        prefixURL: URL,
+        wineExecutable: String,
+        enabled: Bool,
+        customVariables: String
+    ) throws {
         let batchContent = makeBatchScript(enable: enabled)
         let batchURL = FileManager.default.temporaryDirectory.appendingPathComponent(enabled ? "wine_registry_add.bat" : "wine_registry_delete.bat")
         try batchContent.write(to: batchURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: batchURL) }
 
-        let environment = WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable)
+        let environment = WineRegistrySupport.makeWineEnvironment(
+            prefixURL: prefixURL,
+            wineExecutable: wineExecutable,
+            customVariables: customVariables
+        )
 
         let result = try ProcessRunner.run(
             executablePath: wineExecutable,

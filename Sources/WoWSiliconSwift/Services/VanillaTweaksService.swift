@@ -62,7 +62,10 @@ enum VanillaTweaksService {
         let result = try ProcessRunner.run(
             executablePath: wineExecutable.path,
             arguments: try makeArguments(for: version.settings),
-            environment: makeWineEnvironment(wineExecutable: wineExecutable),
+            environment: makeWineEnvironment(
+                wineExecutable: wineExecutable,
+                customVariables: version.settings.environmentVariables
+            ),
             currentDirectory: gameURL,
             timeout: 300
         )
@@ -119,8 +122,11 @@ enum VanillaTweaksService {
         return arguments
     }
     
-    private static func makeWineEnvironment(wineExecutable: URL) -> [String: String] {
-        var environment = BundledWineRuntime.makeEnvironment()
+    private static func makeWineEnvironment(
+        wineExecutable: URL,
+        customVariables: String
+    ) -> [String: String] {
+        var environment = BundledWineRuntime.makeEnvironment(customVariables: customVariables)
         environment["WINE_LARGE_ADDRESS_AWARE"] = "1"
 
         let wineDirectory = wineExecutable.deletingLastPathComponent().path

@@ -39,10 +39,13 @@ enum BundledWineRuntime {
     }
 
     static func makeEnvironment(
+        customVariables: String = "",
         resourceURL: URL? = Bundle.main.resourceURL,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> [String: String] {
-        var result = BundledX87Runtime.removingWineEnvironmentKeys(from: environment)
+        var result = environment
+        result.merge(parseEnvironmentVariables(customVariables)) { _, custom in custom }
+        result = BundledX87Runtime.removingWineEnvironmentKeys(from: result)
         guard let externalURL = externalLibraryDirectoryURL(
             resourceURL: resourceURL,
             environment: environment
@@ -58,6 +61,49 @@ enum BundledWineRuntime {
             result["DYLD_LIBRARY_PATH"] = externalURL.path
         }
         return result
+    }
+
+    static func parseEnvironmentVariables(_ rawValue: String) -> [String: String] {
+        let normalized = rawValue.replacingOccurrences(of: ";", with: "\n")
+        var result: [String: String] = [:]
+
+        for rawLine in normalized.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty, !line.hasPrefix("#"),
+                  let separator = line.firstIndex(of: "=") else {
+                continue
+            }
+
+            let key = line[..<separator].trimmingCharacters(in: .whitespaces)
+            let value = line[line.index(after: separator)...].trimmingCharacters(in: .whitespaces)
+            guard isValidEnvironmentKey(key) else { continue }
+            result[key] = value
+        }
+
+        return result
+    }
+
+    static func shellEnvironmentAssignments(_ rawValue: String) -> String {
+        BundledX87Runtime.removingWineEnvironmentKeys(
+            from: parseEnvironmentVariables(rawValue)
+        )
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\(shellQuote($0.value))" }
+            .joined(separator: " ")
+    }
+
+    private static func isValidEnvironmentKey(_ key: String) -> Bool {
+        guard let first = key.utf8.first,
+              first == 95 || (65...90).contains(first) || (97...122).contains(first) else {
+            return false
+        }
+        return key.utf8.dropFirst().allSatisfy {
+            $0 == 95 || (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0)
+        }
+    }
+
+    private static func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     static func mtld3dConfigurationURL(

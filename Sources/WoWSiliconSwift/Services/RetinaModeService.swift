@@ -20,7 +20,7 @@ enum RetinaModeServiceError: LocalizedError {
 enum RetinaModeService {
     private static let retinaLineY = #""RetinaMode"="Y""#
 
-    static func setRetinaMode(enabled: Bool) throws {
+    static func setRetinaMode(enabled: Bool, customVariables: String = "") throws {
         guard let wineExecutable = WineRegistrySupport.wineExecutablePath() else {
             throw RetinaModeServiceError.wineMissing
         }
@@ -28,7 +28,12 @@ enum RetinaModeService {
         let prefixURL = WineRegistrySupport.winePrefixURL()
         try FileManager.default.createDirectory(at: prefixURL, withIntermediateDirectories: true)
 
-        try runBatch(prefixURL: prefixURL, wineExecutable: wineExecutable, enabled: enabled)
+        try runBatch(
+            prefixURL: prefixURL,
+            wineExecutable: wineExecutable,
+            enabled: enabled,
+            customVariables: customVariables
+        )
         try setRegistryValueFast(enabled: enabled)
     }
 
@@ -63,7 +68,12 @@ enum RetinaModeService {
         return lastValue == "Y"
     }
 
-    private static func runBatch(prefixURL: URL, wineExecutable: String, enabled: Bool) throws {
+    private static func runBatch(
+        prefixURL: URL,
+        wineExecutable: String,
+        enabled: Bool,
+        customVariables: String
+    ) throws {
         let batchContent = makeBatchScript(enable: enabled)
         let batchURL = FileManager.default.temporaryDirectory.appendingPathComponent("wine_retina_mode.bat")
         try batchContent.write(to: batchURL, atomically: true, encoding: .utf8)
@@ -72,7 +82,11 @@ enum RetinaModeService {
         let result = try ProcessRunner.run(
             executablePath: wineExecutable,
             arguments: ["cmd", "/c", batchURL.path],
-            environment: WineRegistrySupport.makeWineEnvironment(prefixURL: prefixURL, wineExecutable: wineExecutable),
+            environment: WineRegistrySupport.makeWineEnvironment(
+                prefixURL: prefixURL,
+                wineExecutable: wineExecutable,
+                customVariables: customVariables
+            ),
             timeout: 60
         )
 
