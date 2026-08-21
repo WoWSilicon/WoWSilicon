@@ -1,0 +1,73 @@
+diff --git a/dlls/winemac.drv/keyboard.c b/dlls/winemac.drv/keyboard.c
+index b4085c1..1c61eb2 100644
+--- a/dlls/winemac.drv/keyboard.c
++++ b/dlls/winemac.drv/keyboard.c
+@@ -442,10 +442,10 @@ static DWORD get_lcid(CFStringRef lang)
+     return locale->inotneutral ? entry->id : locale->idefaultlanguage;
+ }
+ 
+-static HKL get_layout_hkl(struct layout *layout, LCID locale)
++static HKL get_layout_hkl(struct layout *layout)
+ {
+-    if (!layout->layout_id) return UlongToHandle(MAKELONG(locale, layout->lang));
+-    return UlongToHandle(MAKELONG(locale, layout->layout_id));
++    if (!layout->layout_id) return UlongToHandle(MAKELONG(layout->lang, layout->lang));
++    return UlongToHandle(MAKELONG(layout->lang, layout->layout_id));
+ }
+ 
+ /******************************************************************
+@@ -481,7 +481,6 @@ static struct layout *get_layout_from_source(TISInputSourceRef input)
+  */
+ static void update_layout_list(void)
+ {
+-    LCID locale = LOWORD(NtUserGetKeyboardLayout(0));
+     CFArrayRef sources;
+     struct layout *layout;
+     int i;
+@@ -518,10 +517,10 @@ static void update_layout_list(void)
+             else if (index) layout->layout_id = 0xf000 | next_layout_id++;
+ 
+             list_add_tail(&layout_list, &layout->entry);
+-            TRACE("adding new layout %p\n", get_layout_hkl(layout, locale));
++            TRACE("adding new layout %p\n", get_layout_hkl(layout));
+         }
+         else
+-            TRACE("enabling already existing layout %p\n", get_layout_hkl(layout, locale));
++            TRACE("enabling already existing layout %p\n", get_layout_hkl(layout));
+ 
+         layout->enabled = TRUE;
+     }
+@@ -536,7 +535,6 @@ static void update_layout_list(void)
+  */
+ HKL macdrv_get_hkl_from_source(TISInputSourceRef input)
+ {
+-    LCID locale = LOWORD(NtUserGetKeyboardLayout(0));
+     struct layout *layout;
+     HKL ret = 0;
+ 
+@@ -544,7 +542,7 @@ HKL macdrv_get_hkl_from_source(TISInputSourceRef input)
+ 
+     update_layout_list();
+     layout = get_layout_from_source(input);
+-    if (layout) ret = get_layout_hkl(layout, locale);
++    if (layout) ret = get_layout_hkl(layout);
+ 
+     pthread_mutex_unlock(&layout_list_mutex);
+ 
+@@ -1496,7 +1494,6 @@ INT macdrv_GetKeyNameText(LONG lparam, LPWSTR buffer, INT size)
+  */
+ UINT macdrv_GetKeyboardLayoutList(INT size, HKL *list)
+ {
+-    LCID locale = LOWORD(NtUserGetKeyboardLayout(0));
+     int count = 0;
+     struct layout *layout;
+ 
+@@ -1512,7 +1509,7 @@ UINT macdrv_GetKeyboardLayoutList(INT size, HKL *list)
+         if (list)
+         {
+             if (count >= size) break;
+-            list[count] = get_layout_hkl(layout, locale);
++            list[count] = get_layout_hkl(layout);
+             TRACE("\t%d: %p\n", count, list[count]);
+         }
+         count++;
