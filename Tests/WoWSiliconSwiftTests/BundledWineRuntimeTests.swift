@@ -98,6 +98,17 @@ final class BundledWineRuntimeTests: XCTestCase {
         XCTAssertEqual(assignments, "LANG='ru_RU.UTF-8' MESSAGE='it'\\''s safe'")
     }
 
+    func testShellEnvironmentAssignmentsScopesStableANSIKeyboardLayout() {
+        XCTAssertEqual(BundledWineRuntime.shellEnvironmentAssignments(""), "")
+        XCTAssertEqual(
+            BundledWineRuntime.shellEnvironmentAssignments(
+                "WOWSILICON_STABLE_ANSI_HKL=0",
+                stabilizeANSIKeyboardLayout: true
+            ),
+            "WOWSILICON_STABLE_ANSI_HKL='1'"
+        )
+    }
+
     func testWineExecutableRequiresExecutableFile() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
