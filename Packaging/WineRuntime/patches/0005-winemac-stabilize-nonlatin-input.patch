@@ -1,0 +1,41 @@
+diff --git a/dlls/winemac.drv/keyboard.c b/dlls/winemac.drv/keyboard.c
+index b4085c1..234a2f0 100644
+--- a/dlls/winemac.drv/keyboard.c
++++ b/dlls/winemac.drv/keyboard.c
+@@ -544,7 +544,7 @@ HKL macdrv_get_hkl_from_source(TISInputSourceRef input)
+ 
+     update_layout_list();
+     layout = get_layout_from_source(input);
+-    if (layout) ret = get_layout_hkl(layout, locale);
++    if (layout) ret = UlongToHandle(MAKELONG(locale, locale));
+ 
+     pthread_mutex_unlock(&layout_list_mutex);
+ 
+@@ -1441,6 +1441,14 @@ INT macdrv_GetKeyNameText(LONG lparam, LPWSTR buffer, INT size)
+ 
+             if (scan & 0x100) vkey |= 0x100;
+ 
++            if ('A' <= vkey && vkey <= 'Z')
++            {
++                if (size < 2) return 0;
++                buffer[0] = vkey;
++                buffer[1] = 0;
++                return 1;
++            }
++
+             for (i = 0; i < ARRAY_SIZE(vkey_names); i++)
+             {
+                 if (vkey_names[i].vkey == vkey)
+@@ -1602,6 +1610,12 @@ UINT macdrv_MapVirtualKeyEx(UINT wCode, UINT wMapType, HKL hkl)
+             UniCharCount len;
+             BOOL deadKey = FALSE;
+ 
++            if ('A' <= wCode && wCode <= 'Z')
++            {
++                ret = wCode;
++                break;
++            }
++
+             if ((VK_PRIOR <= wCode && wCode <= VK_HELP) ||
+                 (VK_F1 <= wCode && wCode <= VK_F24))
+                 break;
