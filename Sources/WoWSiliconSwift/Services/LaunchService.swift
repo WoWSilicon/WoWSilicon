@@ -136,7 +136,7 @@ final class LaunchService: @unchecked Sendable {
             x87Runtime: x87Runtime,
             wowURL: wowExecutableURL,
             wineExecutablePath: wineExecutableURL.path,
-            settings: version.settings
+            version: version
         )
 
         return LaunchConfiguration(
@@ -236,16 +236,20 @@ final class LaunchService: @unchecked Sendable {
         }
     }
 
-    private func makeShellCommand(gameURL: URL, x87Runtime: BundledX87Runtime.ResolvedRuntime?, wowURL: URL, wineExecutablePath: String, settings: VersionSettings) -> String {
+    private func makeShellCommand(gameURL: URL, x87Runtime: BundledX87Runtime.ResolvedRuntime?, wowURL: URL, wineExecutablePath: String, version: GameVersion) -> String {
         let game = doubleQuote(gameURL.path)
         let wow = doubleQuote(wowURL.path)
         let wine = doubleQuote(wineExecutablePath)
+        let settings = version.settings
 
         let mtlValue = settings.enableMetalHud ? "1" : "0"
         let dllOverride = settings.graphicsSettings.backend.wineDLLOverride
         let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let baseEnv = "DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
-        let custom = BundledWineRuntime.shellEnvironmentAssignments(settings.environmentVariables)
+        let custom = BundledWineRuntime.shellEnvironmentAssignments(
+            settings.environmentVariables,
+            stabilizeANSIKeyboardLayout: version.isWorldOfWarcraft
+        )
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
         if let x87Runtime {
@@ -324,7 +328,10 @@ final class LaunchService: @unchecked Sendable {
         let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverrideWithBuiltinFallback
         let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let baseEnv = "DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_D3D_CONFIG=renderer=vulkan WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
-        let custom = BundledWineRuntime.shellEnvironmentAssignments(version.settings.environmentVariables)
+        let custom = BundledWineRuntime.shellEnvironmentAssignments(
+            version.settings.environmentVariables,
+            stabilizeANSIKeyboardLayout: version.isWorldOfWarcraft
+        )
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
         let shellCommand = "cd \(launcherDir) && \(envPart) \(wine) \(exeName) --disable-gpu --in-process-gpu"

@@ -1,13 +1,15 @@
 diff --git a/dlls/winemac.drv/keyboard.c b/dlls/winemac.drv/keyboard.c
-index b4085c1..234a2f0 100644
+index b4085c1..2b61823 100644
 --- a/dlls/winemac.drv/keyboard.c
 +++ b/dlls/winemac.drv/keyboard.c
-@@ -544,7 +544,7 @@ HKL macdrv_get_hkl_from_source(TISInputSourceRef input)
+@@ -544,7 +544,9 @@ HKL macdrv_get_hkl_from_source(TISInputSourceRef input)
  
      update_layout_list();
      layout = get_layout_from_source(input);
 -    if (layout) ret = get_layout_hkl(layout, locale);
-+    if (layout) ret = UlongToHandle(MAKELONG(locale, locale));
++    if (layout && getenv("WOWSILICON_STABLE_ANSI_HKL"))
++        ret = UlongToHandle(MAKELONG(locale, locale));
++    else if (layout) ret = get_layout_hkl(layout, locale);
  
      pthread_mutex_unlock(&layout_list_mutex);
  
