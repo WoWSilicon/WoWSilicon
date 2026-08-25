@@ -77,13 +77,26 @@ enum OptionAsAltService {
             return false
         }
 
-        if WineRegistrySupport.isMacDriverSection(content) {
-            let leftFound = content.contains(leftOptionLine)
-            let rightFound = content.contains(rightOptionLine)
-            return leftFound && rightFound
+        return isOptionAsAltEnabled(registryContent: content)
+    }
+
+    static func isOptionAsAltEnabled(registryContent: String) -> Bool {
+        let lines = registryContent.components(separatedBy: .newlines)
+        guard let sectionIndex = lines.firstIndex(where: WineRegistrySupport.isMacDriverSection) else {
+            return false
         }
 
-        return false
+        var leftFound = false
+        var rightFound = false
+        for line in lines.dropFirst(sectionIndex + 1) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("[") {
+                break
+            }
+            leftFound = leftFound || trimmed == leftOptionLine
+            rightFound = rightFound || trimmed == rightOptionLine
+        }
+        return leftFound && rightFound
     }
 
     // MARK: - Helpers
