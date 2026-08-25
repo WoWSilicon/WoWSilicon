@@ -7,7 +7,7 @@ enum WineRegistrySupport {
     static let timestampLine = "#time=1dbd859c084de18"
 
     static func winePrefixURL() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".wine", isDirectory: true)
+        WineBottleService.currentBottleURL()
     }
 
     static func userRegURL() -> URL {

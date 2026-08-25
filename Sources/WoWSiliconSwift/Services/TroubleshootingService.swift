@@ -49,7 +49,10 @@ enum TroubleshootingService {
         return url.pathExtension.lowercased() == "exe" ? url.deletingLastPathComponent() : url
     }
 
-    static func checkPermissions(context: TroubleshootingContext) -> [PermissionAccessCheck] {
+    static func checkPermissions(
+        context: TroubleshootingContext,
+        wineBottleURL: URL = WineRegistrySupport.winePrefixURL()
+    ) -> [PermissionAccessCheck] {
         var checks: [PermissionAccessCheck] = []
         let fileManager = FileManager.default
 
@@ -61,7 +64,7 @@ enum TroubleshootingService {
                 status: "Not configured",
                 detail: nil,
                 state: .unavailable
-            )] + runtimeAndLauncherChecks(context: context)
+            )] + runtimeAndLauncherChecks(context: context, wineBottleURL: wineBottleURL)
         }
 
         let gameDirectory = gameDirectoryURL(from: path)
@@ -74,7 +77,7 @@ enum TroubleshootingService {
                 status: "Missing",
                 detail: gameDirectory.path,
                 state: .failed
-            )] + runtimeAndLauncherChecks(context: context)
+            )] + runtimeAndLauncherChecks(context: context, wineBottleURL: wineBottleURL)
         }
 
         do {
@@ -130,7 +133,7 @@ enum TroubleshootingService {
             ))
         }
 
-        checks.append(contentsOf: runtimeAndLauncherChecks(context: context))
+        checks.append(contentsOf: runtimeAndLauncherChecks(context: context, wineBottleURL: wineBottleURL))
         return checks
     }
 
@@ -148,8 +151,12 @@ enum TroubleshootingService {
         }
     }
 
-    private static func runtimeAndLauncherChecks(context: TroubleshootingContext) -> [PermissionAccessCheck] {
+    private static func runtimeAndLauncherChecks(
+        context: TroubleshootingContext,
+        wineBottleURL: URL
+    ) -> [PermissionAccessCheck] {
         var checks: [PermissionAccessCheck] = []
+        checks.append(contentsOf: wineBottleChecks(bottleURL: wineBottleURL))
         if let launcherPath = context.currentVersion?.launcherExePath.trimmingCharacters(in: .whitespacesAndNewlines),
            !launcherPath.isEmpty {
             checks.append(readAccessCheck(
@@ -187,6 +194,64 @@ enum TroubleshootingService {
         return checks
     }
 
+    private static func wineBottleChecks(bottleURL: URL) -> [PermissionAccessCheck] {
+        let fileManager = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: bottleURL.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            return [PermissionAccessCheck(
+                id: "wine-bottle",
+                name: "Wine bottle",
+                status: "Not initialized",
+                detail: bottleURL.path,
+                state: .unavailable
+            )]
+        }
+
+        var checks: [PermissionAccessCheck] = []
+        do {
+            _ = try fileManager.contentsOfDirectory(atPath: bottleURL.path)
+            checks.append(PermissionAccessCheck(
+                id: "wine-bottle-read",
+                name: "Wine bottle read access",
+                status: "Available",
+                detail: bottleURL.path,
+                state: .passed
+            ))
+        } catch {
+            checks.append(PermissionAccessCheck(
+                id: "wine-bottle-read",
+                name: "Wine bottle read access",
+                status: "Denied",
+                detail: error.localizedDescription,
+                state: .failed
+            ))
+        }
+
+        let probeURL = bottleURL.appendingPathComponent(".wowsilicon-access-check-\(UUID().uuidString)")
+        do {
+            try Data("WoWSilicon access check".utf8).write(to: probeURL, options: .withoutOverwriting)
+            try fileManager.removeItem(at: probeURL)
+            checks.append(PermissionAccessCheck(
+                id: "wine-bottle-write",
+                name: "Wine bottle write access",
+                status: "Available",
+                detail: "Temporary file creation succeeded",
+                state: .passed
+            ))
+        } catch {
+            try? fileManager.removeItem(at: probeURL)
+            checks.append(PermissionAccessCheck(
+                id: "wine-bottle-write",
+                name: "Wine bottle write access",
+                status: "Denied",
+                detail: error.localizedDescription,
+                state: .failed
+            ))
+        }
+        return checks
+    }
+
     static func deleteWDBDirectories(gamePath: String?) throws -> [String] {
         guard let path = gamePath?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else {
             throw TroubleshootingServiceError.gamePathMissing
@@ -211,12 +276,17 @@ enum TroubleshootingService {
         return deleted
     }
 
-    static func deleteDefaultWineBottle(
+    static func deleteWineBottle(
+        bottleURL: URL = WineRegistrySupport.winePrefixURL(),
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) throws -> String {
         let fm = FileManager.default
-        let wineBottle = homeDirectory.appendingPathComponent(".wine", isDirectory: true)
-        guard fm.fileExists(atPath: wineBottle.path) else {
+        let wineBottle = try WineBottleService.validateSelectedBottleURL(
+            bottleURL,
+            homeDirectory: homeDirectory,
+            fileManager: fm
+        )
+        guard WineBottleService.isWineBottle(at: wineBottle, fileManager: fm) else {
             throw TroubleshootingServiceError.nothingToDelete
         }
         try fm.removeItem(at: wineBottle)
@@ -247,7 +317,8 @@ enum TroubleshootingService {
         context: TroubleshootingContext,
         hideMacUserName: Bool,
         includeLatestErrorLog: Bool,
-        permissionChecks: [PermissionAccessCheck]? = nil
+        permissionChecks: [PermissionAccessCheck]? = nil,
+        wineBottleURL: URL = WineRegistrySupport.winePrefixURL()
     ) -> (full: String, preview: String) {
         var baseLog = "=== WoWSilicon Debug Log ===\n"
         let formatter = DateFormatter()
@@ -312,12 +383,16 @@ enum TroubleshootingService {
 
         baseLog += "\n=== Paths ===\n"
         baseLog += "Game Path: \(context.gamePath ?? "Not set")\n"
+        baseLog += "Wine Bottle: \(wineBottleURL.path)\n"
+        baseLog += WineBottleService.isWineBottle(at: wineBottleURL)
+            ? "  Wine bottle initialized\n"
+            : "  Wine bottle not initialized\n"
         if let game = context.gamePath {
             baseLog += FileManager.default.fileExists(atPath: game) ? "  Game path exists\n" : "  Game path missing\n"
         }
 
         baseLog += "\n=== Permissions & Access ===\n"
-        for check in permissionChecks ?? checkPermissions(context: context) {
+        for check in permissionChecks ?? checkPermissions(context: context, wineBottleURL: wineBottleURL) {
             baseLog += "\(check.name): \(check.status)\n"
             if let detail = check.detail {
                 baseLog += "  \(detail)\n"

@@ -24,11 +24,11 @@ struct TroubleshootingView: View {
         .alert(item: $viewModel.alert) { alert in
             Alert(title: Text("Troubleshooting"), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
-        .alert("Delete default Wine bottle?", isPresented: $showingWineBottleDeletionConfirmation) {
+        .alert("Delete Wine bottle?", isPresented: $showingWineBottleDeletionConfirmation) {
             Button("Cancel", role: .cancel) {}
-            Button("Delete Bottle", role: .destructive, action: viewModel.deleteDefaultWineBottle)
+            Button("Delete Bottle", role: .destructive, action: viewModel.deleteWineBottle)
         } message: {
-            Text("This permanently deletes ~/.wine. Any Windows programs installed in this bottle will be deleted, including third-party launchers. This cannot be undone.")
+            Text("This permanently deletes \(viewModel.wineBottlePath). Any Windows programs installed in this bottle will be deleted, including third-party launchers. This cannot be undone.")
         }
     }
 
@@ -119,7 +119,7 @@ struct TroubleshootingView: View {
             Text("Actions").font(.headline)
             Button("Delete WDB Cache", action: viewModel.deleteWDB)
                 .buttonStyle(.bordered)
-            Button("Delete default Wine bottle", role: .destructive) {
+            Button("Delete Wine bottle", role: .destructive) {
                 showingWineBottleDeletionConfirmation = true
             }
                 .buttonStyle(.bordered)

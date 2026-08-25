@@ -94,6 +94,9 @@ struct OptionsView: View {
             rosettaX87Controls
             Divider()
                 .padding(.vertical, 4)
+            wineBottleControls
+            Divider()
+                .padding(.vertical, 4)
             telemetryControls
             Button("Check for Updates...") {
                 UpdaterService.shared.checkForUpdates()
@@ -312,7 +315,7 @@ struct OptionsView: View {
     }
 
     private var dependenciesHelpText: String {
-        "Installs Microsoft's x86 Visual C++ Runtime into ~/.wine using the bundled Wine runtime."
+        "Installs Microsoft's x86 Visual C++ Runtime into the selected Wine bottle using the bundled Wine runtime."
     }
 
     private var visualCppRuntimeStatusColor: Color {
@@ -385,6 +388,34 @@ struct OptionsView: View {
                 binding: viewModel.telemetryEnabledBinding()
             )
             Text("Shares app version, WoW version, macOS version, renderer, x87 translation, and configured realmlist server for public aggregate stats. No IP address, username, account name, character name, file paths, or hardware identifiers are collected.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var wineBottleControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Wine Bottle")
+                .font(.headline)
+            Text(viewModel.wineBottlePath)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 10) {
+                Button("Show in Finder", action: viewModel.openWineBottleLocation)
+                    .buttonStyle(.bordered)
+                Button("Set/Change…", action: viewModel.selectWineBottleLocation)
+                    .buttonStyle(.bordered)
+                    .disabled(!viewModel.canChangeWineBottleLocation)
+                Button("Use Default", action: viewModel.useDefaultWineBottleLocation)
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.usesDefaultWineBottleLocation || !viewModel.canChangeWineBottleLocation)
+            }
+
+            Text("The default is ~/WoWSilicon. Choose an empty folder or an existing Wine bottle. Changes apply to newly started Wine processes.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

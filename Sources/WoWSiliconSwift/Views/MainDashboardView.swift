@@ -136,6 +136,16 @@ struct MainDashboardView: View {
         } message: {
             Text("A previous TurtleSilicon installation was detected. Would you like to migrate your settings to WoWSilicon?")
         }
+        .alert("Copy Existing Wine Bottle?", isPresented: $viewModel.shouldShowWineBottleMigrationPrompt) {
+            Button("Start Fresh", role: .cancel) {
+                viewModel.handleWineBottleMigration(copyLegacyBottle: false)
+            }
+            Button("Copy Bottle") {
+                viewModel.handleWineBottleMigration(copyLegacyBottle: true)
+            }
+        } message: {
+            Text("An existing ~/.wine bottle was found. WoWSilicon can copy it to ~/WoWSilicon. The original bottle will be kept, so other Wine applications can continue using it.")
+        }
         .alert("Share Anonymous Stats?", isPresented: $viewModel.shouldShowTelemetryConsentPrompt) {
             Button("No Thanks", role: .cancel) {
                 viewModel.handleTelemetryConsent(accepted: false)

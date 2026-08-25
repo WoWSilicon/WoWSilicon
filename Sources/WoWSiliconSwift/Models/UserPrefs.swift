@@ -12,6 +12,8 @@ struct UserPrefs: Codable, Equatable {
     var environmentVariables: String
     var vanillaTweaksParameters: String
     var x87Backend: X87Backend
+    var wineBottlePath: String
+    var wineBottleMigrationAsked: Bool
 
     var enableRosettaX87: Bool {
         get { x87Backend != .disabled }
@@ -29,7 +31,9 @@ struct UserPrefs: Codable, Equatable {
         telemetryInstallID: UUID().uuidString,
         environmentVariables: "",
         vanillaTweaksParameters: "",
-        x87Backend: .rosettaX87
+        x87Backend: .rosettaX87,
+        wineBottlePath: "",
+        wineBottleMigrationAsked: false
     )
 
     enum CodingKeys: String, CodingKey {
@@ -45,6 +49,8 @@ struct UserPrefs: Codable, Equatable {
         case vanillaTweaksParameters = "vanilla_tweaks_parameters"
         case x87Backend = "x87_backend"
         case enableRosettaX87 = "enable_rosetta_x87"
+        case wineBottlePath = "wine_bottle_path"
+        case wineBottleMigrationAsked = "wine_bottle_migration_asked"
     }
 
     init(
@@ -59,7 +65,9 @@ struct UserPrefs: Codable, Equatable {
         environmentVariables: String = "",
         vanillaTweaksParameters: String = "",
         enableRosettaX87: Bool = true,
-        x87Backend: X87Backend? = nil
+        x87Backend: X87Backend? = nil,
+        wineBottlePath: String = "",
+        wineBottleMigrationAsked: Bool = false
     ) {
         self.remapOptionAsAlt = remapOptionAsAlt
         self.showTerminalNormally = showTerminalNormally
@@ -72,6 +80,8 @@ struct UserPrefs: Codable, Equatable {
         self.environmentVariables = environmentVariables
         self.vanillaTweaksParameters = vanillaTweaksParameters
         self.x87Backend = x87Backend ?? (enableRosettaX87 ? .rosettaX87 : .disabled)
+        self.wineBottlePath = wineBottlePath
+        self.wineBottleMigrationAsked = wineBottleMigrationAsked
     }
 
     init(from decoder: Decoder) throws {
@@ -86,6 +96,8 @@ struct UserPrefs: Codable, Equatable {
         telemetryInstallID = try container.decodeIfPresent(String.self, forKey: .telemetryInstallID) ?? UUID().uuidString
         environmentVariables = try container.decodeIfPresent(String.self, forKey: .environmentVariables) ?? ""
         vanillaTweaksParameters = try container.decodeIfPresent(String.self, forKey: .vanillaTweaksParameters) ?? ""
+        wineBottlePath = try container.decodeIfPresent(String.self, forKey: .wineBottlePath) ?? ""
+        wineBottleMigrationAsked = try container.decodeIfPresent(Bool.self, forKey: .wineBottleMigrationAsked) ?? false
         if let backend = try container.decodeIfPresent(X87Backend.self, forKey: .x87Backend) {
             x87Backend = backend
         } else {
@@ -108,5 +120,7 @@ struct UserPrefs: Codable, Equatable {
         try container.encode(vanillaTweaksParameters, forKey: .vanillaTweaksParameters)
         try container.encode(x87Backend, forKey: .x87Backend)
         try container.encode(enableRosettaX87, forKey: .enableRosettaX87)
+        try container.encode(wineBottlePath, forKey: .wineBottlePath)
+        try container.encode(wineBottleMigrationAsked, forKey: .wineBottleMigrationAsked)
     }
 }

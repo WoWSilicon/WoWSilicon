@@ -62,6 +62,21 @@ final class BundledWineRuntimeTests: XCTestCase {
         XCTAssertEqual(environment["LC_ALL"], "ru_RU.UTF-8")
     }
 
+    func testEnvironmentUsesSelectedWineBottleOverCustomVariable() {
+        let environment = BundledWineRuntime.makeEnvironment(
+            customVariables: "WINEPREFIX=/tmp/ignored",
+            winePrefixURL: URL(fileURLWithPath: "/tmp/selected-bottle", isDirectory: true),
+            resourceURL: nil,
+            environment: [:]
+        )
+
+        XCTAssertEqual(environment["WINEPREFIX"], "/tmp/selected-bottle")
+        XCTAssertEqual(
+            BundledWineRuntime.shellEnvironmentAssignments("WINEPREFIX=/tmp/ignored\nLANG=en_US.UTF-8"),
+            "LANG='en_US.UTF-8'"
+        )
+    }
+
     func testCustomEnvironmentParserSupportsDocumentedAndLegacySeparators() {
         let environment = BundledWineRuntime.parseEnvironmentVariables("""
         LANG=ru_RU.UTF-8
@@ -96,6 +111,13 @@ final class BundledWineRuntimeTests: XCTestCase {
         """)
 
         XCTAssertEqual(assignments, "LANG='ru_RU.UTF-8' MESSAGE='it'\\''s safe'")
+        XCTAssertEqual(
+            BundledWineRuntime.shellEnvironmentAssignment(
+                key: "WINEPREFIX",
+                value: "/Users/tester/Wine/It's Mine"
+            ),
+            "WINEPREFIX='/Users/tester/Wine/It'\\''s Mine'"
+        )
     }
 
     func testWineExecutableRequiresExecutableFile() throws {

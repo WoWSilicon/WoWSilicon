@@ -108,9 +108,13 @@ final class TroubleshootingViewModel: ObservableObject, Identifiable {
         }
     }
 
-    func deleteDefaultWineBottle() {
-        perform(action: "Deleting default Wine bottle…") {
-            let deleted = try TroubleshootingService.deleteDefaultWineBottle()
+    var wineBottlePath: String {
+        WineRegistrySupport.winePrefixURL().path
+    }
+
+    func deleteWineBottle() {
+        perform(action: "Deleting Wine bottle…") {
+            let deleted = try TroubleshootingService.deleteWineBottle()
             return "Deleted:\n" + deleted
         }
     }

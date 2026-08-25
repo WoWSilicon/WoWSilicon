@@ -26,6 +26,8 @@ final class ModelCompatibilityTests: XCTestCase {
         XCTAssertEqual(prefs.vanillaTweaksParameters, "--flag")
         XCTAssertTrue(prefs.enableRosettaX87)
         XCTAssertEqual(prefs.x87Backend, .rosettaX87)
+        XCTAssertEqual(prefs.wineBottlePath, "")
+        XCTAssertFalse(prefs.wineBottleMigrationAsked)
     }
 
     func testVersionSettingsDecodesFilesContainingRemovedSaveSudoPasswordKey() throws {
@@ -75,6 +77,17 @@ final class ModelCompatibilityTests: XCTestCase {
             try JSONDecoder().decode(VersionSettings.self, from: JSONEncoder().encode(settings)).x87Backend,
             .x87Sidecar
         )
+    }
+
+    func testWineBottlePreferencesRoundTrip() throws {
+        let prefs = UserPrefs(
+            wineBottlePath: "/Users/tester/Wine/Custom",
+            wineBottleMigrationAsked: true
+        )
+        let decoded = try JSONDecoder().decode(UserPrefs.self, from: JSONEncoder().encode(prefs))
+
+        XCTAssertEqual(decoded.wineBottlePath, "/Users/tester/Wine/Custom")
+        XCTAssertTrue(decoded.wineBottleMigrationAsked)
     }
 
     func testGameVersionExecutableAndDirectoryPathResolution() {

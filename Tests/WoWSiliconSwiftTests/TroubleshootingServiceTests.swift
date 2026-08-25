@@ -15,11 +15,14 @@ final class TroubleshootingServiceTests: XCTestCase {
 
         var version = try XCTUnwrap(VersionManager.defaultVersions["vanillasilicon"])
         version.gamePath = wowURL.path
-        let checks = TroubleshootingService.checkPermissions(context: TroubleshootingContext(
-            gamePath: wowURL.path,
-            currentVersion: version,
-            isGamePatched: false
-        ))
+        let checks = TroubleshootingService.checkPermissions(
+            context: TroubleshootingContext(
+                gamePath: wowURL.path,
+                currentVersion: version,
+                isGamePatched: false
+            ),
+            wineBottleURL: gameDirectory.appendingPathComponent("test-bottle", isDirectory: true)
+        )
 
         XCTAssertEqual(checks.first(where: { $0.id == "game-folder-read" })?.state, .passed)
         XCTAssertEqual(checks.first(where: { $0.id == "game-folder-write" })?.state, .passed)
@@ -30,11 +33,15 @@ final class TroubleshootingServiceTests: XCTestCase {
     }
 
     func testPermissionChecksReportUnconfiguredGamePath() {
-        let checks = TroubleshootingService.checkPermissions(context: TroubleshootingContext(
-            gamePath: nil,
-            currentVersion: nil,
-            isGamePatched: false
-        ))
+        let checks = TroubleshootingService.checkPermissions(
+            context: TroubleshootingContext(
+                gamePath: nil,
+                currentVersion: nil,
+                isGamePatched: false
+            ),
+            wineBottleURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("missing-test-bottle", isDirectory: true)
+        )
 
         XCTAssertEqual(checks.first?.id, "game-folder")
         XCTAssertEqual(checks.first?.state, .unavailable)
@@ -52,7 +59,9 @@ final class TroubleshootingServiceTests: XCTestCase {
                 isGamePatched: false
             ),
             hideMacUserName: true,
-            includeLatestErrorLog: false
+            includeLatestErrorLog: false,
+            wineBottleURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("missing-test-bottle", isDirectory: true)
         )
 
         XCTAssertTrue(result.full.contains("x87 Translation: x87sidecar (x87sidecar)"))
@@ -65,10 +74,17 @@ final class TroubleshootingServiceTests: XCTestCase {
 
         let wineBottle = home.appendingPathComponent(".wine", isDirectory: true)
         let unrelated = home.appendingPathComponent("keep-me", isDirectory: true)
-        try FileManager.default.createDirectory(at: wineBottle, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: wineBottle.appendingPathComponent("drive_c", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try Data().write(to: wineBottle.appendingPathComponent("system.reg"))
         try FileManager.default.createDirectory(at: unrelated, withIntermediateDirectories: true)
 
-        let deletedPath = try TroubleshootingService.deleteDefaultWineBottle(homeDirectory: home)
+        let deletedPath = try TroubleshootingService.deleteWineBottle(
+            bottleURL: wineBottle,
+            homeDirectory: home
+        )
 
         XCTAssertEqual(deletedPath, wineBottle.path)
         XCTAssertFalse(FileManager.default.fileExists(atPath: wineBottle.path))
@@ -81,7 +97,11 @@ final class TroubleshootingServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: home) }
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
 
-        XCTAssertThrowsError(try TroubleshootingService.deleteDefaultWineBottle(homeDirectory: home)) { error in
+        let missingBottle = home.appendingPathComponent("WoWSilicon", isDirectory: true)
+        XCTAssertThrowsError(try TroubleshootingService.deleteWineBottle(
+            bottleURL: missingBottle,
+            homeDirectory: home
+        )) { error in
             guard case TroubleshootingServiceError.nothingToDelete = error else {
                 return XCTFail("Expected nothingToDelete, got \(error)")
             }

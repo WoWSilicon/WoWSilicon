@@ -30,7 +30,10 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var shouldShowExistingWinePrompt: Bool = false
     @Published private(set) var versionMismatchData: (base: String, tweaked: String)?
     @Published var shouldShowMigrationPrompt: Bool = false
+    @Published var shouldShowWineBottleMigrationPrompt: Bool = false
     @Published var shouldShowTelemetryConsentPrompt: Bool = false
+    @Published private(set) var isWineBottleMigrationInProgress: Bool = false
+    @Published private(set) var wineBottlePath: String = ""
     @Published private(set) var isApplyingVanillaTweaks: Bool = false
     @Published private(set) var isOptionAsAltBusy: Bool = false
     @Published private(set) var optionAsAltStatus: OptionAsAltStatus = .unknown
@@ -81,6 +84,8 @@ final class MainDashboardViewModel: ObservableObject {
 
         userPrefs = prefsStore.load()
         normalizeTelemetryPrefs()
+        wineBottlePath = WineBottleService.currentBottleURL(prefs: userPrefs).path
+        updateWineBottleMigrationPromptState()
         TelemetryService.shared.setClientTelemetryEnabled(userPrefs.telemetryEnabled)
 
         // Don't persist defaults into WoWSilicon before the user decides whether to migrate,
@@ -186,7 +191,8 @@ final class MainDashboardViewModel: ObservableObject {
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.init(filenameExtension: "exe")].compactMap { $0 }
-        panel.directoryURL = URL(fileURLWithPath: "\(NSHomeDirectory())/.wine/drive_c")
+        panel.directoryURL = WineRegistrySupport.winePrefixURL()
+            .appendingPathComponent("drive_c", isDirectory: true)
         panel.level = .modalPanel
 
         if panel.runModal() == .OK, let exeURL = panel.url {
@@ -374,6 +380,7 @@ final class MainDashboardViewModel: ObservableObject {
         versionManager = result.manager
         userPrefs = prefsStore.load()
         normalizeTelemetryPrefs()
+        wineBottlePath = WineBottleService.currentBottleURL(prefs: userPrefs).path
         TelemetryService.shared.setClientTelemetryEnabled(userPrefs.telemetryEnabled)
         if userPrefs.autoDeleteWdb == false {
             userPrefs.autoDeleteWdb = true
@@ -386,6 +393,106 @@ final class MainDashboardViewModel: ObservableObject {
         recordLaunchTelemetryIfNeeded()
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
+        updateWineBottleMigrationPromptState()
+        updateTelemetryConsentPromptState()
+    }
+
+    func handleWineBottleMigration(copyLegacyBottle: Bool) {
+        shouldShowWineBottleMigrationPrompt = false
+        guard copyLegacyBottle else {
+            userPrefs.wineBottleMigrationAsked = true
+            persistUserPrefs()
+            updateTelemetryConsentPromptState()
+            return
+        }
+
+        isWineBottleMigrationInProgress = true
+        Task.detached { [weak self] in
+            do {
+                let destination = try WineBottleService.copyLegacyBottle()
+                await MainActor.run {
+                    guard let self else { return }
+                    self.userPrefs.wineBottlePath = ""
+                    self.userPrefs.wineBottleMigrationAsked = true
+                    self.persistUserPrefs()
+                    self.wineBottlePath = destination.path
+                    self.isWineBottleMigrationInProgress = false
+                    self.patchFeedback = PatchFeedback(
+                        title: "Wine Bottle Copied",
+                        message: "Your legacy bottle was copied to \(destination.path). The original ~/.wine bottle was kept.",
+                        isError: false
+                    )
+                    self.refreshWineBottleDependentStatuses()
+                    self.updateTelemetryConsentPromptState()
+                }
+            } catch {
+                await MainActor.run {
+                    guard let self else { return }
+                    self.isWineBottleMigrationInProgress = false
+                    self.patchFeedback = PatchFeedback(
+                        title: "Wine Bottle Migration Failed",
+                        message: error.localizedDescription,
+                        isError: true
+                    )
+                }
+            }
+        }
+    }
+
+    var usesDefaultWineBottleLocation: Bool {
+        userPrefs.wineBottlePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var canChangeWineBottleLocation: Bool {
+        !isWineBottleMigrationInProgress
+    }
+
+    func selectWineBottleLocation() {
+        guard canChangeWineBottleLocation else { return }
+        let currentURL = WineBottleService.currentBottleURL(prefs: userPrefs)
+        let panel = NSOpenPanel()
+        panel.title = "Select Wine Bottle Folder"
+        panel.message = "Choose an empty folder or an existing Wine bottle. This folder will be used directly as WINEPREFIX."
+        panel.prompt = "Use Folder"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = FileManager.default.fileExists(atPath: currentURL.path)
+            ? currentURL
+            : currentURL.deletingLastPathComponent()
+        panel.level = .modalPanel
+
+        guard panel.runModal() == .OK, let selectedURL = panel.url else { return }
+        do {
+            let validated = try WineBottleService.validateSelectedBottleURL(selectedURL)
+            userPrefs.wineBottlePath = validated.path
+            userPrefs.wineBottleMigrationAsked = true
+            persistUserPrefs()
+            wineBottlePath = validated.path
+            refreshWineBottleDependentStatuses()
+        } catch {
+            presentWineBottleAlert(error.localizedDescription)
+        }
+    }
+
+    func useDefaultWineBottleLocation() {
+        guard canChangeWineBottleLocation else { return }
+        userPrefs.wineBottlePath = ""
+        userPrefs.wineBottleMigrationAsked = true
+        persistUserPrefs()
+        wineBottlePath = WineBottleService.defaultBottleURL().path
+        refreshWineBottleDependentStatuses()
+    }
+
+    func openWineBottleLocation() {
+        let bottleURL = WineBottleService.currentBottleURL(prefs: userPrefs)
+        do {
+            try FileManager.default.createDirectory(at: bottleURL, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(bottleURL)
+        } catch {
+            presentWineBottleAlert("Could not open the Wine bottle: \(error.localizedDescription)")
+        }
     }
 
     func launchGame() {
@@ -1255,7 +1362,49 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     private func updateTelemetryConsentPromptState() {
-        shouldShowTelemetryConsentPrompt = !shouldShowMigrationPrompt && !userPrefs.telemetryConsentAsked
+        shouldShowTelemetryConsentPrompt = !shouldShowMigrationPrompt
+            && !shouldShowWineBottleMigrationPrompt
+            && !userPrefs.telemetryConsentAsked
+    }
+
+    private func updateWineBottleMigrationPromptState() {
+        guard !shouldShowMigrationPrompt, !userPrefs.wineBottleMigrationAsked else {
+            shouldShowWineBottleMigrationPrompt = false
+            return
+        }
+
+        if !userPrefs.wineBottlePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            userPrefs.wineBottleMigrationAsked = true
+            persistUserPrefs()
+            shouldShowWineBottleMigrationPrompt = false
+            return
+        }
+
+        let destination = WineBottleService.currentBottleURL(prefs: userPrefs)
+        if WineBottleService.isWineBottle(at: destination) {
+            userPrefs.wineBottleMigrationAsked = true
+            persistUserPrefs()
+            shouldShowWineBottleMigrationPrompt = false
+            return
+        }
+
+        shouldShowWineBottleMigrationPrompt = WineBottleService.shouldOfferLegacyMigration(prefs: userPrefs)
+    }
+
+    private func refreshWineBottleDependentStatuses() {
+        refreshOptionAsAltStatus()
+        refreshRetinaModeStatus()
+        refreshVisualCppRuntimeStatus()
+        refreshWineMonoStatus()
+    }
+
+    private func presentWineBottleAlert(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Wine Bottle"
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     private func setTelemetryEnabled(_ enabled: Bool, markConsentAsked: Bool) {

@@ -40,12 +40,14 @@ enum BundledWineRuntime {
 
     static func makeEnvironment(
         customVariables: String = "",
+        winePrefixURL: URL = WineBottleService.currentBottleURL(),
         resourceURL: URL? = Bundle.main.resourceURL,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> [String: String] {
         var result = environment
         result.merge(parseEnvironmentVariables(customVariables)) { _, custom in custom }
         result = BundledX87Runtime.removingWineEnvironmentKeys(from: result)
+        result["WINEPREFIX"] = winePrefixURL.path
         guard let externalURL = externalLibraryDirectoryURL(
             resourceURL: resourceURL,
             environment: environment
@@ -84,12 +86,17 @@ enum BundledWineRuntime {
     }
 
     static func shellEnvironmentAssignments(_ rawValue: String) -> String {
-        BundledX87Runtime.removingWineEnvironmentKeys(
+        var variables = BundledX87Runtime.removingWineEnvironmentKeys(
             from: parseEnvironmentVariables(rawValue)
         )
-            .sorted { $0.key < $1.key }
+        variables.removeValue(forKey: "WINEPREFIX")
+        return variables.sorted { $0.key < $1.key }
             .map { "\($0.key)=\(shellQuote($0.value))" }
             .joined(separator: " ")
+    }
+
+    static func shellEnvironmentAssignment(key: String, value: String) -> String {
+        "\(key)=\(shellQuote(value))"
     }
 
     private static func isValidEnvironmentKey(_ key: String) -> Bool {
