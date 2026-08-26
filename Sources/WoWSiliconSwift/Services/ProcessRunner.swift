@@ -46,10 +46,40 @@ enum ProcessRunner {
             process.currentDirectoryURL = currentDirectory
         }
 
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
+        let fileManager = FileManager.default
+        let captureDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("WoWSiliconProcess-\(UUID().uuidString)", isDirectory: true)
+        let stdoutURL = captureDirectory.appendingPathComponent("stdout")
+        let stderrURL = captureDirectory.appendingPathComponent("stderr")
+        let stdoutHandle: FileHandle
+        let stderrHandle: FileHandle
+
+        do {
+            try fileManager.createDirectory(
+                at: captureDirectory,
+                withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700]
+            )
+            fileManager.createFile(atPath: stdoutURL.path, contents: nil)
+            fileManager.createFile(atPath: stderrURL.path, contents: nil)
+            stdoutHandle = try FileHandle(forWritingTo: stdoutURL)
+            stderrHandle = try FileHandle(forWritingTo: stderrURL)
+        } catch {
+            try? fileManager.removeItem(at: captureDirectory)
+            throw ProcessRunnerError.launchFailed(error.localizedDescription)
+        }
+
+        process.standardOutput = stdoutHandle
+        process.standardError = stderrHandle
+
+        defer {
+            try? stdoutHandle.close()
+            try? stderrHandle.close()
+            try? fileManager.removeItem(at: captureDirectory)
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in semaphore.signal() }
 
         do {
             try process.run()
@@ -57,27 +87,7 @@ enum ProcessRunner {
             throw ProcessRunnerError.launchFailed(error.localizedDescription)
         }
 
-        final class DataBox: @unchecked Sendable {
-            var data = Data()
-        }
-        let stdoutBox = DataBox()
-
-        let stdoutThread = Thread {
-            stdoutBox.data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        }
-        stdoutThread.qualityOfService = .userInitiated
-        stdoutThread.start()
-
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-
         if let timeout {
-            let semaphore = DispatchSemaphore(value: 0)
-            let originalHandler = process.terminationHandler
-            process.terminationHandler = { proc in
-                originalHandler?(proc)
-                semaphore.signal()
-            }
-
             let result = semaphore.wait(timeout: .now() + timeout)
             if result == .timedOut {
                 process.terminate()
@@ -85,21 +95,18 @@ enum ProcessRunner {
                 if process.isRunning {
                     kill(process.processIdentifier, SIGKILL)
                 }
-                while stdoutThread.isExecuting {
-                    usleep(50_000)
-                }
+                process.waitUntilExit()
                 throw ProcessRunnerError.timedOut(timeout)
             }
         } else {
-            process.waitUntilExit()
+            semaphore.wait()
         }
 
-        while stdoutThread.isExecuting {
-            usleep(50_000)
-        }
+        try? stdoutHandle.close()
+        try? stderrHandle.close()
 
-        let stdoutString = String(data: stdoutBox.data, encoding: .utf8) ?? ""
-        let stderrString = String(data: stderrData, encoding: .utf8) ?? ""
+        let stdoutString = (try? String(contentsOf: stdoutURL, encoding: .utf8)) ?? ""
+        let stderrString = (try? String(contentsOf: stderrURL, encoding: .utf8)) ?? ""
 
         return ProcessRunResult(
             exitCode: process.terminationStatus,

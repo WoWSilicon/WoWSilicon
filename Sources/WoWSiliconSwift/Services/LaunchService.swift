@@ -131,12 +131,16 @@ final class LaunchService: @unchecked Sendable {
             deleteWDBDirectories(at: gameURL)
         }
 
+        let spatialAudioControlURL = SpatialAudioService.controlURL()
+        try SpatialAudioService.setEnabled(version.settings.spatializeStereo, controlURL: spatialAudioControlURL)
+
         let shellCommand = makeShellCommand(
             gameURL: gameURL,
             x87Runtime: x87Runtime,
             wowURL: wowExecutableURL,
             wineExecutablePath: wineExecutableURL.path,
-            settings: version.settings
+            settings: version.settings,
+            spatialAudioControlURL: spatialAudioControlURL
         )
 
         return LaunchConfiguration(
@@ -240,19 +244,24 @@ final class LaunchService: @unchecked Sendable {
         }
     }
 
-    private func makeShellCommand(gameURL: URL, x87Runtime: BundledX87Runtime.ResolvedRuntime?, wowURL: URL, wineExecutablePath: String, settings: VersionSettings) -> String {
+    private func makeShellCommand(gameURL: URL, x87Runtime: BundledX87Runtime.ResolvedRuntime?, wowURL: URL, wineExecutablePath: String, settings: VersionSettings, spatialAudioControlURL: URL) -> String {
         let game = doubleQuote(gameURL.path)
         let wow = doubleQuote(wowURL.path)
         let wine = doubleQuote(wineExecutablePath)
 
         let mtlValue = settings.enableMetalHud ? "1" : "0"
+        let spatialAudioMode = settings.spatializeStereo ? "fixed" : "off"
         let dllOverride = settings.graphicsSettings.backend.wineDLLOverride
         let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let winePrefix = BundledWineRuntime.shellEnvironmentAssignment(
             key: "WINEPREFIX",
             value: WineRegistrySupport.winePrefixURL().path
         )
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let spatialAudioControl = BundledWineRuntime.shellEnvironmentAssignment(
+            key: "WOWSILICON_SPATIAL_AUDIO_CONTROL",
+            value: spatialAudioControlURL.path
+        )
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) \(spatialAudioControl) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = BundledWineRuntime.shellEnvironmentAssignments(settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
@@ -404,19 +413,37 @@ final class LaunchService: @unchecked Sendable {
             return
         }
 
+        let spatialAudioControlURL = SpatialAudioService.controlURL()
+        do {
+            try SpatialAudioService.setEnabled(
+                version.settings.spatializeStereo,
+                controlURL: spatialAudioControlURL
+            )
+        } catch {
+            DispatchQueue.main.async {
+                completion(.failure(.processLaunchFailed(error.localizedDescription)))
+            }
+            return
+        }
+
         let exeURL = URL(fileURLWithPath: exePath)
         let launcherDir = doubleQuote(exeURL.deletingLastPathComponent().path)
         let exeName = doubleQuote(exeURL.lastPathComponent)
         let wine = doubleQuote(wineExecutableURL.path)
 
         let mtlValue = version.settings.enableMetalHud ? "1" : "0"
+        let spatialAudioMode = version.settings.spatializeStereo ? "fixed" : "off"
         let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverrideWithBuiltinFallback
         let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let winePrefix = BundledWineRuntime.shellEnvironmentAssignment(
             key: "WINEPREFIX",
             value: WineRegistrySupport.winePrefixURL().path
         )
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_D3D_CONFIG=renderer=vulkan WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let spatialAudioControl = BundledWineRuntime.shellEnvironmentAssignment(
+            key: "WOWSILICON_SPATIAL_AUDIO_CONTROL",
+            value: spatialAudioControlURL.path
+        )
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_D3D_CONFIG=renderer=vulkan WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) \(spatialAudioControl) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = BundledWineRuntime.shellEnvironmentAssignments(version.settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 

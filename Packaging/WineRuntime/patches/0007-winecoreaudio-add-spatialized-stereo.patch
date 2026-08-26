@@ -1,0 +1,304 @@
+diff --git a/dlls/winecoreaudio.drv/coreaudio.c b/dlls/winecoreaudio.drv/coreaudio.c
+index c7e0dc2..c3c1f33 100644
+--- a/dlls/winecoreaudio.drv/coreaudio.c
++++ b/dlls/winecoreaudio.drv/coreaudio.c
+@@ -75,10 +75,20 @@
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(coreaudio);
+ 
++enum spatial_audio_mode
++{
++    SPATIAL_AUDIO_OFF,
++    SPATIAL_AUDIO_FIXED,
++};
++
+ struct coreaudio_stream
+ {
+     os_unfair_lock lock;
+     AudioComponentInstance unit;
++    AudioComponentInstance spatial_unit;
++    enum spatial_audio_mode spatial_mode;
++    char *spatial_control_path;
++    unsigned int spatial_control_poll_count;
+     AudioConverterRef converter;
+     AudioStreamBasicDescription dev_desc; /* audio unit format, not necessarily the same as fmt */
+     AudioDeviceID dev_id;
+@@ -533,6 +543,33 @@ static AudioComponentInstance get_audiounit(EDataFlow dataflow, AudioDeviceID ad
+     return unit;
+ }
+ 
++static AudioComponentInstance get_spatial_audiounit(void)
++{
++    AudioComponentDescription desc = {0};
++    AudioComponentInstance unit;
++    AudioComponent comp;
++    OSStatus sc;
++
++    desc.componentType = kAudioUnitType_Mixer;
++    desc.componentSubType = kAudioUnitSubType_SpatialMixer;
++    desc.componentManufacturer = kAudioUnitManufacturer_Apple;
++
++    if (!(comp = AudioComponentFindNext(NULL, &desc)))
++    {
++        WARN("Spatial mixer AudioComponentFindNext failed\n");
++        return NULL;
++    }
++
++    sc = AudioComponentInstanceNew(comp, &unit);
++    if (sc != noErr)
++    {
++        WARN("Spatial mixer AudioComponentInstanceNew failed: %x\n", (int)sc);
++        return NULL;
++    }
++
++    return unit;
++}
++
+ static void dump_adesc(const char *aux, AudioStreamBasicDescription *desc)
+ {
+     TRACE("%s: mSampleRate: %f\n", aux, desc->mSampleRate);
+@@ -669,6 +706,200 @@ static HRESULT ca_setup_audiounit(EDataFlow dataflow, AudioComponentInstance uni
+     return S_OK;
+ }
+ 
++static enum spatial_audio_mode parse_spatial_audio_mode(const char *value,
++                                                        enum spatial_audio_mode fallback)
++{
++    size_t length;
++
++    if (!value) return fallback;
++    length = strcspn(value, "\r\n");
++    if (length == 3 && !strncmp(value, "off", length)) return SPATIAL_AUDIO_OFF;
++    if (length == 5 && !strncmp(value, "fixed", length)) return SPATIAL_AUDIO_FIXED;
++    return fallback;
++}
++
++static enum spatial_audio_mode read_spatial_audio_mode(const char *path,
++                                                       enum spatial_audio_mode fallback)
++{
++    char buffer[32];
++    ssize_t count;
++    int fd;
++
++    if (!path || (fd = open(path, O_RDONLY)) == -1) return fallback;
++    count = read(fd, buffer, sizeof(buffer) - 1);
++    close(fd);
++    if (count <= 0) return fallback;
++    buffer[count] = 0;
++    return parse_spatial_audio_mode(buffer, fallback);
++}
++
++static const char *spatial_audio_mode_name(enum spatial_audio_mode mode)
++{
++    switch (mode)
++    {
++    case SPATIAL_AUDIO_OFF: return "off";
++    case SPATIAL_AUDIO_FIXED: return "fixed";
++    }
++    return "unknown";
++}
++
++static BOOL ca_apply_spatial_audio_mode(struct coreaudio_stream *stream,
++                                        enum spatial_audio_mode mode)
++{
++    UInt32 value = mode == SPATIAL_AUDIO_OFF ? kSpatialMixerSourceMode_Bypass
++                                              : kSpatialMixerSourceMode_AmbienceBed;
++    OSStatus sc;
++
++    sc = AudioUnitSetProperty(stream->spatial_unit, kAudioUnitProperty_SpatialMixerSourceMode,
++                              kAudioUnitScope_Input, 0, &value, sizeof(value));
++    if (sc != noErr)
++    {
++        WARN("Couldn't change spatial mixer source mode: %x\n", (int)sc);
++        return FALSE;
++    }
++
++    stream->spatial_mode = mode;
++    TRACE("Headphone spatialization changed to %s\n", spatial_audio_mode_name(mode));
++    return TRUE;
++}
++
++static OSStatus ca_spatial_render_cb(void *user, AudioUnitRenderActionFlags *flags,
++                                    const AudioTimeStamp *ts, UInt32 bus, UInt32 nframes,
++                                    AudioBufferList *data)
++{
++    struct coreaudio_stream *stream = user;
++    return AudioUnitRender(stream->spatial_unit, flags, ts, 0, nframes, data);
++}
++
++static BOOL ca_setup_spatial_audiounit(struct coreaudio_stream *stream)
++{
++    AudioStreamBasicDescription output_desc;
++    AudioChannelLayout layout = {0};
++    AURenderCallbackStruct input;
++    UInt32 size;
++    UInt32 value;
++    OSStatus sc;
++    const char *control_path;
++    const char *legacy_value;
++    const char *mode_value;
++
++    control_path = getenv("WOWSILICON_SPATIAL_AUDIO_CONTROL");
++    legacy_value = getenv("WOWSILICON_SPATIAL_AUDIO");
++    mode_value = getenv("WOWSILICON_SPATIAL_AUDIO_MODE");
++    stream->spatial_mode = parse_spatial_audio_mode(mode_value,
++            legacy_value && !strcmp(legacy_value, "1")
++            ? SPATIAL_AUDIO_FIXED : SPATIAL_AUDIO_OFF);
++
++    if (stream->flow != eRender || stream->fmt->nChannels != 2 ||
++        ((!control_path || !*control_path) && stream->spatial_mode == SPATIAL_AUDIO_OFF))
++        return FALSE;
++
++    if (control_path && *control_path)
++    {
++        if (!(stream->spatial_control_path = strdup(control_path))) return FALSE;
++        stream->spatial_mode = read_spatial_audio_mode(stream->spatial_control_path,
++                                                       stream->spatial_mode);
++    }
++
++    if (!(stream->spatial_unit = get_spatial_audiounit())) return FALSE;
++
++    size = sizeof(output_desc);
++    sc = AudioUnitGetProperty(stream->spatial_unit, kAudioUnitProperty_StreamFormat,
++                              kAudioUnitScope_Output, 0, &output_desc, &size);
++    if (sc != noErr)
++    {
++        WARN("Couldn't get spatial mixer output format: %x\n", (int)sc);
++        goto failed;
++    }
++    dump_adesc("spatial output", &output_desc);
++
++    sc = AudioUnitSetProperty(stream->spatial_unit, kAudioUnitProperty_StreamFormat,
++                              kAudioUnitScope_Input, 0, &stream->dev_desc,
++                              sizeof(stream->dev_desc));
++    if (sc != noErr)
++    {
++        WARN("Couldn't set spatial mixer input format: %x\n", (int)sc);
++        goto failed;
++    }
++
++    layout.mChannelLayoutTag = kAudioChannelLayoutTag_Stereo;
++    sc = AudioUnitSetProperty(stream->spatial_unit, kAudioUnitProperty_AudioChannelLayout,
++                              kAudioUnitScope_Input, 0, &layout, sizeof(layout));
++    if (sc != noErr)
++    {
++        WARN("Couldn't set spatial mixer channel layout: %x\n", (int)sc);
++        goto failed;
++    }
++
++    value = kSpatializationAlgorithm_UseOutputType;
++    sc = AudioUnitSetProperty(stream->spatial_unit, kAudioUnitProperty_SpatializationAlgorithm,
++                              kAudioUnitScope_Input, 0, &value, sizeof(value));
++    if (sc != noErr)
++    {
++        WARN("Couldn't set spatial mixer algorithm: %x\n", (int)sc);
++        goto failed;
++    }
++
++    value = kSpatialMixerOutputType_Headphones;
++    sc = AudioUnitSetProperty(stream->spatial_unit, kAudioUnitProperty_SpatialMixerOutputType,
++                              kAudioUnitScope_Global, 0, &value, sizeof(value));
++    if (sc != noErr)
++    {
++        WARN("Couldn't set spatial mixer output type: %x\n", (int)sc);
++        goto failed;
++    }
++
++    value = kSpatialMixerPersonalizedHRTFMode_Off;
++    sc = AudioUnitSetProperty(stream->spatial_unit,
++                              kAudioUnitProperty_SpatialMixerPersonalizedHRTFMode,
++                              kAudioUnitScope_Global, 0, &value, sizeof(value));
++    if (sc != noErr)
++        WARN("Couldn't disable personalized spatial mixer HRTF: %x\n", (int)sc);
++
++    value = 0;
++    sc = AudioUnitSetProperty(stream->spatial_unit, kAudioUnitProperty_UsesInternalReverb,
++                              kAudioUnitScope_Global, 0, &value, sizeof(value));
++    if (sc != noErr)
++        WARN("Couldn't disable spatial mixer reverb: %x\n", (int)sc);
++
++    if (!ca_apply_spatial_audio_mode(stream, stream->spatial_mode)) goto failed;
++
++    input.inputProc = ca_render_cb;
++    input.inputProcRefCon = stream;
++    sc = AudioUnitSetProperty(stream->spatial_unit, kAudioUnitProperty_SetRenderCallback,
++                              kAudioUnitScope_Input, 0, &input, sizeof(input));
++    if (sc != noErr)
++    {
++        WARN("Couldn't set spatial mixer callback: %x\n", (int)sc);
++        goto failed;
++    }
++
++    sc = AudioUnitInitialize(stream->spatial_unit);
++    if (sc != noErr)
++    {
++        WARN("Couldn't initialize spatial mixer: %x\n", (int)sc);
++        goto failed;
++    }
++
++    sc = AudioUnitSetProperty(stream->unit, kAudioUnitProperty_StreamFormat,
++                              kAudioUnitScope_Input, 0, &output_desc,
++                              sizeof(output_desc));
++    if (sc != noErr)
++    {
++        WARN("Couldn't connect spatial mixer to output unit: %x\n", (int)sc);
++        goto failed;
++    }
++
++    TRACE("Headphone spatialization mixer enabled\n");
++    return TRUE;
++
++failed:
++    AudioComponentInstanceDispose(stream->spatial_unit);
++    stream->spatial_unit = NULL;
++    WARN("Falling back to direct CoreAudio output\n");
++    return FALSE;
++}
++
+ static AudioDeviceID dev_id_from_device(const char *device)
+ {
+     AudioDeviceID id;
+@@ -751,7 +982,7 @@ static NTSTATUS unix_create_stream(void *args)
+         sc = AudioUnitSetProperty(stream->unit, kAudioOutputUnitProperty_SetInputCallback,
+                                   kAudioUnitScope_Output, 1, &input, sizeof(input));
+     }else{
+-        input.inputProc = ca_render_cb;
++        input.inputProc = ca_setup_spatial_audiounit(stream) ? ca_spatial_render_cb : ca_render_cb;
+         sc = AudioUnitSetProperty(stream->unit, kAudioUnitProperty_SetRenderCallback,
+                                   kAudioUnitScope_Input, 0, &input, sizeof(input));
+     }
+@@ -794,7 +1025,9 @@ static NTSTATUS unix_create_stream(void *args)
+ end:
+     if(FAILED(params->result)){
+         if(stream->converter) AudioConverterDispose(stream->converter);
++        if(stream->spatial_unit) AudioComponentInstanceDispose(stream->spatial_unit);
+         if(stream->unit) AudioComponentInstanceDispose(stream->unit);
++        free(stream->spatial_control_path);
+         free(stream->fmt);
+         free(stream);
+     } else {
+@@ -822,6 +1055,9 @@ static NTSTATUS unix_release_stream( void *args )
+         AudioComponentInstanceDispose(stream->unit);
+     }
+ 
++    if(stream->spatial_unit) AudioComponentInstanceDispose(stream->spatial_unit);
++    free(stream->spatial_control_path);
++
+     if(stream->converter) AudioConverterDispose(stream->converter);
+     free(stream->resamp_buffer);
+     free(stream->wrap_buffer);
+@@ -1353,6 +1589,14 @@ static void unix_timer_loop(void *args)
+     next.QuadPart = last.QuadPart + stream->period;
+ 
+     while(!stream->please_quit){
++        if (stream->spatial_unit && stream->spatial_control_path &&
++            ++stream->spatial_control_poll_count >= max(1, 2500000 / stream->period))
++        {
++            enum spatial_audio_mode mode;
++            stream->spatial_control_poll_count = 0;
++            mode = read_spatial_audio_mode(stream->spatial_control_path, stream->spatial_mode);
++            if (mode != stream->spatial_mode) ca_apply_spatial_audio_mode(stream, mode);
++        }
+         NtSetEvent(stream->event, NULL);
+         NtDelayExecution(FALSE, &delay);
+         NtQueryPerformanceCounter(&last, NULL);

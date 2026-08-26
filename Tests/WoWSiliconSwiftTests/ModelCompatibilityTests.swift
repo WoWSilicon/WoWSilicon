@@ -50,6 +50,7 @@ final class ModelCompatibilityTests: XCTestCase {
         XCTAssertTrue(settings.enableRosettaX87)
         XCTAssertEqual(settings.x87Backend, .rosettaX87)
         XCTAssertEqual(settings.audioOutputDeviceID, "")
+        XCTAssertFalse(settings.spatializeStereo)
     }
 
     func testLegacyDisabledRosettaMigratesToDisabledBackend() throws {
@@ -81,7 +82,10 @@ final class ModelCompatibilityTests: XCTestCase {
     }
 
     func testAudioOutputDeviceRoundTrips() throws {
-        let settings = VersionSettings(audioOutputDeviceID: "{wine-endpoint-id}")
+        let settings = VersionSettings(
+            audioOutputDeviceID: "{wine-endpoint-id}",
+            spatializeStereo: true
+        )
 
         let decoded = try JSONDecoder().decode(
             VersionSettings.self,
@@ -89,6 +93,16 @@ final class ModelCompatibilityTests: XCTestCase {
         )
 
         XCTAssertEqual(decoded.audioOutputDeviceID, "{wine-endpoint-id}")
+        XCTAssertTrue(decoded.spatializeStereo)
+    }
+
+    func testInterimSpatialAudioModeMigratesToEnabledToggle() throws {
+        let settings = try JSONDecoder().decode(
+            VersionSettings.self,
+            from: Data(#"{"spatialAudioMode":"fixed"}"#.utf8)
+        )
+
+        XCTAssertTrue(settings.spatializeStereo)
     }
 
     func testWineBottlePreferencesRoundTrip() throws {

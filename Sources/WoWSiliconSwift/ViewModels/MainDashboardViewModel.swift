@@ -36,7 +36,6 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var wineBottlePath: String = ""
     @Published private(set) var audioOutputDevices: [WineAudioOutputDevice] = []
     @Published private(set) var isAudioOutputBusy: Bool = false
-    @Published private(set) var audioOutputStatusText: String = ""
     @Published private(set) var isWineConfigurationLoading: Bool = false
     @Published private(set) var isWineTerminalLoading: Bool = false
     @Published private(set) var isApplyingVanillaTweaks: Bool = false
@@ -673,6 +672,24 @@ final class MainDashboardViewModel: ObservableObject {
         )
     }
 
+    func spatializeStereoBinding() -> Binding<Bool> {
+        Binding(
+            get: { self.versionManager.currentVersion?.settings.spatializeStereo ?? false },
+            set: { enabled in
+                do {
+                    try SpatialAudioService.setEnabled(enabled)
+                    self.updateCurrentVersion { $0.settings.spatializeStereo = enabled }
+                } catch {
+                    self.patchFeedback = PatchFeedback(
+                        title: "Spatial Audio",
+                        message: error.localizedDescription,
+                        isError: true
+                    )
+                }
+            }
+        )
+    }
+
     var selectedAudioOutputIsUnavailable: Bool {
         guard let id = versionManager.currentVersion?.settings.audioOutputDeviceID, !id.isEmpty else {
             return false
@@ -683,7 +700,7 @@ final class MainDashboardViewModel: ObservableObject {
     func refreshAudioOutputs() {
         guard !isAudioOutputBusy else { return }
         isAudioOutputBusy = true
-        audioOutputStatusText = ""
+        patchFeedback = nil
         let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -692,13 +709,16 @@ final class MainDashboardViewModel: ObservableObject {
                 DispatchQueue.main.async {
                     self?.audioOutputDevices = devices
                     self?.isAudioOutputBusy = false
-                    self?.audioOutputStatusText = devices.isEmpty ? "No active Wine audio outputs were found." : ""
                 }
             } catch {
                 DispatchQueue.main.async {
                     self?.audioOutputDevices = []
                     self?.isAudioOutputBusy = false
-                    self?.audioOutputStatusText = error.localizedDescription
+                    self?.patchFeedback = PatchFeedback(
+                        title: "Audio Outputs",
+                        message: error.localizedDescription,
+                        isError: true
+                    )
                 }
             }
         }
@@ -707,7 +727,7 @@ final class MainDashboardViewModel: ObservableObject {
     private func selectAudioOutput(id: String) {
         guard !isAudioOutputBusy else { return }
         isAudioOutputBusy = true
-        audioOutputStatusText = "Switching Wine audio output…"
+        patchFeedback = nil
         let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -717,14 +737,15 @@ final class MainDashboardViewModel: ObservableObject {
                     guard let self else { return }
                     self.updateCurrentVersion { $0.settings.audioOutputDeviceID = id }
                     self.isAudioOutputBusy = false
-                    self.audioOutputStatusText = id.isEmpty
-                        ? "Wine now follows the macOS system output."
-                        : "Wine audio output changed."
                 }
             } catch {
                 DispatchQueue.main.async {
                     self?.isAudioOutputBusy = false
-                    self?.audioOutputStatusText = error.localizedDescription
+                    self?.patchFeedback = PatchFeedback(
+                        title: "Audio Output",
+                        message: error.localizedDescription,
+                        isError: true
+                    )
                 }
             }
         }

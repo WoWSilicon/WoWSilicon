@@ -116,7 +116,14 @@ struct OptionsView: View {
     }
 
     private var audioSection: some View {
-        audioOutputControls
+        VStack(alignment: .leading, spacing: 18) {
+            audioOutputControls
+            Divider()
+            toggleRow(
+                "Spatialize Stereo",
+                binding: viewModel.spatializeStereoBinding()
+            )
+        }
     }
 
     private var availableTabs: [OptionsTab] {
@@ -450,40 +457,37 @@ struct OptionsView: View {
     }
 
     private var audioOutputControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 10) {
             Text("Audio Output")
                 .font(.headline)
 
-            HStack(spacing: 10) {
-                Picker("", selection: viewModel.audioOutputBinding()) {
-                    Text("System Default").tag("")
-                    if viewModel.selectedAudioOutputIsUnavailable,
-                       let selectedID = viewModel.currentVersion?.settings.audioOutputDeviceID {
-                        Text("Previously selected device (unavailable)").tag(selectedID)
-                    }
-                    ForEach(viewModel.audioOutputDevices) { device in
-                        Text(device.name).tag(device.id)
-                    }
+            Spacer(minLength: 24)
+
+            Picker("Audio Output", selection: viewModel.audioOutputBinding()) {
+                Text("System Default").tag("")
+                if viewModel.selectedAudioOutputIsUnavailable,
+                   let selectedID = viewModel.currentVersion?.settings.audioOutputDeviceID {
+                    Text("Previously selected device (unavailable)").tag(selectedID)
                 }
-                .labelsHidden()
-                .frame(maxWidth: 360)
-                .disabled(viewModel.isAudioOutputBusy)
-
-                Button("Refresh", action: viewModel.refreshAudioOutputs)
-                    .buttonStyle(.bordered)
-                    .disabled(viewModel.isAudioOutputBusy)
-
-                if viewModel.isAudioOutputBusy {
-                    ProgressView()
-                        .controlSize(.small)
+                ForEach(viewModel.audioOutputDevices) { device in
+                    Text(device.name).tag(device.id)
                 }
             }
+            .labelsHidden()
+            .frame(width: 360)
+            .disabled(viewModel.isAudioOutputBusy)
 
-            if !viewModel.audioOutputStatusText.isEmpty {
-                Text(viewModel.audioOutputStatusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            Button(action: viewModel.refreshAudioOutputs) {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.bordered)
+            .disabled(viewModel.isAudioOutputBusy)
+            .help("Refresh audio outputs")
+            .accessibilityLabel("Refresh audio outputs")
+
+            if viewModel.isAudioOutputBusy {
+                ProgressView()
+                    .controlSize(.small)
             }
         }
     }
