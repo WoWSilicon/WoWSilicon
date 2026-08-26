@@ -236,6 +236,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
     var enableLibSiliconPatch: Bool
     var userDisabledLibSiliconPatch: Bool
     var x87Backend: X87Backend
+    var audioOutputDeviceID: String
 
     var enableRosettaX87: Bool {
         get { x87Backend != .disabled }
@@ -255,7 +256,8 @@ struct VersionSettings: Codable, Equatable, Sendable {
         enableLibSiliconPatch: Bool = false,
         userDisabledLibSiliconPatch: Bool = false,
         enableRosettaX87: Bool = true,
-        x87Backend: X87Backend? = nil
+        x87Backend: X87Backend? = nil,
+        audioOutputDeviceID: String = ""
     ) {
         self.enableVanillaTweaks = enableVanillaTweaks
         self.remapOptionAsAlt = remapOptionAsAlt
@@ -269,6 +271,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
         self.enableLibSiliconPatch = enableLibSiliconPatch
         self.userDisabledLibSiliconPatch = userDisabledLibSiliconPatch
         self.x87Backend = x87Backend ?? (enableRosettaX87 ? .rosettaX87 : .disabled)
+        self.audioOutputDeviceID = audioOutputDeviceID
     }
 
     enum CodingKeys: String, CodingKey {
@@ -278,6 +281,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
         case graphicsSettings
         case enableLibSiliconPatch, userDisabledLibSiliconPatch
         case x87Backend, enableRosettaX87
+        case audioOutputDeviceID
         // Legacy keys kept for migration only
         case reduceTerrainDistance, setMultisampleTo2x, setShadowLOD0, userDisabledShadowLOD
     }
@@ -300,6 +304,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
             let enabled = try container.decodeIfPresent(Bool.self, forKey: .enableRosettaX87) ?? true
             x87Backend = enabled ? .rosettaX87 : .disabled
         }
+        audioOutputDeviceID = try container.decodeIfPresent(String.self, forKey: .audioOutputDeviceID) ?? ""
 
         if let gs = try container.decodeIfPresent(GraphicsSettings.self, forKey: .graphicsSettings) {
             graphicsSettings = gs
@@ -334,6 +339,7 @@ struct VersionSettings: Codable, Equatable, Sendable {
         try container.encode(userDisabledLibSiliconPatch, forKey: .userDisabledLibSiliconPatch)
         try container.encode(x87Backend, forKey: .x87Backend)
         try container.encode(enableRosettaX87, forKey: .enableRosettaX87)
+        try container.encode(audioOutputDeviceID, forKey: .audioOutputDeviceID)
     }
 
     func mergedWithDefaults(_ defaults: VersionSettings) -> VersionSettings {

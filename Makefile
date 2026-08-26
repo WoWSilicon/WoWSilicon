@@ -24,8 +24,12 @@ SWIFT_ENV := SWIFT_MODULECACHE_PATH="$(BUILD_DIR)/swift-module-cache" CLANG_MODU
 SWIFT_BUILD := $(SWIFT_ENV) swift build --arch arm64 --disable-sandbox --build-path "$(BUILD_DIR)" --cache-path "$(BUILD_DIR)/spm-cache" --manifest-cache none
 RESOURCE_BUNDLE := $(BUILD_DIR)/arm64-apple-macosx/release/WoWSilicon-swift_WoWSiliconSwift.bundle
 WINE_RUNTIME_DIR ?= $(CURDIR)/.wine-runtime
+AUDIO_HELPER_SRC := tools/wine-audio-helper/wowsilicon-audio.c
+AUDIO_HELPER_DIR := $(BUILD_DIR)/audio-helper
+AUDIO_HELPER := $(AUDIO_HELPER_DIR)/wowsilicon-audio.exe
+AUDIO_HELPER_CC ?= i686-w64-mingw32-gcc
 
-.PHONY: all build debug run bundle dmg appcast clean app_icon validate_wine_runtime package_wine_runtime update-mtld3d update-x87sidecar
+.PHONY: all build debug run bundle dmg appcast clean app_icon audio_helper validate_wine_runtime package_wine_runtime update-mtld3d update-x87sidecar
 
 all: bundle
 
@@ -58,7 +62,14 @@ update-mtld3d:
 update-x87sidecar:
 	@tools/wine-runtime/update-x87sidecar.sh $(if $(TAG),--tag $(TAG),)
 
-bundle: build validate_wine_runtime
+audio_helper: $(AUDIO_HELPER)
+
+$(AUDIO_HELPER): $(AUDIO_HELPER_SRC)
+	@echo "Building Wine audio helper..."
+	@mkdir -p "$(AUDIO_HELPER_DIR)"
+	@$(AUDIO_HELPER_CC) -std=c11 -Os -s -municode "$<" -o "$@" -lole32 -luuid
+
+bundle: build validate_wine_runtime audio_helper
 	@$(MAKE) app_icon
 	@echo "Staging $(APP_NAME).app..."
 
@@ -80,6 +91,8 @@ bundle: build validate_wine_runtime
 	fi
 	@mkdir -p "$(APP_BUNDLE)/Contents/Resources/Wine"
 	@cp -R "$(WINE_RUNTIME_DIR)/." "$(APP_BUNDLE)/Contents/Resources/Wine/"
+	@mkdir -p "$(APP_BUNDLE)/Contents/Resources/Audio"
+	@cp "$(AUDIO_HELPER)" "$(APP_BUNDLE)/Contents/Resources/Audio/"
 	@find "$(APP_BUNDLE)/Contents/Resources/Wine" -name '.DS_Store' -delete
 	@cp "$(APP_ICON)" "$(APP_BUNDLE)/Contents/Resources/turtle.icns"
 	@xattr -cr "$(APP_BUNDLE)"

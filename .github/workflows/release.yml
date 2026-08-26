@@ -27,6 +27,9 @@ jobs:
           sw_vers
           xcodebuild -version
 
+      - name: Install Windows helper compiler
+        run: brew install mingw-w64
+
       - name: Restore and validate Wine runtime
         run: tools/wine-runtime/restore.sh --runtime "$GITHUB_WORKSPACE/.wine-runtime"
 

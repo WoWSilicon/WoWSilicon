@@ -1,0 +1,244 @@
+diff --git a/dlls/dsound/dsound.c b/dlls/dsound/dsound.c
+index d4cc0cd..65eba23 100644
+--- a/dlls/dsound/dsound.c
++++ b/dlls/dsound/dsound.c
+@@ -41,6 +41,9 @@
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(dsound);
+ 
++static struct list default_playback_devices = LIST_INIT(default_playback_devices);
++static SRWLOCK default_playback_devices_lock = SRWLOCK_INIT;
++
+ typedef struct IDirectSoundImpl {
+     IUnknown            IUnknown_inner;
+     IDirectSound8       IDirectSound8_iface;
+@@ -193,6 +196,13 @@ static void DirectSoundDevice_destroy(DirectSoundDevice *device)
+ 
+         TRACE("(%p)\n", device);
+ 
++        if (device->default_playback) {
++            AcquireSRWLockExclusive(&default_playback_devices_lock);
++            list_remove(&device->default_entry);
++            device->default_playback = FALSE;
++            ReleaseSRWLockExclusive(&default_playback_devices_lock);
++        }
++
+         InterlockedExchange(&device->terminated, TRUE);
+         SetEvent(device->sleepev);
+         if (device->thread) {
+@@ -239,6 +249,7 @@ static HRESULT DirectSoundDevice_Initialize(DirectSoundDevice ** ppDevice, LPCGU
+     GUID devGUID;
+     DirectSoundDevice *device;
+     IMMDevice *mmdevice;
++    BOOL default_playback;
+ 
+     TRACE("(%p,%s)\n",ppDevice,debugstr_guid(lpcGUID));
+ 
+@@ -247,6 +258,9 @@ static HRESULT DirectSoundDevice_Initialize(DirectSoundDevice ** ppDevice, LPCGU
+         return DSERR_ALREADYINITIALIZED;
+     }
+ 
++    default_playback = !lpcGUID || IsEqualGUID(lpcGUID, &GUID_NULL) ||
++            IsEqualGUID(lpcGUID, &DSDEVID_DefaultPlayback);
++
+     /* Default device? */
+     if (!lpcGUID || IsEqualGUID(lpcGUID, &GUID_NULL))
+         lpcGUID = &DSDEVID_DefaultPlayback;
+@@ -316,11 +330,54 @@ static HRESULT DirectSoundDevice_Initialize(DirectSoundDevice ** ppDevice, LPCGU
+     device->thread = CreateThread(0, 0, DSOUND_mixthread, device, 0, 0);
+     SetThreadPriority(device->thread, THREAD_PRIORITY_TIME_CRITICAL);
+ 
++    if (default_playback) {
++        device->default_playback = TRUE;
++        AcquireSRWLockExclusive(&default_playback_devices_lock);
++        list_add_tail(&default_playback_devices, &device->default_entry);
++        ReleaseSRWLockExclusive(&default_playback_devices_lock);
++        DSOUND_RegisterDefaultDeviceNotifications();
++    }
++
+     *ppDevice = device;
+ 
+     return hr;
+ }
+ 
++void DSOUND_DefaultDeviceChanged(IMMDevice *mmdevice, const GUID *guid)
++{
++    DirectSoundDevice *device;
++
++    AcquireSRWLockExclusive(&default_playback_devices_lock);
++    LIST_FOR_EACH_ENTRY(device, &default_playback_devices, DirectSoundDevice, default_entry) {
++        IMMDevice *old_mmdevice;
++        HRESULT hr;
++
++        if (IsEqualGUID(&device->guid, guid))
++            continue;
++
++        IMMDevice_AddRef(mmdevice);
++        AcquireSRWLockExclusive(&device->buffer_list_lock);
++        EnterCriticalSection(&device->mixlock);
++
++        old_mmdevice = device->mmdevice;
++        device->mmdevice = mmdevice;
++        hr = DSOUND_ReopenDevice(device, device->priolevel == DSSCL_WRITEPRIMARY);
++        if (SUCCEEDED(hr)) {
++            device->guid = *guid;
++            IMMDevice_Release(old_mmdevice);
++            TRACE("migrated default playback device to %s\n", debugstr_guid(guid));
++        } else {
++            device->mmdevice = old_mmdevice;
++            IMMDevice_Release(mmdevice);
++            WARN("failed to migrate default playback device: %08lx\n", hr);
++        }
++
++        LeaveCriticalSection(&device->mixlock);
++        ReleaseSRWLockExclusive(&device->buffer_list_lock);
++    }
++    ReleaseSRWLockExclusive(&default_playback_devices_lock);
++}
++
+ static HRESULT DirectSoundDevice_CreateSoundBuffer(
+     DirectSoundDevice * device,
+     LPCDSBUFFERDESC dsbd,
+diff --git a/dlls/dsound/dsound_main.c b/dlls/dsound/dsound_main.c
+index e2b9b81..6cbbf97 100644
+--- a/dlls/dsound/dsound_main.c
++++ b/dlls/dsound/dsound_main.c
+@@ -167,6 +167,116 @@ static void release_mmdevenum(IMMDeviceEnumerator *devenum, HRESULT init_hr)
+         CoUninitialize();
+ }
+ 
++static HRESULT get_mmdevice_guid(IMMDevice *device, IPropertyStore *ps, GUID *guid);
++
++static HRESULT WINAPI default_notifier_QueryInterface(IMMNotificationClient *iface,
++        REFIID riid, void **obj)
++{
++    if (!obj) return E_POINTER;
++    *obj = NULL;
++    if (!IsEqualIID(riid, &IID_IUnknown) && !IsEqualIID(riid, &IID_IMMNotificationClient))
++        return E_NOINTERFACE;
++    *obj = iface;
++    IMMNotificationClient_AddRef(iface);
++    return S_OK;
++}
++
++static ULONG WINAPI default_notifier_AddRef(IMMNotificationClient *iface)
++{
++    return 2;
++}
++
++static ULONG WINAPI default_notifier_Release(IMMNotificationClient *iface)
++{
++    return 1;
++}
++
++static HRESULT WINAPI default_notifier_OnDeviceStateChanged(IMMNotificationClient *iface,
++        const WCHAR *device_id, DWORD new_state)
++{
++    return S_OK;
++}
++
++static HRESULT WINAPI default_notifier_OnDeviceAdded(IMMNotificationClient *iface,
++        const WCHAR *device_id)
++{
++    return S_OK;
++}
++
++static HRESULT WINAPI default_notifier_OnDeviceRemoved(IMMNotificationClient *iface,
++        const WCHAR *device_id)
++{
++    return S_OK;
++}
++
++static HRESULT WINAPI default_notifier_OnDefaultDeviceChanged(IMMNotificationClient *iface,
++        EDataFlow flow, ERole role, const WCHAR *device_id)
++{
++    IMMDeviceEnumerator *devenum;
++    IMMDevice *mmdevice;
++    GUID guid;
++    HRESULT hr, init_hr;
++
++    if (flow != eRender || role != eMultimedia || !device_id)
++        return S_OK;
++
++    init_hr = get_mmdevenum(&devenum);
++    if (!devenum)
++        return S_OK;
++
++    hr = IMMDeviceEnumerator_GetDevice(devenum, device_id, &mmdevice);
++    if (SUCCEEDED(hr)) {
++        hr = get_mmdevice_guid(mmdevice, NULL, &guid);
++        if (SUCCEEDED(hr))
++            DSOUND_DefaultDeviceChanged(mmdevice, &guid);
++        IMMDevice_Release(mmdevice);
++    }
++    release_mmdevenum(devenum, init_hr);
++    return S_OK;
++}
++
++static HRESULT WINAPI default_notifier_OnPropertyValueChanged(IMMNotificationClient *iface,
++        const WCHAR *device_id, const PROPERTYKEY key)
++{
++    return S_OK;
++}
++
++static const IMMNotificationClientVtbl default_notifier_vtbl = {
++    default_notifier_QueryInterface,
++    default_notifier_AddRef,
++    default_notifier_Release,
++    default_notifier_OnDeviceStateChanged,
++    default_notifier_OnDeviceAdded,
++    default_notifier_OnDeviceRemoved,
++    default_notifier_OnDefaultDeviceChanged,
++    default_notifier_OnPropertyValueChanged
++};
++
++static IMMNotificationClient default_notifier = { &default_notifier_vtbl };
++static LONG default_notifier_registered;
++
++void DSOUND_RegisterDefaultDeviceNotifications(void)
++{
++    IMMDeviceEnumerator *devenum;
++    HRESULT hr, init_hr;
++
++    if (InterlockedCompareExchange(&default_notifier_registered, 1, 0))
++        return;
++
++    init_hr = get_mmdevenum(&devenum);
++    if (!devenum) {
++        InterlockedExchange(&default_notifier_registered, 0);
++        return;
++    }
++
++    hr = IMMDeviceEnumerator_RegisterEndpointNotificationCallback(devenum, &default_notifier);
++    release_mmdevenum(devenum, init_hr);
++    if (FAILED(hr)) {
++        WARN("failed to register default device notification: %08lx\n", hr);
++        InterlockedExchange(&default_notifier_registered, 0);
++    }
++}
++
+ static HRESULT get_mmdevice_guid(IMMDevice *device, IPropertyStore *ps,
+         GUID *guid)
+ {
+diff --git a/dlls/dsound/dsound_private.h b/dlls/dsound/dsound_private.h
+index fc6fbfd..63006c7 100644
+--- a/dlls/dsound/dsound_private.h
++++ b/dlls/dsound/dsound_private.h
+@@ -102,6 +102,8 @@ struct DirectSoundDevice
+     IAudioRenderClient *render;
+ 
+     HANDLE sleepev, thread;
++    BOOL default_playback;
++    struct list default_entry;
+ };
+ 
+ /* reference counted buffer memory for duplicated buffer memory */
+@@ -203,6 +205,8 @@ HRESULT DSOUND_Create(REFIID riid, void **ppv);
+ HRESULT DSOUND_Create8(REFIID riid, void **ppv);
+ HRESULT IDirectSoundImpl_Create(IUnknown *outer_unk, REFIID riid, void **ppv, BOOL has_ds8);
+ void DSOUND_ParseSpeakerConfig(DirectSoundDevice *device);
++void DSOUND_DefaultDeviceChanged(IMMDevice *mmdevice, const GUID *guid);
++void DSOUND_RegisterDefaultDeviceNotifications(void);
+ 
+ /* primary.c */
+ 

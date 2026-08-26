@@ -104,7 +104,7 @@ struct MainDashboardView: View {
                 viewModel: viewModel,
                 onClose: { showOptionsSheet = false }
             )
-            .frame(width: 680, height: 540)
+            .frame(width: 780, height: 540)
         }
         .alert(patchAlertTitle, isPresented: $showPatchAlert) {
             Button("OK", role: .cancel) { }

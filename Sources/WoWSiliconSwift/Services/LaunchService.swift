@@ -309,6 +309,41 @@ final class LaunchService: @unchecked Sendable {
         }
     }
 
+    func launchWineConfiguration(
+        customVariables: String,
+        completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void
+    ) {
+        guard let wineExecutableURL = BundledWineRuntime.wineExecutableURL() else {
+            let expectedPath = BundledWineRuntime.rootURL()?
+                .appendingPathComponent("bin/wine", isDirectory: false).path ?? "Contents/Resources/Wine/bin/wine"
+            DispatchQueue.main.async { completion(.failure(.wineMissing(expectedPath))) }
+            return
+        }
+
+        let process = Process()
+        process.executableURL = wineExecutableURL
+        process.arguments = ["winecfg"]
+        process.environment = BundledWineRuntime.makeEnvironment(customVariables: customVariables)
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.async { [weak self] in
+                self?.untrackProcess(process)
+                self?.processDidTerminate?()
+            }
+        }
+
+        do {
+            try process.run()
+            trackProcess(process)
+            DispatchQueue.main.async { completion(.success(())) }
+        } catch {
+            DispatchQueue.main.async {
+                completion(.failure(.processLaunchFailed(error.localizedDescription)))
+            }
+        }
+    }
+
     func launchThirdPartyLauncher(version: GameVersion, completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void) {
         let exePath = version.launcherExePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !exePath.isEmpty else {

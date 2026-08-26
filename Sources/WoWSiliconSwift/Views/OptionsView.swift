@@ -44,6 +44,8 @@ struct OptionsView: View {
                         generalSection
                     case .graphics:
                         graphicsSection
+                    case .audio:
+                        audioSection
                     case .realmlist:
                         realmlistSection
                     case .dependencies:
@@ -65,6 +67,7 @@ struct OptionsView: View {
             viewModel.refreshGraphicsSettings()
             viewModel.refreshVisualCppRuntimeStatus()
             viewModel.refreshGitStatus()
+            viewModel.refreshAudioOutputs()
             viewModel.beginOptionsSession()
             refreshRealmlist()
         }
@@ -110,6 +113,10 @@ struct OptionsView: View {
             settings: viewModel.graphicsSettingsBinding(),
             showsWoWSettings: viewModel.currentVersion?.supportsCustomGraphicsSettings ?? true
         )
+    }
+
+    private var audioSection: some View {
+        audioOutputControls
     }
 
     private var availableTabs: [OptionsTab] {
@@ -354,6 +361,7 @@ struct OptionsView: View {
     private enum OptionsTab: String, CaseIterable, Identifiable {
         case general
         case graphics
+        case audio
         case realmlist
         case dependencies
         case environment
@@ -363,6 +371,7 @@ struct OptionsView: View {
             switch self {
             case .general: return "General"
             case .graphics: return "Graphics"
+            case .audio: return "Audio"
             case .realmlist: return "Realmlist"
             case .dependencies: return "Dependencies"
             case .environment: return "Environment"
@@ -415,10 +424,59 @@ struct OptionsView: View {
                     .disabled(viewModel.usesDefaultWineBottleLocation || !viewModel.canChangeWineBottleLocation)
             }
 
-            Text("The default is ~/WoWSilicon. Choose an empty folder or an existing Wine bottle. Changes apply to newly started Wine processes.")
+            HStack(spacing: 10) {
+                Button("Open Wine Configuration…", action: viewModel.openWineConfiguration)
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.isWineConfigurationLoading)
+                if viewModel.isWineConfigurationLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            Text("The default is ~/WoWSilicon. Choose an empty folder or an existing Wine bottle. Wine Configuration uses the bundled runtime and the selected bottle.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var audioOutputControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Audio Output")
+                .font(.headline)
+
+            HStack(spacing: 10) {
+                Picker("", selection: viewModel.audioOutputBinding()) {
+                    Text("System Default").tag("")
+                    if viewModel.selectedAudioOutputIsUnavailable,
+                       let selectedID = viewModel.currentVersion?.settings.audioOutputDeviceID {
+                        Text("Previously selected device (unavailable)").tag(selectedID)
+                    }
+                    ForEach(viewModel.audioOutputDevices) { device in
+                        Text(device.name).tag(device.id)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 360)
+                .disabled(viewModel.isAudioOutputBusy)
+
+                Button("Refresh", action: viewModel.refreshAudioOutputs)
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.isAudioOutputBusy)
+
+                if viewModel.isAudioOutputBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            if !viewModel.audioOutputStatusText.isEmpty {
+                Text(viewModel.audioOutputStatusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

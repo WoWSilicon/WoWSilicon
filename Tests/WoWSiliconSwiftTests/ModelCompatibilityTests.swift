@@ -49,6 +49,7 @@ final class ModelCompatibilityTests: XCTestCase {
         XCTAssertTrue(settings.enableLibSiliconPatch)
         XCTAssertTrue(settings.enableRosettaX87)
         XCTAssertEqual(settings.x87Backend, .rosettaX87)
+        XCTAssertEqual(settings.audioOutputDeviceID, "")
     }
 
     func testLegacyDisabledRosettaMigratesToDisabledBackend() throws {
@@ -77,6 +78,17 @@ final class ModelCompatibilityTests: XCTestCase {
             try JSONDecoder().decode(VersionSettings.self, from: JSONEncoder().encode(settings)).x87Backend,
             .x87Sidecar
         )
+    }
+
+    func testAudioOutputDeviceRoundTrips() throws {
+        let settings = VersionSettings(audioOutputDeviceID: "{wine-endpoint-id}")
+
+        let decoded = try JSONDecoder().decode(
+            VersionSettings.self,
+            from: JSONEncoder().encode(settings)
+        )
+
+        XCTAssertEqual(decoded.audioOutputDeviceID, "{wine-endpoint-id}")
     }
 
     func testWineBottlePreferencesRoundTrip() throws {

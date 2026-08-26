@@ -34,6 +34,10 @@ final class MainDashboardViewModel: ObservableObject {
     @Published var shouldShowTelemetryConsentPrompt: Bool = false
     @Published private(set) var isWineBottleMigrationInProgress: Bool = false
     @Published private(set) var wineBottlePath: String = ""
+    @Published private(set) var audioOutputDevices: [WineAudioOutputDevice] = []
+    @Published private(set) var isAudioOutputBusy: Bool = false
+    @Published private(set) var audioOutputStatusText: String = ""
+    @Published private(set) var isWineConfigurationLoading: Bool = false
     @Published private(set) var isApplyingVanillaTweaks: Bool = false
     @Published private(set) var isOptionAsAltBusy: Bool = false
     @Published private(set) var optionAsAltStatus: OptionAsAltStatus = .unknown
@@ -234,12 +238,35 @@ final class MainDashboardViewModel: ObservableObject {
         guard let version = versionManager.currentVersion, version.hasLauncher else { return }
         patchFeedback = nil
         isLauncherLoading = true
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                try AudioOutputService.selectOutput(
+                    id: version.settings.audioOutputDeviceID,
+                    customVariables: version.settings.environmentVariables
+                )
+                DispatchQueue.main.async {
+                    self?.launchPreparedThirdPartyLauncher(version)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    debugPrint("Could not apply the saved Wine audio output: \(error.localizedDescription)")
+                    self?.launchPreparedThirdPartyLauncher(version)
+                }
+            }
+        }
+    }
+
+    private func launchPreparedThirdPartyLauncher(_ version: GameVersion) {
         launchService.launchThirdPartyLauncher(version: version) { [weak self] result in
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 if case .failure(let error) = result {
                     self.isLauncherLoading = false
-                    self.patchFeedback = PatchFeedback(title: "Launcher Failed", message: error.localizedDescription, isError: true)
+                    self.patchFeedback = PatchFeedback(
+                        title: "Launcher Failed",
+                        message: error.localizedDescription,
+                        isError: true
+                    )
                 } else {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
                         self?.isLauncherLoading = false
@@ -471,6 +498,7 @@ final class MainDashboardViewModel: ObservableObject {
             persistUserPrefs()
             wineBottlePath = validated.path
             refreshWineBottleDependentStatuses()
+            refreshAudioOutputs()
         } catch {
             presentWineBottleAlert(error.localizedDescription)
         }
@@ -483,6 +511,7 @@ final class MainDashboardViewModel: ObservableObject {
         persistUserPrefs()
         wineBottlePath = WineBottleService.defaultBottleURL().path
         refreshWineBottleDependentStatuses()
+        refreshAudioOutputs()
     }
 
     func openWineBottleLocation() {
@@ -492,6 +521,27 @@ final class MainDashboardViewModel: ObservableObject {
             NSWorkspace.shared.open(bottleURL)
         } catch {
             presentWineBottleAlert("Could not open the Wine bottle: \(error.localizedDescription)")
+        }
+    }
+
+    func openWineConfiguration() {
+        guard !isWineConfigurationLoading else { return }
+        isWineConfigurationLoading = true
+        patchFeedback = nil
+        let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
+
+        launchService.launchWineConfiguration(customVariables: customVariables) { [weak self] result in
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.isWineConfigurationLoading = false
+                if case .failure(let error) = result {
+                    self.patchFeedback = PatchFeedback(
+                        title: "Wine Configuration",
+                        message: error.localizedDescription,
+                        isError: true
+                    )
+                }
+            }
         }
     }
 
@@ -550,6 +600,24 @@ final class MainDashboardViewModel: ObservableObject {
             }
         }
 
+        let customVariables = currentVersion.settings.environmentVariables
+        let outputID = currentVersion.settings.audioOutputDeviceID
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                try AudioOutputService.selectOutput(id: outputID, customVariables: customVariables)
+                DispatchQueue.main.async {
+                    self?.launchPreparedVersion(currentVersion)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    debugPrint("Could not apply the saved Wine audio output: \(error.localizedDescription)")
+                    self?.launchPreparedVersion(currentVersion)
+                }
+            }
+        }
+    }
+
+    private func launchPreparedVersion(_ currentVersion: GameVersion) {
         launchService.processDidTerminate = { [weak self] in
             guard let self else { return }
             self.refreshSnapshot()
@@ -571,6 +639,70 @@ final class MainDashboardViewModel: ObservableObject {
                         self.patchFeedback = PatchFeedback(title: "Launch Failed", message: error.localizedDescription, isError: true)
                         self.refreshSnapshot()
                     }
+                }
+            }
+        }
+    }
+
+    func audioOutputBinding() -> Binding<String> {
+        Binding(
+            get: { self.versionManager.currentVersion?.settings.audioOutputDeviceID ?? "" },
+            set: { self.selectAudioOutput(id: $0) }
+        )
+    }
+
+    var selectedAudioOutputIsUnavailable: Bool {
+        guard let id = versionManager.currentVersion?.settings.audioOutputDeviceID, !id.isEmpty else {
+            return false
+        }
+        return !audioOutputDevices.contains { $0.id == id }
+    }
+
+    func refreshAudioOutputs() {
+        guard !isAudioOutputBusy else { return }
+        isAudioOutputBusy = true
+        audioOutputStatusText = ""
+        let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                let devices = try AudioOutputService.availableOutputs(customVariables: customVariables)
+                DispatchQueue.main.async {
+                    self?.audioOutputDevices = devices
+                    self?.isAudioOutputBusy = false
+                    self?.audioOutputStatusText = devices.isEmpty ? "No active Wine audio outputs were found." : ""
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.audioOutputDevices = []
+                    self?.isAudioOutputBusy = false
+                    self?.audioOutputStatusText = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func selectAudioOutput(id: String) {
+        guard !isAudioOutputBusy else { return }
+        isAudioOutputBusy = true
+        audioOutputStatusText = "Switching Wine audio output…"
+        let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                try AudioOutputService.selectOutput(id: id, customVariables: customVariables)
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.updateCurrentVersion { $0.settings.audioOutputDeviceID = id }
+                    self.isAudioOutputBusy = false
+                    self.audioOutputStatusText = id.isEmpty
+                        ? "Wine now follows the macOS system output."
+                        : "Wine audio output changed."
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.isAudioOutputBusy = false
+                    self?.audioOutputStatusText = error.localizedDescription
                 }
             }
         }
