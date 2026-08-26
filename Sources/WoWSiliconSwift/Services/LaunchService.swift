@@ -208,7 +208,12 @@ final class LaunchService: @unchecked Sendable {
     }
 
     private func launchViaTerminal(configuration: LaunchConfiguration) throws {
-        let escaped = configuration.shellCommand
+        try launchTerminalCommand(configuration.shellCommand)
+        startFocusTimer()
+    }
+
+    private func launchTerminalCommand(_ shellCommand: String) throws {
+        let escaped = shellCommand
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         let script = """
@@ -228,7 +233,6 @@ final class LaunchService: @unchecked Sendable {
             if task.terminationStatus != 0 {
                 throw LaunchServiceError.appleScriptFailed("osascript exited with code \(task.terminationStatus)")
             }
-            startFocusTimer()
         } catch let error as LaunchServiceError {
             throw error
         } catch {
@@ -337,6 +341,48 @@ final class LaunchService: @unchecked Sendable {
             try process.run()
             trackProcess(process)
             DispatchQueue.main.async { completion(.success(())) }
+        } catch {
+            DispatchQueue.main.async {
+                completion(.failure(.processLaunchFailed(error.localizedDescription)))
+            }
+        }
+    }
+
+    func launchWineTerminal(
+        customVariables: String,
+        completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void
+    ) {
+        guard let wineExecutableURL = BundledWineRuntime.wineExecutableURL() else {
+            let expectedPath = BundledWineRuntime.rootURL()?
+                .appendingPathComponent("bin/wine", isDirectory: false).path ?? "Contents/Resources/Wine/bin/wine"
+            DispatchQueue.main.async { completion(.failure(.wineMissing(expectedPath))) }
+            return
+        }
+
+        let environment = BundledWineRuntime.makeEnvironment(customVariables: customVariables)
+        let winePrefix = BundledWineRuntime.shellEnvironmentAssignment(
+            key: "WINEPREFIX",
+            value: environment["WINEPREFIX"] ?? WineRegistrySupport.winePrefixURL().path
+        )
+        let dyldLibraryPath = BundledWineRuntime.shellEnvironmentAssignment(
+            key: "DYLD_LIBRARY_PATH",
+            value: environment["DYLD_LIBRARY_PATH"] ?? ""
+        )
+        let wineBinURL = wineExecutableURL.deletingLastPathComponent()
+        let path = BundledWineRuntime.shellEnvironmentAssignment(
+            key: "PATH",
+            value: "\(wineBinURL.path):\(environment["PATH"] ?? "")"
+        )
+        let custom = BundledWineRuntime.shellEnvironmentAssignments(customVariables)
+        let customExport = custom.isEmpty ? "" : "export \(custom); "
+        let shellCommand = "\(customExport)export \(winePrefix) \(dyldLibraryPath) \(path); "
+            + "clear; printf 'WoWSilicon Wine terminal\\nBottle: %s\\n\\n' \"$WINEPREFIX\""
+
+        do {
+            try launchTerminalCommand(shellCommand)
+            DispatchQueue.main.async { completion(.success(())) }
+        } catch let error as LaunchServiceError {
+            DispatchQueue.main.async { completion(.failure(error)) }
         } catch {
             DispatchQueue.main.async {
                 completion(.failure(.processLaunchFailed(error.localizedDescription)))

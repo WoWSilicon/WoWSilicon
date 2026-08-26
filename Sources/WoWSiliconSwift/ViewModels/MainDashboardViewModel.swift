@@ -38,6 +38,7 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var isAudioOutputBusy: Bool = false
     @Published private(set) var audioOutputStatusText: String = ""
     @Published private(set) var isWineConfigurationLoading: Bool = false
+    @Published private(set) var isWineTerminalLoading: Bool = false
     @Published private(set) var isApplyingVanillaTweaks: Bool = false
     @Published private(set) var isOptionAsAltBusy: Bool = false
     @Published private(set) var optionAsAltStatus: OptionAsAltStatus = .unknown
@@ -537,6 +538,27 @@ final class MainDashboardViewModel: ObservableObject {
                 if case .failure(let error) = result {
                     self.patchFeedback = PatchFeedback(
                         title: "Wine Configuration",
+                        message: error.localizedDescription,
+                        isError: true
+                    )
+                }
+            }
+        }
+    }
+
+    func openWineTerminal() {
+        guard !isWineTerminalLoading else { return }
+        isWineTerminalLoading = true
+        patchFeedback = nil
+        let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
+
+        launchService.launchWineTerminal(customVariables: customVariables) { [weak self] result in
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.isWineTerminalLoading = false
+                if case .failure(let error) = result {
+                    self.patchFeedback = PatchFeedback(
+                        title: "Wine Terminal",
                         message: error.localizedDescription,
                         isError: true
                     )

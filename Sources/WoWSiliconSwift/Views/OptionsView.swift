@@ -432,6 +432,14 @@ struct OptionsView: View {
                     ProgressView()
                         .controlSize(.small)
                 }
+
+                Button("Open Wine Terminal…", action: viewModel.openWineTerminal)
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.isWineTerminalLoading)
+                if viewModel.isWineTerminalLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
             }
 
             Text("The default is ~/WoWSilicon. Choose an empty folder or an existing Wine bottle. Wine Configuration uses the bundled runtime and the selected bottle.")
