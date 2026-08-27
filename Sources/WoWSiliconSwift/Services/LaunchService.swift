@@ -133,6 +133,8 @@ final class LaunchService: @unchecked Sendable {
 
         let spatialAudioControlURL = SpatialAudioService.controlURL()
         try SpatialAudioService.setEnabled(version.settings.spatializeStereo, controlURL: spatialAudioControlURL)
+        let nightModeControlURL = SpatialAudioService.nightModeControlURL()
+        try SpatialAudioService.setNightMode(version.settings.nightMode, controlURL: nightModeControlURL)
 
         let shellCommand = makeShellCommand(
             gameURL: gameURL,
@@ -140,7 +142,8 @@ final class LaunchService: @unchecked Sendable {
             wowURL: wowExecutableURL,
             wineExecutablePath: wineExecutableURL.path,
             settings: version.settings,
-            spatialAudioControlURL: spatialAudioControlURL
+            spatialAudioControlURL: spatialAudioControlURL,
+            nightModeControlURL: nightModeControlURL
         )
 
         return LaunchConfiguration(
@@ -244,13 +247,16 @@ final class LaunchService: @unchecked Sendable {
         }
     }
 
-    private func makeShellCommand(gameURL: URL, x87Runtime: BundledX87Runtime.ResolvedRuntime?, wowURL: URL, wineExecutablePath: String, settings: VersionSettings, spatialAudioControlURL: URL) -> String {
+    private func makeShellCommand(gameURL: URL, x87Runtime: BundledX87Runtime.ResolvedRuntime?, wowURL: URL, wineExecutablePath: String, settings: VersionSettings, spatialAudioControlURL: URL, nightModeControlURL: URL) -> String {
         let game = doubleQuote(gameURL.path)
         let wow = doubleQuote(wowURL.path)
         let wine = doubleQuote(wineExecutablePath)
 
         let mtlValue = settings.enableMetalHud ? "1" : "0"
         let spatialAudioMode = settings.spatializeStereo ? "fixed" : "off"
+        let nightMode = settings.nightMode ? "1" : "0"
+        let followSystemOutput = settings.audioOutputDeviceID.isEmpty ? "1" : "0"
+        let followSystemInput = settings.audioInputDeviceID.isEmpty ? "1" : "0"
         let dllOverride = settings.graphicsSettings.backend.wineDLLOverride
         let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let winePrefix = BundledWineRuntime.shellEnvironmentAssignment(
@@ -261,7 +267,11 @@ final class LaunchService: @unchecked Sendable {
             key: "WOWSILICON_SPATIAL_AUDIO_CONTROL",
             value: spatialAudioControlURL.path
         )
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) \(spatialAudioControl) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let nightModeControl = BundledWineRuntime.shellEnvironmentAssignment(
+            key: "WOWSILICON_NIGHT_MODE_CONTROL",
+            value: nightModeControlURL.path
+        )
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" WOWSILICON_FOLLOW_SYSTEM_OUTPUT=\(followSystemOutput) WOWSILICON_FOLLOW_SYSTEM_INPUT=\(followSystemInput) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) \(spatialAudioControl) WOWSILICON_NIGHT_MODE=\(nightMode) \(nightModeControl) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = BundledWineRuntime.shellEnvironmentAssignments(settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
@@ -414,10 +424,15 @@ final class LaunchService: @unchecked Sendable {
         }
 
         let spatialAudioControlURL = SpatialAudioService.controlURL()
+        let nightModeControlURL = SpatialAudioService.nightModeControlURL()
         do {
             try SpatialAudioService.setEnabled(
                 version.settings.spatializeStereo,
                 controlURL: spatialAudioControlURL
+            )
+            try SpatialAudioService.setNightMode(
+                version.settings.nightMode,
+                controlURL: nightModeControlURL
             )
         } catch {
             DispatchQueue.main.async {
@@ -433,6 +448,9 @@ final class LaunchService: @unchecked Sendable {
 
         let mtlValue = version.settings.enableMetalHud ? "1" : "0"
         let spatialAudioMode = version.settings.spatializeStereo ? "fixed" : "off"
+        let nightMode = version.settings.nightMode ? "1" : "0"
+        let followSystemOutput = version.settings.audioOutputDeviceID.isEmpty ? "1" : "0"
+        let followSystemInput = version.settings.audioInputDeviceID.isEmpty ? "1" : "0"
         let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverrideWithBuiltinFallback
         let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let winePrefix = BundledWineRuntime.shellEnvironmentAssignment(
@@ -443,7 +461,11 @@ final class LaunchService: @unchecked Sendable {
             key: "WOWSILICON_SPATIAL_AUDIO_CONTROL",
             value: spatialAudioControlURL.path
         )
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_D3D_CONFIG=renderer=vulkan WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) \(spatialAudioControl) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let nightModeControl = BundledWineRuntime.shellEnvironmentAssignment(
+            key: "WOWSILICON_NIGHT_MODE_CONTROL",
+            value: nightModeControlURL.path
+        )
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_D3D_CONFIG=renderer=vulkan WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" WOWSILICON_FOLLOW_SYSTEM_OUTPUT=\(followSystemOutput) WOWSILICON_FOLLOW_SYSTEM_INPUT=\(followSystemInput) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) \(spatialAudioControl) WOWSILICON_NIGHT_MODE=\(nightMode) \(nightModeControl) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = BundledWineRuntime.shellEnvironmentAssignments(version.settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 

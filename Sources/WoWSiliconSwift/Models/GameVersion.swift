@@ -237,7 +237,9 @@ struct VersionSettings: Codable, Equatable, Sendable {
     var userDisabledLibSiliconPatch: Bool
     var x87Backend: X87Backend
     var audioOutputDeviceID: String
+    var audioInputDeviceID: String
     var spatializeStereo: Bool
+    var nightMode: Bool
 
     var enableRosettaX87: Bool {
         get { x87Backend != .disabled }
@@ -259,7 +261,9 @@ struct VersionSettings: Codable, Equatable, Sendable {
         enableRosettaX87: Bool = true,
         x87Backend: X87Backend? = nil,
         audioOutputDeviceID: String = "",
-        spatializeStereo: Bool = false
+        audioInputDeviceID: String = "",
+        spatializeStereo: Bool = false,
+        nightMode: Bool = false
     ) {
         self.enableVanillaTweaks = enableVanillaTweaks
         self.remapOptionAsAlt = remapOptionAsAlt
@@ -274,7 +278,9 @@ struct VersionSettings: Codable, Equatable, Sendable {
         self.userDisabledLibSiliconPatch = userDisabledLibSiliconPatch
         self.x87Backend = x87Backend ?? (enableRosettaX87 ? .rosettaX87 : .disabled)
         self.audioOutputDeviceID = audioOutputDeviceID
+        self.audioInputDeviceID = audioInputDeviceID
         self.spatializeStereo = spatializeStereo
+        self.nightMode = nightMode
     }
 
     enum CodingKeys: String, CodingKey {
@@ -284,7 +290,8 @@ struct VersionSettings: Codable, Equatable, Sendable {
         case graphicsSettings
         case enableLibSiliconPatch, userDisabledLibSiliconPatch
         case x87Backend, enableRosettaX87
-        case audioOutputDeviceID, spatialAudioMode, spatializeStereo
+        case audioOutputDeviceID, audioInputDeviceID
+        case spatialAudioMode, spatializeStereo, nightMode
         // Legacy keys kept for migration only
         case reduceTerrainDistance, setMultisampleTo2x, setShadowLOD0, userDisabledShadowLOD
     }
@@ -308,12 +315,14 @@ struct VersionSettings: Codable, Equatable, Sendable {
             x87Backend = enabled ? .rosettaX87 : .disabled
         }
         audioOutputDeviceID = try container.decodeIfPresent(String.self, forKey: .audioOutputDeviceID) ?? ""
+        audioInputDeviceID = try container.decodeIfPresent(String.self, forKey: .audioInputDeviceID) ?? ""
         if let enabled = try container.decodeIfPresent(Bool.self, forKey: .spatializeStereo) {
             spatializeStereo = enabled
         } else {
             let interimMode = try container.decodeIfPresent(String.self, forKey: .spatialAudioMode)
             spatializeStereo = interimMode == "fixed" || interimMode == "head_tracked"
         }
+        nightMode = try container.decodeIfPresent(Bool.self, forKey: .nightMode) ?? false
 
         if let gs = try container.decodeIfPresent(GraphicsSettings.self, forKey: .graphicsSettings) {
             graphicsSettings = gs
@@ -349,7 +358,9 @@ struct VersionSettings: Codable, Equatable, Sendable {
         try container.encode(x87Backend, forKey: .x87Backend)
         try container.encode(enableRosettaX87, forKey: .enableRosettaX87)
         try container.encode(audioOutputDeviceID, forKey: .audioOutputDeviceID)
+        try container.encode(audioInputDeviceID, forKey: .audioInputDeviceID)
         try container.encode(spatializeStereo, forKey: .spatializeStereo)
+        try container.encode(nightMode, forKey: .nightMode)
     }
 
     func mergedWithDefaults(_ defaults: VersionSettings) -> VersionSettings {

@@ -9,6 +9,7 @@ struct OptionsView: View {
     @State private var realmlistContent: String = ""
     @State private var realmlistURL: URL? = nil
     @State private var realmlistMultipleURLs: [URL] = []
+    @State private var showsAudioDetails = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -122,6 +123,10 @@ struct OptionsView: View {
             toggleRow(
                 "Spatialize Stereo",
                 binding: viewModel.spatializeStereoBinding()
+            )
+            toggleRow(
+                "Normalize Audio",
+                binding: viewModel.nightModeBinding()
             )
         }
     }
@@ -457,39 +462,192 @@ struct OptionsView: View {
     }
 
     private var audioOutputControls: some View {
-        HStack(spacing: 10) {
-            Text("Audio Output")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Text("Audio Output")
+                    .font(.headline)
+                    .frame(width: 120, alignment: .leading)
 
-            Spacer(minLength: 24)
+                audioDeviceMenu(
+                    selection: viewModel.audioOutputBinding(),
+                    systemTitle: "Follow macOS System Output",
+                    devices: viewModel.audioOutputDevices,
+                    selectedDeviceIsUnavailable: viewModel.selectedAudioOutputIsUnavailable
+                )
+                .frame(maxWidth: .infinity)
+                .disabled(viewModel.isAudioOutputBusy)
 
-            Picker("Audio Output", selection: viewModel.audioOutputBinding()) {
-                Text("System Default").tag("")
-                if viewModel.selectedAudioOutputIsUnavailable,
-                   let selectedID = viewModel.currentVersion?.settings.audioOutputDeviceID {
-                    Text("Previously selected device (unavailable)").tag(selectedID)
+                HStack(spacing: 8) {
+                    Button(action: viewModel.testAudioOutput) {
+                        Image(systemName: "speaker.wave.2")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.isAudioOutputBusy)
+                    .help("Play test sound")
+                    .accessibilityLabel("Play test sound")
+
+                    Button {
+                        showsAudioDetails.toggle()
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Show active audio details")
+                    .accessibilityLabel("Show active audio details")
+                    .popover(isPresented: $showsAudioDetails, arrowEdge: .bottom) {
+                        audioDetailsPopover
+                    }
+
+                    Button(action: viewModel.refreshAudioOutputs) {
+                        ZStack {
+                            Image(systemName: "arrow.clockwise")
+                                .opacity(viewModel.isAudioOutputBusy ? 0 : 1)
+                            if viewModel.isAudioOutputBusy {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.isAudioOutputBusy)
+                    .help("Refresh audio devices")
+                    .accessibilityLabel("Refresh audio devices")
+
                 }
-                ForEach(viewModel.audioOutputDevices) { device in
-                    Text(device.name).tag(device.id)
-                }
+                .frame(width: 190, alignment: .trailing)
             }
-            .labelsHidden()
-            .frame(width: 360)
-            .disabled(viewModel.isAudioOutputBusy)
 
-            Button(action: viewModel.refreshAudioOutputs) {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.bordered)
-            .disabled(viewModel.isAudioOutputBusy)
-            .help("Refresh audio outputs")
-            .accessibilityLabel("Refresh audio outputs")
+            HStack(spacing: 10) {
+                Text("Audio Input")
+                    .font(.headline)
+                    .frame(width: 120, alignment: .leading)
 
-            if viewModel.isAudioOutputBusy {
-                ProgressView()
-                    .controlSize(.small)
+                audioDeviceMenu(
+                    selection: viewModel.audioInputBinding(),
+                    systemTitle: "Follow macOS System Input",
+                    devices: viewModel.audioInputDevices,
+                    selectedDeviceIsUnavailable: viewModel.selectedAudioInputIsUnavailable
+                )
+                .frame(maxWidth: .infinity)
+                .disabled(viewModel.isAudioOutputBusy)
+
+                Color.clear
+                    .frame(width: 190, height: 1)
             }
         }
+    }
+
+    private func audioDeviceMenu(
+        selection: Binding<String>,
+        systemTitle: String,
+        devices: [WineAudioOutputDevice],
+        selectedDeviceIsUnavailable: Bool
+    ) -> some View {
+        let selectedID = selection.wrappedValue
+        let selectedTitle: String
+        if selectedID.isEmpty {
+            selectedTitle = systemTitle
+        } else if let device = devices.first(where: { $0.id == selectedID }) {
+            selectedTitle = device.name
+        } else {
+            selectedTitle = "Previously selected device (unavailable)"
+        }
+
+        return Menu {
+            Button {
+                selection.wrappedValue = ""
+            } label: {
+                if selectedID.isEmpty {
+                    Label(systemTitle, systemImage: "checkmark")
+                } else {
+                    Text(systemTitle)
+                }
+            }
+
+            Divider()
+
+            if selectedDeviceIsUnavailable, !selectedID.isEmpty {
+                Label("Previously selected device (unavailable)", systemImage: "checkmark")
+                    .disabled(true)
+            }
+
+            ForEach(devices) { device in
+                Button {
+                    selection.wrappedValue = device.id
+                } label: {
+                    if selectedID == device.id {
+                        Label(device.name, systemImage: "checkmark")
+                    } else {
+                        Text(device.name)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Text(selectedTitle)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.up.chevron.down")
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: 28)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+            }
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+    }
+
+    private var audioDetailsPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Active Audio")
+                .font(.headline)
+
+            if let details = viewModel.audioDetails {
+                audioDetailRow("Output", details.deviceName)
+                audioDetailRow(
+                    "Format",
+                    "\(details.channelCount) ch · \(formattedSampleRate(details.sampleRate)) · \(details.bitsPerSample)-bit"
+                )
+            } else {
+                Text("Audio details are unavailable.")
+                    .foregroundStyle(.secondary)
+            }
+
+            audioDetailRow(
+                "Spatial Stereo",
+                viewModel.currentVersion?.settings.spatializeStereo == true ? "On" : "Off"
+            )
+            audioDetailRow(
+                "Normalize Audio",
+                viewModel.currentVersion?.settings.nightMode == true ? "On" : "Off"
+            )
+        }
+        .padding(16)
+        .frame(width: 320)
+    }
+
+    private func audioDetailRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    private func formattedSampleRate(_ sampleRate: Int) -> String {
+        if sampleRate.isMultiple(of: 1_000) {
+            return "\(sampleRate / 1_000) kHz"
+        }
+        return String(format: "%.1f kHz", Double(sampleRate) / 1_000)
     }
 
     private var rosettaX87Controls: some View {

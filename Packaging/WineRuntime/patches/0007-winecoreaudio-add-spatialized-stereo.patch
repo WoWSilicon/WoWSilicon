@@ -1,11 +1,11 @@
 diff --git a/dlls/winecoreaudio.drv/coreaudio.c b/dlls/winecoreaudio.drv/coreaudio.c
-index c7e0dc2..c3c1f33 100644
+index c7e0dc2..f9a6f0d 100644
 --- a/dlls/winecoreaudio.drv/coreaudio.c
 +++ b/dlls/winecoreaudio.drv/coreaudio.c
-@@ -75,10 +75,20 @@
- 
+@@ -75,13 +75,36 @@
+
  WINE_DEFAULT_DEBUG_CHANNEL(coreaudio);
- 
+
 +enum spatial_audio_mode
 +{
 +    SPATIAL_AUDIO_OFF,
@@ -17,16 +17,140 @@ index c7e0dc2..c3c1f33 100644
      os_unfair_lock lock;
      AudioComponentInstance unit;
 +    AudioComponentInstance spatial_unit;
++    AudioStreamBasicDescription spatial_output_desc;
 +    enum spatial_audio_mode spatial_mode;
 +    char *spatial_control_path;
 +    unsigned int spatial_control_poll_count;
++    BOOL night_mode;
++    char *night_control_path;
++    unsigned int night_control_poll_count;
++    float night_envelope;
++    float night_gain;
      AudioConverterRef converter;
      AudioStreamBasicDescription dev_desc; /* audio unit format, not necessarily the same as fmt */
      AudioDeviceID dev_id;
-@@ -533,6 +543,33 @@ static AudioComponentInstance get_audiounit(EDataFlow dataflow, AudioDeviceID ad
++    BOOL follow_system_device;
++    unsigned int follow_system_device_poll_count;
++    AudioDeviceID pending_system_device;
++    unsigned int pending_system_device_count;
++    AudioDeviceID verify_system_device;
++    unsigned int verify_system_device_count;
++    BOOL clear_system_device_pulse;
+
+     EDataFlow flow;
+     DWORD flags;
+@@ -367,6 +390,97 @@ static void silence_buffer(struct coreaudio_stream *stream, BYTE *buffer, UINT32
+         memset(buffer, 0, frames * stream->fmt->nBlockAlign);
+ }
+
++enum night_sample_kind
++{
++    NIGHT_SAMPLE_UNSUPPORTED,
++    NIGHT_SAMPLE_U8,
++    NIGHT_SAMPLE_S16,
++    NIGHT_SAMPLE_S32,
++    NIGHT_SAMPLE_F32,
++};
++
++static enum night_sample_kind get_night_sample_kind(const WAVEFORMATEX *fmt)
++{
++    const WAVEFORMATEXTENSIBLE *fmtex = (const WAVEFORMATEXTENSIBLE *)fmt;
++    BOOL is_float = fmt->wFormatTag == WAVE_FORMAT_IEEE_FLOAT ||
++        (fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
++         IsEqualGUID(&fmtex->SubFormat, &KSDATAFORMAT_SUBTYPE_IEEE_FLOAT));
++    BOOL is_pcm = fmt->wFormatTag == WAVE_FORMAT_PCM ||
++        (fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
++         IsEqualGUID(&fmtex->SubFormat, &KSDATAFORMAT_SUBTYPE_PCM));
++
++    if (is_float && fmt->wBitsPerSample == 32) return NIGHT_SAMPLE_F32;
++    if (is_pcm && fmt->wBitsPerSample == 8) return NIGHT_SAMPLE_U8;
++    if (is_pcm && fmt->wBitsPerSample == 16) return NIGHT_SAMPLE_S16;
++    if (is_pcm && fmt->wBitsPerSample == 32) return NIGHT_SAMPLE_S32;
++    return NIGHT_SAMPLE_UNSUPPORTED;
++}
++
++static float read_night_sample(const BYTE *data, enum night_sample_kind kind, UINT32 index)
++{
++    switch (kind)
++    {
++    case NIGHT_SAMPLE_U8: return ((const UINT8 *)data)[index] / 127.5f - 1.0f;
++    case NIGHT_SAMPLE_S16: return ((const INT16 *)data)[index] / 32768.0f;
++    case NIGHT_SAMPLE_S32: return ((const INT32 *)data)[index] / 2147483648.0f;
++    case NIGHT_SAMPLE_F32: return ((const float *)data)[index];
++    default: return 0.0f;
++    }
++}
++
++static void write_night_sample(BYTE *data, enum night_sample_kind kind, UINT32 index, float value)
++{
++    value = max(-1.0f, min(1.0f, value));
++    switch (kind)
++    {
++    case NIGHT_SAMPLE_U8: ((UINT8 *)data)[index] = (UINT8)(value * 127.5f + 127.5f); break;
++    case NIGHT_SAMPLE_S16: ((INT16 *)data)[index] = (INT16)(value * 32767.0f); break;
++    case NIGHT_SAMPLE_S32: ((INT32 *)data)[index] = (INT32)(value * 2147483647.0f); break;
++    case NIGHT_SAMPLE_F32: ((float *)data)[index] = value; break;
++    default: break;
++    }
++}
++
++static void process_night_mode(struct coreaudio_stream *stream, BYTE *data, UINT32 frames)
++{
++    const float threshold = 0.12f, ratio = 0.25f, makeup = 1.8f;
++    enum night_sample_kind kind = get_night_sample_kind(stream->fmt);
++    float envelope = stream->night_envelope;
++    float gain = stream->night_gain > 0.0f ? stream->night_gain : 1.0f;
++    float attack = min(1.0f, 1.0f / (0.005f * stream->fmt->nSamplesPerSec));
++    float release = min(1.0f, 1.0f / (0.25f * stream->fmt->nSamplesPerSec));
++    UINT32 channels = stream->fmt->nChannels;
++    UINT32 frame, channel;
++
++    if (kind == NIGHT_SAMPLE_UNSUPPORTED) return;
++
++    for (frame = 0; frame < frames; ++frame)
++    {
++        float peak = 0.0f, target;
++        for (channel = 0; channel < channels; ++channel)
++        {
++            float sample = fabsf(read_night_sample(data, kind, frame * channels + channel));
++            peak = max(peak, sample);
++        }
++
++        envelope += (peak - envelope) * (peak > envelope ? attack : release);
++        target = envelope > threshold
++            ? (threshold + (envelope - threshold) * ratio) / envelope
++            : 1.0f;
++        target *= makeup;
++        gain += (target - gain) * (target < gain ? attack : release);
++
++        for (channel = 0; channel < channels; ++channel)
++        {
++            UINT32 index = frame * channels + channel;
++            write_night_sample(data, kind, index, read_night_sample(data, kind, index) * gain);
++        }
++    }
++
++    stream->night_envelope = envelope;
++    stream->night_gain = gain;
++}
++
+ /* CA is pulling data from us */
+ static OSStatus ca_render_cb(void *user, AudioUnitRenderActionFlags *flags,
+         const AudioTimeStamp *ts, UInt32 bus, UInt32 nframes,
+@@ -399,6 +513,9 @@ static OSStatus ca_render_cb(void *user, AudioUnitRenderActionFlags *flags,
+     if(nframes > to_copy_frames)
+         silence_buffer(stream, ((BYTE *)data->mBuffers[0].mData) + to_copy_bytes, nframes - to_copy_frames);
+
++    if (stream->night_mode)
++        process_night_mode(stream, data->mBuffers[0].mData, nframes);
++
+     os_unfair_lock_unlock(&stream->lock);
+
+     return noErr;
+@@ -533,6 +650,33 @@ static AudioComponentInstance get_audiounit(EDataFlow dataflow, AudioDeviceID ad
      return unit;
  }
- 
+
 +static AudioComponentInstance get_spatial_audiounit(void)
 +{
 +    AudioComponentDescription desc = {0};
@@ -57,10 +181,10 @@ index c7e0dc2..c3c1f33 100644
  static void dump_adesc(const char *aux, AudioStreamBasicDescription *desc)
  {
      TRACE("%s: mSampleRate: %f\n", aux, desc->mSampleRate);
-@@ -669,6 +706,200 @@ static HRESULT ca_setup_audiounit(EDataFlow dataflow, AudioComponentInstance uni
+@@ -669,6 +813,250 @@ static HRESULT ca_setup_audiounit(EDataFlow dataflow, AudioComponentInstance uni
      return S_OK;
  }
- 
+
 +static enum spatial_audio_mode parse_spatial_audio_mode(const char *value,
 +                                                        enum spatial_audio_mode fallback)
 +{
@@ -71,6 +195,55 @@ index c7e0dc2..c3c1f33 100644
 +    if (length == 3 && !strncmp(value, "off", length)) return SPATIAL_AUDIO_OFF;
 +    if (length == 5 && !strncmp(value, "fixed", length)) return SPATIAL_AUDIO_FIXED;
 +    return fallback;
++}
++
++static BOOL parse_night_mode(const char *value, BOOL fallback)
++{
++    size_t length;
++
++    if (!value) return fallback;
++    length = strcspn(value, "\r\n");
++    if ((length == 1 && value[0] == '1') || (length == 2 && !strncmp(value, "on", length)))
++        return TRUE;
++    if ((length == 1 && value[0] == '0') || (length == 3 && !strncmp(value, "off", length)))
++        return FALSE;
++    return fallback;
++}
++
++static BOOL read_night_mode(const char *path, BOOL fallback)
++{
++    char buffer[32];
++    ssize_t count;
++    int fd;
++
++    if (!path || (fd = open(path, O_RDONLY)) == -1) return fallback;
++    count = read(fd, buffer, sizeof(buffer) - 1);
++    close(fd);
++    if (count <= 0) return fallback;
++    buffer[count] = 0;
++    return parse_night_mode(buffer, fallback);
++}
++
++static BOOL ca_apply_night_mode(struct coreaudio_stream *stream, BOOL enabled)
++{
++    stream->night_mode = enabled;
++    TRACE("Night Mode changed to %s\n", enabled ? "on" : "off");
++    return TRUE;
++}
++
++static void ca_setup_night_mode(struct coreaudio_stream *stream)
++{
++    const char *control_path = getenv("WOWSILICON_NIGHT_MODE_CONTROL");
++
++    stream->night_mode = parse_night_mode(getenv("WOWSILICON_NIGHT_MODE"), FALSE);
++    stream->night_gain = 1.0f;
++    if (control_path && *control_path)
++    {
++        if ((stream->night_control_path = strdup(control_path)))
++            stream->night_mode = read_night_mode(stream->night_control_path,
++                                                 stream->night_mode);
++    }
++    TRACE("Night Mode initialized %s\n", stream->night_mode ? "on" : "off");
 +}
 +
 +static enum spatial_audio_mode read_spatial_audio_mode(const char *path,
@@ -244,6 +417,7 @@ index c7e0dc2..c3c1f33 100644
 +        WARN("Couldn't connect spatial mixer to output unit: %x\n", (int)sc);
 +        goto failed;
 +    }
++    stream->spatial_output_desc = output_desc;
 +
 +    TRACE("Headphone spatialization mixer enabled\n");
 +    return TRUE;
@@ -258,7 +432,125 @@ index c7e0dc2..c3c1f33 100644
  static AudioDeviceID dev_id_from_device(const char *device)
  {
      AudioDeviceID id;
-@@ -751,7 +982,7 @@ static NTSTATUS unix_create_stream(void *args)
+@@ -698,6 +1086,99 @@ static AudioDeviceID dev_id_from_device(const char *device)
+     return id;
+ }
+
++static AudioDeviceID get_default_device_id(EDataFlow flow)
++{
++    AudioObjectPropertyAddress addr =
++    {
++        .mScope = kAudioObjectPropertyScopeGlobal,
++        .mElement = kAudioObjectPropertyElementMain,
++        .mSelector = flow == eCapture ? kAudioHardwarePropertyDefaultInputDevice
++                                     : kAudioHardwarePropertyDefaultOutputDevice,
++    };
++    AudioDeviceID id = kAudioObjectUnknown;
++    UInt32 size = sizeof(id);
++    OSStatus sc;
++
++    sc = AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, NULL, &size, &id);
++    if (sc != noErr)
++    {
++        WARN("Failed to get system default audio device: %x\n", (int)sc);
++        return kAudioObjectUnknown;
++    }
++    return id;
++}
++
++static void pulse_system_device_notification(EDataFlow flow, BOOL clear)
++{
++    char token_buffer[sizeof(TOKEN_USER) + sizeof(SID) + sizeof(DWORD) * SID_MAX_SUB_AUTHORITIES];
++    static const char suffix[] = "\\Software\\Wine\\Drivers\\winecoreaudio.drv";
++    UNICODE_STRING input_name = RTL_CONSTANT_STRING(L"DefaultInput");
++    UNICODE_STRING output_name = RTL_CONSTANT_STRING(L"DefaultOutput");
++    UNICODE_STRING *value_name = flow == eCapture ? &input_name : &output_name;
++    TOKEN_USER *user = (TOKEN_USER *)token_buffer;
++    SID *sid;
++    unsigned long long authority = 0;
++    char path[512];
++    WCHAR pathW[512];
++    UNICODE_STRING key_name;
++    OBJECT_ATTRIBUTES attr;
++    HANDLE key;
++    WCHAR empty = 0;
++    ULONG needed;
++    NTSTATUS status;
++    size_t i;
++    int added, length;
++
++    status = NtQueryInformationToken((HANDLE)~(ULONG_PTR)5, TokenUser, token_buffer,
++                                     sizeof(token_buffer), &needed);
++    if (status) goto done;
++    sid = user->User.Sid;
++
++    for (i = 0; i < sizeof(sid->IdentifierAuthority.Value); ++i)
++        authority = (authority << 8) | sid->IdentifierAuthority.Value[i];
++    length = snprintf(path, sizeof(path), "\\Registry\\User\\S-%u-%llu",
++                      sid->Revision, authority);
++    if (length <= 0 || (size_t)length >= sizeof(path))
++    {
++        status = STATUS_BUFFER_TOO_SMALL;
++        goto done;
++    }
++    for (i = 0; i < sid->SubAuthorityCount; ++i)
++    {
++        added = snprintf(path + length, sizeof(path) - length, "-%lu",
++                         (unsigned long)sid->SubAuthority[i]);
++        if (added < 0 || (size_t)added >= sizeof(path) - length)
++        {
++            status = STATUS_BUFFER_TOO_SMALL;
++            goto done;
++        }
++        length += added;
++    }
++    if ((size_t)length + sizeof(suffix) > sizeof(path))
++    {
++        status = STATUS_BUFFER_TOO_SMALL;
++        goto done;
++    }
++    memcpy(path + length, suffix, sizeof(suffix));
++    length += sizeof(suffix) - 1;
++    for (i = 0; i <= (size_t)length; ++i) pathW[i] = path[i];
++    key_name.Buffer = pathW;
++    key_name.Length = length * sizeof(WCHAR);
++    key_name.MaximumLength = (length + 1) * sizeof(WCHAR);
++
++    InitializeObjectAttributes(&attr, &key_name, OBJ_CASE_INSENSITIVE, NULL, NULL);
++    if (!(status = NtOpenKey(&key, KEY_SET_VALUE, &attr)))
++    {
++        if (clear) status = NtDeleteValueKey(key, value_name);
++        else status = NtSetValueKey(key, value_name, 0, REG_SZ, &empty, sizeof(empty));
++        NtClose(key);
++    }
++done:
++    TRACE("%s macOS system %s device notification, status %#x\n",
++          clear ? "Cleared" : "Pulsed", flow == eCapture ? "input" : "output",
++          (unsigned int)status);
++}
++
+ static NTSTATUS unix_create_stream(void *args)
+ {
+     struct create_stream_params *params = args;
+@@ -728,10 +1209,16 @@ static NTSTATUS unix_create_stream(void *args)
+         goto end;
+     }
+
+-    stream->dev_id = dev_id_from_device(params->device);
+     stream->flow = params->flow;
+     stream->flags = params->flags;
+     stream->share = params->share;
++    stream->follow_system_device = !strcmp(getenv(stream->flow == eCapture
++            ? "WOWSILICON_FOLLOW_SYSTEM_INPUT" : "WOWSILICON_FOLLOW_SYSTEM_OUTPUT") ?: "", "1");
++    stream->dev_id = stream->follow_system_device ? get_default_device_id(stream->flow)
++                                                   : dev_id_from_device(params->device);
++    if (stream->dev_id == kAudioObjectUnknown)
++        stream->dev_id = dev_id_from_device(params->device);
++    if (stream->flow == eRender) ca_setup_night_mode(stream);
+
+     stream->bufsize_frames = muldiv(params->duration, stream->fmt->nSamplesPerSec, 10000000);
+     if(params->share == AUDCLNT_SHAREMODE_EXCLUSIVE)
+@@ -751,7 +1238,7 @@ static NTSTATUS unix_create_stream(void *args)
          sc = AudioUnitSetProperty(stream->unit, kAudioOutputUnitProperty_SetInputCallback,
                                    kAudioUnitScope_Output, 1, &input, sizeof(input));
      }else{
@@ -267,30 +559,200 @@ index c7e0dc2..c3c1f33 100644
          sc = AudioUnitSetProperty(stream->unit, kAudioUnitProperty_SetRenderCallback,
                                    kAudioUnitScope_Input, 0, &input, sizeof(input));
      }
-@@ -794,7 +1025,9 @@ static NTSTATUS unix_create_stream(void *args)
+@@ -794,7 +1281,10 @@ static NTSTATUS unix_create_stream(void *args)
  end:
      if(FAILED(params->result)){
          if(stream->converter) AudioConverterDispose(stream->converter);
 +        if(stream->spatial_unit) AudioComponentInstanceDispose(stream->spatial_unit);
          if(stream->unit) AudioComponentInstanceDispose(stream->unit);
 +        free(stream->spatial_control_path);
++        free(stream->night_control_path);
          free(stream->fmt);
          free(stream);
      } else {
-@@ -822,6 +1055,9 @@ static NTSTATUS unix_release_stream( void *args )
+@@ -822,6 +1312,10 @@ static NTSTATUS unix_release_stream( void *args )
          AudioComponentInstanceDispose(stream->unit);
      }
- 
+
 +    if(stream->spatial_unit) AudioComponentInstanceDispose(stream->spatial_unit);
 +    free(stream->spatial_control_path);
++    free(stream->night_control_path);
 +
      if(stream->converter) AudioConverterDispose(stream->converter);
      free(stream->resamp_buffer);
      free(stream->wrap_buffer);
-@@ -1353,6 +1589,14 @@ static void unix_timer_loop(void *args)
+@@ -1342,6 +1836,161 @@ static NTSTATUS unix_get_current_padding(void *args)
+     return STATUS_SUCCESS;
+ }
+
++static void ca_follow_system_device(struct coreaudio_stream *stream)
++{
++    AudioStreamBasicDescription new_desc, old_desc;
++    AudioConverterRef new_converter = NULL, old_converter;
++    AudioComponentInstance new_unit, old_unit;
++    AURenderCallbackStruct input;
++    AudioDeviceID new_id, old_id;
++    BYTE *new_buffer = NULL, *old_buffer;
++    UINT32 new_frames = 0, old_frames, old_offset, old_held;
++    HRESULT hr;
++    OSStatus sc;
++    BOOL verification_retry = FALSE;
++
++    if (stream->clear_system_device_pulse)
++    {
++        pulse_system_device_notification(stream->flow, TRUE);
++        stream->clear_system_device_pulse = FALSE;
++    }
++
++    new_id = get_default_device_id(stream->flow);
++    if (new_id == kAudioObjectUnknown) return;
++    if (new_id == stream->dev_id)
++    {
++        if (new_id == stream->verify_system_device)
++        {
++            if (++stream->verify_system_device_count < 12) return;
++            stream->verify_system_device = kAudioObjectUnknown;
++            stream->verify_system_device_count = 0;
++            verification_retry = TRUE;
++        }
++        else
++        {
++            stream->pending_system_device = kAudioObjectUnknown;
++            stream->pending_system_device_count = 0;
++            return;
++        }
++    }
++    if (!verification_retry && new_id != stream->pending_system_device)
++    {
++        stream->pending_system_device = new_id;
++        stream->pending_system_device_count = 1;
++        return;
++    }
++    if (!verification_retry)
++    {
++        if (++stream->pending_system_device_count < 4) return;
++        stream->pending_system_device_count = 0;
++    }
++
++    if (!(new_unit = get_audiounit(stream->flow, new_id))) return;
++    hr = ca_setup_audiounit(stream->flow, new_unit, stream->fmt, &new_desc, &new_converter);
++    if (FAILED(hr)) goto failed;
++
++    input.inputProcRefCon = stream;
++    if (stream->flow == eCapture)
++    {
++        input.inputProc = ca_capture_cb;
++        sc = AudioUnitSetProperty(new_unit, kAudioOutputUnitProperty_SetInputCallback,
++                                  kAudioUnitScope_Output, 1, &input, sizeof(input));
++        if (sc != noErr) goto failed;
++        new_frames = muldiv(stream->bufsize_frames, new_desc.mSampleRate,
++                            stream->fmt->nSamplesPerSec);
++        if (!(new_buffer = malloc(new_frames * stream->fmt->nBlockAlign)))
++        {
++            hr = E_OUTOFMEMORY;
++            goto failed;
++        }
++    }
++    else
++    {
++        if (stream->spatial_unit)
++        {
++            sc = AudioUnitSetProperty(new_unit, kAudioUnitProperty_StreamFormat,
++                                      kAudioUnitScope_Input, 0, &stream->spatial_output_desc,
++                                      sizeof(stream->spatial_output_desc));
++            if (sc != noErr) goto failed;
++            input.inputProc = ca_spatial_render_cb;
++        }
++        else input.inputProc = ca_render_cb;
++        sc = AudioUnitSetProperty(new_unit, kAudioUnitProperty_SetRenderCallback,
++                                  kAudioUnitScope_Input, 0, &input, sizeof(input));
++        if (sc != noErr) goto failed;
++    }
++
++    sc = AudioUnitInitialize(new_unit);
++    if (sc != noErr) goto failed;
++
++    old_unit = stream->unit;
++    old_id = stream->dev_id;
++    old_desc = stream->dev_desc;
++    old_converter = stream->converter;
++    old_buffer = stream->cap_buffer;
++    old_frames = stream->cap_bufsize_frames;
++    old_offset = stream->cap_offs_frames;
++    old_held = stream->cap_held_frames;
++
++    AudioOutputUnitStop(old_unit);
++    stream->unit = new_unit;
++    stream->dev_id = new_id;
++    stream->dev_desc = new_desc;
++    if (stream->flow == eCapture)
++    {
++        stream->converter = new_converter;
++        stream->cap_buffer = new_buffer;
++        stream->cap_bufsize_frames = new_frames;
++        stream->cap_offs_frames = stream->cap_held_frames = 0;
++    }
++
++    sc = AudioOutputUnitStart(new_unit);
++    if (sc != noErr)
++    {
++        stream->unit = old_unit;
++        stream->dev_id = old_id;
++        stream->dev_desc = old_desc;
++        if (stream->flow == eCapture)
++        {
++            stream->converter = old_converter;
++            stream->cap_buffer = old_buffer;
++            stream->cap_bufsize_frames = old_frames;
++            stream->cap_offs_frames = old_offset;
++            stream->cap_held_frames = old_held;
++        }
++        AudioOutputUnitStart(old_unit);
++        goto failed;
++    }
++
++    AudioComponentInstanceDispose(old_unit);
++    if (stream->flow == eCapture)
++    {
++        if (old_converter) AudioConverterDispose(old_converter);
++        free(old_buffer);
++    }
++    stream->pending_system_device = kAudioObjectUnknown;
++    if (!verification_retry)
++    {
++        stream->verify_system_device = new_id;
++        stream->verify_system_device_count = 0;
++    }
++    else
++    {
++        pulse_system_device_notification(stream->flow, FALSE);
++        stream->clear_system_device_pulse = TRUE;
++    }
++    TRACE("Following new macOS system %s device %u\n",
++          stream->flow == eCapture ? "input" : "output", (unsigned int)new_id);
++    return;
++
++failed:
++    WARN("Failed to prepare new macOS system %s device\n",
++         stream->flow == eCapture ? "input" : "output");
++    if (new_converter && new_converter != stream->converter) AudioConverterDispose(new_converter);
++    if (new_buffer && new_buffer != stream->cap_buffer) free(new_buffer);
++    AudioComponentInstanceDispose(new_unit);
++}
++
+ static void unix_timer_loop(void *args)
+ {
+     struct coreaudio_stream *stream = args;
+@@ -1353,6 +2002,28 @@ static void unix_timer_loop(void *args)
      next.QuadPart = last.QuadPart + stream->period;
- 
+
      while(!stream->please_quit){
++        if (stream->follow_system_device &&
++            ++stream->follow_system_device_poll_count >= max(1, 2500000 / stream->period))
++        {
++            stream->follow_system_device_poll_count = 0;
++            ca_follow_system_device(stream);
++        }
 +        if (stream->spatial_unit && stream->spatial_control_path &&
 +            ++stream->spatial_control_poll_count >= max(1, 2500000 / stream->period))
 +        {
@@ -298,6 +760,14 @@ index c7e0dc2..c3c1f33 100644
 +            stream->spatial_control_poll_count = 0;
 +            mode = read_spatial_audio_mode(stream->spatial_control_path, stream->spatial_mode);
 +            if (mode != stream->spatial_mode) ca_apply_spatial_audio_mode(stream, mode);
++        }
++        if (stream->night_control_path &&
++            ++stream->night_control_poll_count >= max(1, 2500000 / stream->period))
++        {
++            BOOL enabled;
++            stream->night_control_poll_count = 0;
++            enabled = read_night_mode(stream->night_control_path, stream->night_mode);
++            if (enabled != stream->night_mode) ca_apply_night_mode(stream, enabled);
 +        }
          NtSetEvent(stream->event, NULL);
          NtDelayExecution(FALSE, &delay);

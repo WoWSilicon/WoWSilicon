@@ -67,7 +67,7 @@ audio_helper: $(AUDIO_HELPER)
 $(AUDIO_HELPER): $(AUDIO_HELPER_SRC)
 	@echo "Building Wine audio helper..."
 	@mkdir -p "$(AUDIO_HELPER_DIR)"
-	@$(AUDIO_HELPER_CC) -std=c11 -Os -s -municode "$<" -o "$@" -lole32 -luuid
+	@$(AUDIO_HELPER_CC) -std=c11 -Os -s -municode "$<" -o "$@" -lole32 -luuid -ldsound -ldxguid -lwinmm
 
 bundle: build validate_wine_runtime audio_helper
 	@$(MAKE) app_icon

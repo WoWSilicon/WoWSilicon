@@ -5,6 +5,19 @@ struct WineAudioOutputDevice: Identifiable, Equatable, Sendable {
     let name: String
 }
 
+struct WineAudioDetails: Equatable, Sendable {
+    let deviceName: String
+    let channelCount: Int
+    let sampleRate: Int
+    let bitsPerSample: Int
+}
+
+struct WineAudioSnapshot: Equatable, Sendable {
+    let outputs: [WineAudioOutputDevice]
+    let inputs: [WineAudioOutputDevice]
+    let details: WineAudioDetails?
+}
+
 enum AudioOutputServiceError: LocalizedError {
     case wineRuntimeMissing
     case helperMissing
@@ -30,9 +43,39 @@ enum AudioOutputService {
         return parseDeviceList(result.stdout)
     }
 
+    static func snapshot(customVariables: String = "") throws -> WineAudioSnapshot {
+        let result = try runHelper(arguments: ["snapshot"], customVariables: customVariables)
+        return parseSnapshot(result.stdout)
+    }
+
     static func selectOutput(id: String, customVariables: String = "") throws {
         let arguments = id.isEmpty ? ["clear"] : ["set", id]
         _ = try runHelper(arguments: arguments, customVariables: customVariables)
+    }
+
+    static func selectInput(id: String, customVariables: String = "") throws {
+        let arguments = id.isEmpty ? ["clear-input"] : ["set-input", id]
+        _ = try runHelper(arguments: arguments, customVariables: customVariables)
+    }
+
+    static func testOutput(
+        spatializeStereo: Bool,
+        nightMode: Bool,
+        customVariables: String = ""
+    ) throws {
+        try SpatialAudioService.setEnabled(spatializeStereo)
+        try SpatialAudioService.setNightMode(nightMode)
+        let environment = [
+            "WOWSILICON_SPATIAL_AUDIO_MODE": spatializeStereo ? "fixed" : "off",
+            "WOWSILICON_SPATIAL_AUDIO_CONTROL": SpatialAudioService.controlURL().path,
+            "WOWSILICON_NIGHT_MODE": nightMode ? "1" : "0",
+            "WOWSILICON_NIGHT_MODE_CONTROL": SpatialAudioService.nightModeControlURL().path
+        ]
+        _ = try runHelper(
+            arguments: ["test"],
+            customVariables: customVariables,
+            environmentOverrides: environment
+        )
     }
 
     static func parseDeviceList(_ output: String) -> [WineAudioOutputDevice] {
@@ -46,9 +89,40 @@ enum AudioOutputService {
         }
     }
 
+    static func parseSnapshot(_ output: String) -> WineAudioSnapshot {
+        var outputs: [WineAudioOutputDevice] = []
+        var inputs: [WineAudioOutputDevice] = []
+        var details: WineAudioDetails?
+
+        for line in output.split(whereSeparator: { $0.isNewline }) {
+            let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
+            guard let type = fields.first else { continue }
+            if (type == "O" || type == "I"), fields.count == 3, !fields[1].isEmpty {
+                let name = String(fields[2]).trimmingCharacters(in: .whitespacesAndNewlines)
+                let device = WineAudioOutputDevice(
+                    id: String(fields[1]),
+                    name: name.isEmpty ? String(fields[1]) : name
+                )
+                if type == "O" { outputs.append(device) } else { inputs.append(device) }
+            } else if type == "D", fields.count == 5,
+                      let channels = Int(fields[2]),
+                      let sampleRate = Int(fields[3]),
+                      let bits = Int(fields[4]) {
+                details = WineAudioDetails(
+                    deviceName: String(fields[1]),
+                    channelCount: channels,
+                    sampleRate: sampleRate,
+                    bitsPerSample: bits
+                )
+            }
+        }
+        return WineAudioSnapshot(outputs: outputs, inputs: inputs, details: details)
+    }
+
     private static func runHelper(
         arguments: [String],
-        customVariables: String
+        customVariables: String,
+        environmentOverrides: [String: String] = [:]
     ) throws -> ProcessRunResult {
         guard let wineURL = BundledWineRuntime.wineExecutableURL() else {
             throw AudioOutputServiceError.wineRuntimeMissing
@@ -57,10 +131,12 @@ enum AudioOutputService {
             throw AudioOutputServiceError.helperMissing
         }
 
+        var environment = BundledWineRuntime.makeEnvironment(customVariables: customVariables)
+        environment.merge(environmentOverrides) { _, new in new }
         let result = try ProcessRunner.run(
             executablePath: wineURL.path,
             arguments: [helperURL.path] + arguments,
-            environment: BundledWineRuntime.makeEnvironment(customVariables: customVariables),
+            environment: environment,
             timeout: 20
         )
         guard result.exitCode == 0 else {

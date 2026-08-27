@@ -35,6 +35,8 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var isWineBottleMigrationInProgress: Bool = false
     @Published private(set) var wineBottlePath: String = ""
     @Published private(set) var audioOutputDevices: [WineAudioOutputDevice] = []
+    @Published private(set) var audioInputDevices: [WineAudioOutputDevice] = []
+    @Published private(set) var audioDetails: WineAudioDetails?
     @Published private(set) var isAudioOutputBusy: Bool = false
     @Published private(set) var isWineConfigurationLoading: Bool = false
     @Published private(set) var isWineTerminalLoading: Bool = false
@@ -672,6 +674,13 @@ final class MainDashboardViewModel: ObservableObject {
         )
     }
 
+    func audioInputBinding() -> Binding<String> {
+        Binding(
+            get: { self.versionManager.currentVersion?.settings.audioInputDeviceID ?? "" },
+            set: { self.selectAudioInput(id: $0) }
+        )
+    }
+
     func spatializeStereoBinding() -> Binding<Bool> {
         Binding(
             get: { self.versionManager.currentVersion?.settings.spatializeStereo ?? false },
@@ -690,11 +699,36 @@ final class MainDashboardViewModel: ObservableObject {
         )
     }
 
+    func nightModeBinding() -> Binding<Bool> {
+        Binding(
+            get: { self.versionManager.currentVersion?.settings.nightMode ?? false },
+            set: { enabled in
+                do {
+                    try SpatialAudioService.setNightMode(enabled)
+                    self.updateCurrentVersion { $0.settings.nightMode = enabled }
+                } catch {
+                    self.patchFeedback = PatchFeedback(
+                        title: "Normalize Audio",
+                        message: error.localizedDescription,
+                        isError: true
+                    )
+                }
+            }
+        )
+    }
+
     var selectedAudioOutputIsUnavailable: Bool {
         guard let id = versionManager.currentVersion?.settings.audioOutputDeviceID, !id.isEmpty else {
             return false
         }
         return !audioOutputDevices.contains { $0.id == id }
+    }
+
+    var selectedAudioInputIsUnavailable: Bool {
+        guard let id = versionManager.currentVersion?.settings.audioInputDeviceID, !id.isEmpty else {
+            return false
+        }
+        return !audioInputDevices.contains { $0.id == id }
     }
 
     func refreshAudioOutputs() {
@@ -705,14 +739,18 @@ final class MainDashboardViewModel: ObservableObject {
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                let devices = try AudioOutputService.availableOutputs(customVariables: customVariables)
+                let snapshot = try AudioOutputService.snapshot(customVariables: customVariables)
                 DispatchQueue.main.async {
-                    self?.audioOutputDevices = devices
+                    self?.audioOutputDevices = snapshot.outputs
+                    self?.audioInputDevices = snapshot.inputs
+                    self?.audioDetails = snapshot.details
                     self?.isAudioOutputBusy = false
                 }
             } catch {
                 DispatchQueue.main.async {
                     self?.audioOutputDevices = []
+                    self?.audioInputDevices = []
+                    self?.audioDetails = nil
                     self?.isAudioOutputBusy = false
                     self?.patchFeedback = PatchFeedback(
                         title: "Audio Outputs",
@@ -737,12 +775,67 @@ final class MainDashboardViewModel: ObservableObject {
                     guard let self else { return }
                     self.updateCurrentVersion { $0.settings.audioOutputDeviceID = id }
                     self.isAudioOutputBusy = false
+                    self.refreshAudioOutputs()
                 }
             } catch {
                 DispatchQueue.main.async {
                     self?.isAudioOutputBusy = false
                     self?.patchFeedback = PatchFeedback(
                         title: "Audio Output",
+                        message: error.localizedDescription,
+                        isError: true
+                    )
+                }
+            }
+        }
+    }
+
+    private func selectAudioInput(id: String) {
+        guard !isAudioOutputBusy else { return }
+        isAudioOutputBusy = true
+        patchFeedback = nil
+        let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                try AudioOutputService.selectInput(id: id, customVariables: customVariables)
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.updateCurrentVersion { $0.settings.audioInputDeviceID = id }
+                    self.isAudioOutputBusy = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.isAudioOutputBusy = false
+                    self?.patchFeedback = PatchFeedback(
+                        title: "Audio Input",
+                        message: error.localizedDescription,
+                        isError: true
+                    )
+                }
+            }
+        }
+    }
+
+    func testAudioOutput() {
+        guard !isAudioOutputBusy else { return }
+        isAudioOutputBusy = true
+        patchFeedback = nil
+        let settings = versionManager.currentVersion?.settings
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                try AudioOutputService.testOutput(
+                    spatializeStereo: settings?.spatializeStereo ?? false,
+                    nightMode: settings?.nightMode ?? false,
+                    customVariables: settings?.environmentVariables ?? ""
+                )
+                DispatchQueue.main.async { self?.isAudioOutputBusy = false }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.isAudioOutputBusy = false
+                    self?.patchFeedback = PatchFeedback(
+                        title: "Test Sound",
                         message: error.localizedDescription,
                         isError: true
                     )
