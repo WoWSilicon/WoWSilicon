@@ -67,6 +67,47 @@ final class TroubleshootingServiceTests: XCTestCase {
         XCTAssertTrue(result.full.contains("x87 Translation: x87sidecar (x87sidecar)"))
     }
 
+    func testDebugLogReadsGameDirectoryWhenGamePathIsExecutable() throws {
+        let gameDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WoWSiliconDebugLogTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: gameDirectory) }
+
+        let errorsDirectory = gameDirectory.appendingPathComponent("Errors", isDirectory: true)
+        let wtfDirectory = gameDirectory.appendingPathComponent("WTF", isDirectory: true)
+        try FileManager.default.createDirectory(at: errorsDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: wtfDirectory, withIntermediateDirectories: true)
+
+        let wowURL = gameDirectory.appendingPathComponent("WoW.exe")
+        try Data("wow".utf8).write(to: wowURL)
+        try Data("example.dll".utf8).write(to: gameDirectory.appendingPathComponent("dlls.txt"))
+        try Data("SET gxApi metal".utf8).write(to: wtfDirectory.appendingPathComponent("Config.wtf"))
+        try Data("Example crash".utf8).write(to: errorsDirectory.appendingPathComponent("Error.txt"))
+
+        var version = try XCTUnwrap(VersionManager.defaultVersions["wrathsilicon"])
+        version.gamePath = wowURL.path
+        version.executableName = wowURL.lastPathComponent
+
+        let result = TroubleshootingService.generateDebugLog(
+            context: TroubleshootingContext(
+                gamePath: wowURL.path,
+                currentVersion: version,
+                isGamePatched: false
+            ),
+            hideMacUserName: false,
+            includeLatestErrorLog: true,
+            permissionChecks: [],
+            wineBottleURL: gameDirectory.appendingPathComponent("test-bottle", isDirectory: true)
+        )
+
+        XCTAssertTrue(result.full.contains("  WoW.exe"))
+        XCTAssertTrue(result.full.contains("dlls.txt content:\nexample.dll"))
+        XCTAssertTrue(result.full.contains("Config.wtf (WTF):\nSET gxApi metal"))
+        XCTAssertTrue(result.full.contains("File: Error.txt"))
+        XCTAssertTrue(result.full.contains("Example crash"))
+        XCTAssertFalse(result.full.contains("Failed to list game directory"))
+        XCTAssertFalse(result.full.contains("Could not read Errors directory"))
+    }
+
     func testDeleteDefaultWineBottleOnlyDeletesWineDirectory() throws {
         let home = FileManager.default.temporaryDirectory
             .appendingPathComponent("WoWSiliconTroubleshootingTests-\(UUID().uuidString)", isDirectory: true)

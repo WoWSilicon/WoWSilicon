@@ -433,7 +433,7 @@ enum TroubleshootingService {
 
         if let game = context.gamePath {
             baseLog += "\n=== Game Files ===\n"
-            let gameURL = URL(fileURLWithPath: game, isDirectory: true)
+            let gameURL = gameDirectoryURL(from: game)
             
             // Directory listing
             do {
@@ -502,8 +502,9 @@ enum TroubleshootingService {
                         previewLog += "No .txt error logs found in Errors directory.\n"
                     }
                 } catch {
-                    fullLog += "Could not read Errors directory.\n"
-                    previewLog += "Could not read Errors directory.\n"
+                    let message = "Could not read Errors directory: \(error.localizedDescription)\n"
+                    fullLog += message
+                    previewLog += message
                 }
             }
         } else {
