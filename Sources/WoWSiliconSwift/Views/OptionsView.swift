@@ -10,6 +10,7 @@ struct OptionsView: View {
     @State private var realmlistURL: URL? = nil
     @State private var realmlistMultipleURLs: [URL] = []
     @State private var showsAudioDetails = false
+    @State private var showsNormalizeAudioHelp = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -124,10 +125,7 @@ struct OptionsView: View {
                 "Spatialize Stereo",
                 binding: viewModel.spatializeStereoBinding()
             )
-            toggleRow(
-                "Normalize Audio",
-                binding: viewModel.nightModeBinding()
-            )
+            normalizeAudioRow
         }
     }
 
@@ -402,6 +400,32 @@ struct OptionsView: View {
         .disabled(disabled)
     }
 
+    private var normalizeAudioRow: some View {
+        HStack(spacing: 6) {
+            Text("Normalize Audio")
+
+            Button {
+                showsNormalizeAudioHelp.toggle()
+            } label: {
+                Image(systemName: "questionmark.circle")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("About Normalize Audio")
+            .accessibilityLabel("About Normalize Audio")
+            .popover(isPresented: $showsNormalizeAudioHelp, arrowEdge: .bottom) {
+                Text("Makes quiet sounds louder and loud sounds quieter.")
+                    .padding(12)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: viewModel.nightModeBinding())
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+    }
+
     private var telemetryControls: some View {
         VStack(alignment: .leading, spacing: 6) {
             toggleRow(
@@ -464,9 +488,10 @@ struct OptionsView: View {
     private var audioOutputControls: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Text("Audio Output")
-                    .font(.headline)
-                    .frame(width: 120, alignment: .leading)
+            Text("Audio Output")
+                .font(.headline)
+                .frame(width: 120, alignment: .leading)
+                .offset(x: -36)
 
                 audioDeviceMenu(
                     selection: viewModel.audioOutputBinding(),
@@ -474,7 +499,7 @@ struct OptionsView: View {
                     devices: viewModel.audioOutputDevices,
                     selectedDeviceIsUnavailable: viewModel.selectedAudioOutputIsUnavailable
                 )
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .disabled(viewModel.isAudioOutputBusy)
 
                 HStack(spacing: 8) {
@@ -515,12 +540,14 @@ struct OptionsView: View {
 
                 }
                 .frame(width: 190, alignment: .trailing)
+                .offset(x: 36)
             }
 
             HStack(spacing: 10) {
-                Text("Audio Input")
-                    .font(.headline)
-                    .frame(width: 120, alignment: .leading)
+            Text("Audio Input")
+                .font(.headline)
+                .frame(width: 120, alignment: .leading)
+                .offset(x: -36)
 
                 audioDeviceMenu(
                     selection: viewModel.audioInputBinding(),
@@ -528,13 +555,14 @@ struct OptionsView: View {
                     devices: viewModel.audioInputDevices,
                     selectedDeviceIsUnavailable: viewModel.selectedAudioInputIsUnavailable
                 )
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .disabled(viewModel.isAudioOutputBusy)
 
                 Color.clear
                     .frame(width: 190, height: 1)
             }
         }
+        .padding(.horizontal, 36)
     }
 
     private func audioDeviceMenu(
@@ -543,65 +571,13 @@ struct OptionsView: View {
         devices: [WineAudioOutputDevice],
         selectedDeviceIsUnavailable: Bool
     ) -> some View {
-        let selectedID = selection.wrappedValue
-        let selectedTitle: String
-        if selectedID.isEmpty {
-            selectedTitle = systemTitle
-        } else if let device = devices.first(where: { $0.id == selectedID }) {
-            selectedTitle = device.name
-        } else {
-            selectedTitle = "Previously selected device (unavailable)"
-        }
-
-        return Menu {
-            Button {
-                selection.wrappedValue = ""
-            } label: {
-                if selectedID.isEmpty {
-                    Label(systemTitle, systemImage: "checkmark")
-                } else {
-                    Text(systemTitle)
-                }
-            }
-
-            Divider()
-
-            if selectedDeviceIsUnavailable, !selectedID.isEmpty {
-                Label("Previously selected device (unavailable)", systemImage: "checkmark")
-                    .disabled(true)
-            }
-
-            ForEach(devices) { device in
-                Button {
-                    selection.wrappedValue = device.id
-                } label: {
-                    if selectedID == device.id {
-                        Label(device.name, systemImage: "checkmark")
-                    } else {
-                        Text(device.name)
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 8) {
-                Text(selectedTitle)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.up.chevron.down")
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, minHeight: 28)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-            .overlay {
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(Color.primary.opacity(0.12), lineWidth: 1)
-            }
-            .contentShape(Rectangle())
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        AudioDevicePopUpButton(
+            selection: selection,
+            systemTitle: systemTitle,
+            devices: devices,
+            selectedDeviceIsUnavailable: selectedDeviceIsUnavailable
+        )
+        .frame(width: 300, height: 28)
     }
 
     private var audioDetailsPopover: some View {
@@ -790,5 +766,87 @@ struct OptionsView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.top, 4)
+    }
+}
+
+private struct AudioDevicePopUpButton: NSViewRepresentable {
+    @Binding var selection: String
+    let systemTitle: String
+    let devices: [WineAudioOutputDevice]
+    let selectedDeviceIsUnavailable: Bool
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    private struct Entry {
+        let id: String
+        let title: String
+        let isEnabled: Bool
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var selection: Binding<String>
+
+        init(selection: Binding<String>) {
+            self.selection = selection
+        }
+
+        @objc func selectionChanged(_ sender: NSPopUpButton) {
+            guard let id = sender.selectedItem?.representedObject as? String else { return }
+            selection.wrappedValue = id
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(selection: $selection)
+    }
+
+    func makeNSView(context: Context) -> NSPopUpButton {
+        let button = NSPopUpButton(frame: .zero, pullsDown: false)
+        button.controlSize = .regular
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.selectionChanged(_:))
+        button.setAccessibilityLabel(systemTitle)
+        button.cell?.lineBreakMode = .byTruncatingTail
+        return button
+    }
+
+    func updateNSView(_ button: NSPopUpButton, context: Context) {
+        context.coordinator.selection = $selection
+
+        var entries = [Entry(id: "", title: systemTitle, isEnabled: true)]
+        if selectedDeviceIsUnavailable, !selection.isEmpty {
+            entries.append(Entry(
+                id: selection,
+                title: "Previously selected device (unavailable)",
+                isEnabled: false
+            ))
+        }
+        entries.append(contentsOf: devices.map {
+            Entry(id: $0.id, title: $0.name, isEnabled: true)
+        })
+
+        let needsRebuild = button.numberOfItems != entries.count ||
+            zip(button.itemArray, entries).contains { item, entry in
+                item.title != entry.title || (item.representedObject as? String) != entry.id
+            }
+
+        if needsRebuild {
+            button.removeAllItems()
+            for entry in entries {
+                button.addItem(withTitle: entry.title)
+                button.lastItem?.representedObject = entry.id
+                button.lastItem?.isEnabled = entry.isEnabled
+            }
+        }
+
+        if let item = button.itemArray.first(where: {
+            ($0.representedObject as? String) == selection
+        }) {
+            button.select(item)
+        } else {
+            button.selectItem(at: 0)
+        }
+        button.isEnabled = isEnabled
     }
 }

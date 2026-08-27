@@ -763,6 +763,7 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     private func selectAudioOutput(id: String) {
+        guard versionManager.currentVersion?.settings.audioOutputDeviceID != id else { return }
         guard !isAudioOutputBusy else { return }
         isAudioOutputBusy = true
         patchFeedback = nil
@@ -774,8 +775,8 @@ final class MainDashboardViewModel: ObservableObject {
                 DispatchQueue.main.async {
                     guard let self else { return }
                     self.updateCurrentVersion { $0.settings.audioOutputDeviceID = id }
+                    self.audioDetails = nil
                     self.isAudioOutputBusy = false
-                    self.refreshAudioOutputs()
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -791,6 +792,7 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     private func selectAudioInput(id: String) {
+        guard versionManager.currentVersion?.settings.audioInputDeviceID != id else { return }
         guard !isAudioOutputBusy else { return }
         isAudioOutputBusy = true
         patchFeedback = nil
