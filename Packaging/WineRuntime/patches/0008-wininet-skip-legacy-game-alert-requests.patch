@@ -1,0 +1,42 @@
+diff --git a/dlls/wininet/http.c b/dlls/wininet/http.c
+index ae746db..994021e 100644
+--- a/dlls/wininet/http.c
++++ b/dlls/wininet/http.c
+@@ -1759,10 +1759,37 @@ static BOOL HTTP_DealWithProxy(appinfo_t *hIC, http_session_t *session, http_req
+     return TRUE;
+ }
+ 
++static BOOL is_legacy_game_alert_request(const http_request_t *request)
++{
++    const WCHAR *path_end;
++    WCHAR enabled[2];
++    size_t path_len;
++
++    if (GetEnvironmentVariableW(L"WOWSILICON_BLOCK_LEGACY_ALERTS", enabled, ARRAY_SIZE(enabled)) != 1 ||
++        enabled[0] != '1' || wcsicmp(request->verb, L"GET"))
++        return FALSE;
++
++    /* Legacy game clients request /alert or /<locale>/alert. Ignore a query
++     * string when matching, but leave every other game request untouched. */
++    path_end = wcschr(request->path, '?');
++    if (!path_end) path_end = request->path + lstrlenW(request->path);
++    path_len = path_end - request->path;
++
++    return path_len >= ARRAY_SIZE(L"/alert") - 1 &&
++           !wcsnicmp(path_end - (ARRAY_SIZE(L"/alert") - 1),
++                     L"/alert", ARRAY_SIZE(L"/alert") - 1);
++}
++
+ static DWORD HTTP_ResolveName(http_request_t *request)
+ {
+     server_t *server = request->proxy ? request->proxy : request->server;
+ 
++    if (is_legacy_game_alert_request(request))
++    {
++        WARN("skipping legacy game alert request %s\n", debugstr_w(request->path));
++        return ERROR_INTERNET_NAME_NOT_RESOLVED;
++    }
++
+     if(server->addr)
+         return ERROR_SUCCESS;
+ 

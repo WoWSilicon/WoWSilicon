@@ -271,7 +271,7 @@ final class LaunchService: @unchecked Sendable {
             key: "WOWSILICON_NIGHT_MODE_CONTROL",
             value: nightModeControlURL.path
         )
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" WOWSILICON_FOLLOW_SYSTEM_OUTPUT=\(followSystemOutput) WOWSILICON_FOLLOW_SYSTEM_INPUT=\(followSystemInput) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) \(spatialAudioControl) WOWSILICON_NIGHT_MODE=\(nightMode) \(nightModeControl) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" WOWSILICON_BLOCK_LEGACY_ALERTS=1 WOWSILICON_FOLLOW_SYSTEM_OUTPUT=\(followSystemOutput) WOWSILICON_FOLLOW_SYSTEM_INPUT=\(followSystemInput) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) \(spatialAudioControl) WOWSILICON_NIGHT_MODE=\(nightMode) \(nightModeControl) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = BundledWineRuntime.shellEnvironmentAssignments(settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 

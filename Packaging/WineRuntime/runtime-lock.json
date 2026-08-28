@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "runtimeRevision": 9,
+  "runtimeRevision": 10,
   "wine": {
     "version": "11.13",
     "repository": "https://github.com/WineAndAqua/wine.git",
