@@ -699,13 +699,13 @@ final class MainDashboardViewModel: ObservableObject {
         )
     }
 
-    func nightModeBinding() -> Binding<Bool> {
+    func normalizeAudioBinding() -> Binding<Bool> {
         Binding(
-            get: { self.versionManager.currentVersion?.settings.nightMode ?? false },
+            get: { self.versionManager.currentVersion?.settings.normalizeAudio ?? false },
             set: { enabled in
                 do {
-                    try SpatialAudioService.setNightMode(enabled)
-                    self.updateCurrentVersion { $0.settings.nightMode = enabled }
+                    try SpatialAudioService.setNormalizeAudio(enabled)
+                    self.updateCurrentVersion { $0.settings.normalizeAudio = enabled }
                 } catch {
                     self.patchFeedback = PatchFeedback(
                         title: "Normalize Audio",
@@ -829,7 +829,7 @@ final class MainDashboardViewModel: ObservableObject {
             do {
                 try AudioOutputService.testOutput(
                     spatializeStereo: settings?.spatializeStereo ?? false,
-                    nightMode: settings?.nightMode ?? false,
+                    normalizeAudio: settings?.normalizeAudio ?? false,
                     customVariables: settings?.environmentVariables ?? ""
                 )
                 DispatchQueue.main.async { self?.isAudioOutputBusy = false }

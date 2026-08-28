@@ -420,7 +420,7 @@ struct OptionsView: View {
 
             Spacer()
 
-            Toggle("", isOn: viewModel.nightModeBinding())
+            Toggle("", isOn: viewModel.normalizeAudioBinding())
                 .labelsHidden()
                 .toggleStyle(.switch)
         }
@@ -602,7 +602,7 @@ struct OptionsView: View {
             )
             audioDetailRow(
                 "Normalize Audio",
-                viewModel.currentVersion?.settings.nightMode == true ? "On" : "Off"
+                viewModel.currentVersion?.settings.normalizeAudio == true ? "On" : "Off"
             )
         }
         .padding(16)

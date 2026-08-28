@@ -52,7 +52,7 @@ final class ModelCompatibilityTests: XCTestCase {
         XCTAssertEqual(settings.audioOutputDeviceID, "")
         XCTAssertEqual(settings.audioInputDeviceID, "")
         XCTAssertFalse(settings.spatializeStereo)
-        XCTAssertFalse(settings.nightMode)
+        XCTAssertFalse(settings.normalizeAudio)
     }
 
     func testLegacyDisabledRosettaMigratesToDisabledBackend() throws {
@@ -88,18 +88,28 @@ final class ModelCompatibilityTests: XCTestCase {
             audioOutputDeviceID: "{wine-endpoint-id}",
             audioInputDeviceID: "{wine-input-id}",
             spatializeStereo: true,
-            nightMode: true
+            normalizeAudio: true
         )
 
-        let decoded = try JSONDecoder().decode(
-            VersionSettings.self,
-            from: JSONEncoder().encode(settings)
-        )
+        let encoded = try JSONEncoder().encode(settings)
+        let decoded = try JSONDecoder().decode(VersionSettings.self, from: encoded)
+        let encodedObject = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
 
         XCTAssertEqual(decoded.audioOutputDeviceID, "{wine-endpoint-id}")
         XCTAssertEqual(decoded.audioInputDeviceID, "{wine-input-id}")
         XCTAssertTrue(decoded.spatializeStereo)
-        XCTAssertTrue(decoded.nightMode)
+        XCTAssertTrue(decoded.normalizeAudio)
+        XCTAssertEqual(encodedObject["normalize_audio"] as? Bool, true)
+        XCTAssertNil(encodedObject["nightMode"])
+    }
+
+    func testLegacyNightModeMigratesToNormalizeAudio() throws {
+        let settings = try JSONDecoder().decode(
+            VersionSettings.self,
+            from: Data(#"{"nightMode":true}"#.utf8)
+        )
+
+        XCTAssertTrue(settings.normalizeAudio)
     }
 
     func testInterimSpatialAudioModeMigratesToEnabledToggle() throws {

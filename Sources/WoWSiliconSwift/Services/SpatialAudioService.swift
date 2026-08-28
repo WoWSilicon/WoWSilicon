@@ -25,18 +25,18 @@ enum SpatialAudioService {
         try Data(mode.utf8).write(to: controlURL, options: .atomic)
     }
 
-    static func nightModeControlURL(
+    static func normalizeAudioControlURL(
         applicationSupportURL: URL? = nil,
         fileManager: FileManager = .default
     ) -> URL {
         controlURL(applicationSupportURL: applicationSupportURL, fileManager: fileManager)
             .deletingLastPathComponent()
-            .appendingPathComponent("night-mode", isDirectory: false)
+            .appendingPathComponent("normalize-audio", isDirectory: false)
     }
 
-    static func setNightMode(
+    static func setNormalizeAudio(
         _ enabled: Bool,
-        controlURL: URL = nightModeControlURL(),
+        controlURL: URL = normalizeAudioControlURL(),
         fileManager: FileManager = .default
     ) throws {
         try fileManager.createDirectory(

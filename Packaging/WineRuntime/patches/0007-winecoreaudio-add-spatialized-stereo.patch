@@ -21,11 +21,11 @@ index c7e0dc2..f9a6f0d 100644
 +    enum spatial_audio_mode spatial_mode;
 +    char *spatial_control_path;
 +    unsigned int spatial_control_poll_count;
-+    BOOL night_mode;
-+    char *night_control_path;
-+    unsigned int night_control_poll_count;
-+    float night_envelope;
-+    float night_gain;
++    BOOL normalize_audio;
++    char *normalize_control_path;
++    unsigned int normalize_control_poll_count;
++    float normalize_envelope;
++    float normalize_gain;
      AudioConverterRef converter;
      AudioStreamBasicDescription dev_desc; /* audio unit format, not necessarily the same as fmt */
      AudioDeviceID dev_id;
@@ -94,12 +94,12 @@ index c7e0dc2..f9a6f0d 100644
 +    }
 +}
 +
-+static void process_night_mode(struct coreaudio_stream *stream, BYTE *data, UINT32 frames)
++static void process_normalize_audio(struct coreaudio_stream *stream, BYTE *data, UINT32 frames)
 +{
 +    const float threshold = 0.12f, ratio = 0.25f, makeup = 1.8f;
 +    enum night_sample_kind kind = get_night_sample_kind(stream->fmt);
-+    float envelope = stream->night_envelope;
-+    float gain = stream->night_gain > 0.0f ? stream->night_gain : 1.0f;
++    float envelope = stream->normalize_envelope;
++    float gain = stream->normalize_gain > 0.0f ? stream->normalize_gain : 1.0f;
 +    float attack = min(1.0f, 1.0f / (0.005f * stream->fmt->nSamplesPerSec));
 +    float release = min(1.0f, 1.0f / (0.25f * stream->fmt->nSamplesPerSec));
 +    UINT32 channels = stream->fmt->nChannels;
@@ -130,8 +130,8 @@ index c7e0dc2..f9a6f0d 100644
 +        }
 +    }
 +
-+    stream->night_envelope = envelope;
-+    stream->night_gain = gain;
++    stream->normalize_envelope = envelope;
++    stream->normalize_gain = gain;
 +}
 +
  /* CA is pulling data from us */
@@ -141,8 +141,8 @@ index c7e0dc2..f9a6f0d 100644
      if(nframes > to_copy_frames)
          silence_buffer(stream, ((BYTE *)data->mBuffers[0].mData) + to_copy_bytes, nframes - to_copy_frames);
 
-+    if (stream->night_mode)
-+        process_night_mode(stream, data->mBuffers[0].mData, nframes);
++    if (stream->normalize_audio)
++        process_normalize_audio(stream, data->mBuffers[0].mData, nframes);
 +
      os_unfair_lock_unlock(&stream->lock);
 
@@ -197,7 +197,7 @@ index c7e0dc2..f9a6f0d 100644
 +    return fallback;
 +}
 +
-+static BOOL parse_night_mode(const char *value, BOOL fallback)
++static BOOL parse_normalize_audio(const char *value, BOOL fallback)
 +{
 +    size_t length;
 +
@@ -210,7 +210,7 @@ index c7e0dc2..f9a6f0d 100644
 +    return fallback;
 +}
 +
-+static BOOL read_night_mode(const char *path, BOOL fallback)
++static BOOL read_normalize_audio(const char *path, BOOL fallback)
 +{
 +    char buffer[32];
 +    ssize_t count;
@@ -221,29 +221,29 @@ index c7e0dc2..f9a6f0d 100644
 +    close(fd);
 +    if (count <= 0) return fallback;
 +    buffer[count] = 0;
-+    return parse_night_mode(buffer, fallback);
++    return parse_normalize_audio(buffer, fallback);
 +}
 +
-+static BOOL ca_apply_night_mode(struct coreaudio_stream *stream, BOOL enabled)
++static BOOL ca_apply_normalize_audio(struct coreaudio_stream *stream, BOOL enabled)
 +{
-+    stream->night_mode = enabled;
-+    TRACE("Night Mode changed to %s\n", enabled ? "on" : "off");
++    stream->normalize_audio = enabled;
++    TRACE("Normalize Audio changed to %s\n", enabled ? "on" : "off");
 +    return TRUE;
 +}
 +
-+static void ca_setup_night_mode(struct coreaudio_stream *stream)
++static void ca_setup_normalize_audio(struct coreaudio_stream *stream)
 +{
-+    const char *control_path = getenv("WOWSILICON_NIGHT_MODE_CONTROL");
++    const char *control_path = getenv("WOWSILICON_NORMALIZE_AUDIO_CONTROL");
 +
-+    stream->night_mode = parse_night_mode(getenv("WOWSILICON_NIGHT_MODE"), FALSE);
-+    stream->night_gain = 1.0f;
++    stream->normalize_audio = parse_normalize_audio(getenv("WOWSILICON_NORMALIZE_AUDIO"), FALSE);
++    stream->normalize_gain = 1.0f;
 +    if (control_path && *control_path)
 +    {
-+        if ((stream->night_control_path = strdup(control_path)))
-+            stream->night_mode = read_night_mode(stream->night_control_path,
-+                                                 stream->night_mode);
++        if ((stream->normalize_control_path = strdup(control_path)))
++            stream->normalize_audio = read_normalize_audio(stream->normalize_control_path,
++                                                 stream->normalize_audio);
 +    }
-+    TRACE("Night Mode initialized %s\n", stream->night_mode ? "on" : "off");
++    TRACE("Normalize Audio initialized %s\n", stream->normalize_audio ? "on" : "off");
 +}
 +
 +static enum spatial_audio_mode read_spatial_audio_mode(const char *path,
@@ -546,7 +546,7 @@ index c7e0dc2..f9a6f0d 100644
 +                                                   : dev_id_from_device(params->device);
 +    if (stream->dev_id == kAudioObjectUnknown)
 +        stream->dev_id = dev_id_from_device(params->device);
-+    if (stream->flow == eRender) ca_setup_night_mode(stream);
++    if (stream->flow == eRender) ca_setup_normalize_audio(stream);
 
      stream->bufsize_frames = muldiv(params->duration, stream->fmt->nSamplesPerSec, 10000000);
      if(params->share == AUDCLNT_SHAREMODE_EXCLUSIVE)
@@ -566,7 +566,7 @@ index c7e0dc2..f9a6f0d 100644
 +        if(stream->spatial_unit) AudioComponentInstanceDispose(stream->spatial_unit);
          if(stream->unit) AudioComponentInstanceDispose(stream->unit);
 +        free(stream->spatial_control_path);
-+        free(stream->night_control_path);
++        free(stream->normalize_control_path);
          free(stream->fmt);
          free(stream);
      } else {
@@ -576,7 +576,7 @@ index c7e0dc2..f9a6f0d 100644
 
 +    if(stream->spatial_unit) AudioComponentInstanceDispose(stream->spatial_unit);
 +    free(stream->spatial_control_path);
-+    free(stream->night_control_path);
++    free(stream->normalize_control_path);
 +
      if(stream->converter) AudioConverterDispose(stream->converter);
      free(stream->resamp_buffer);
@@ -761,13 +761,13 @@ index c7e0dc2..f9a6f0d 100644
 +            mode = read_spatial_audio_mode(stream->spatial_control_path, stream->spatial_mode);
 +            if (mode != stream->spatial_mode) ca_apply_spatial_audio_mode(stream, mode);
 +        }
-+        if (stream->night_control_path &&
-+            ++stream->night_control_poll_count >= max(1, 2500000 / stream->period))
++        if (stream->normalize_control_path &&
++            ++stream->normalize_control_poll_count >= max(1, 2500000 / stream->period))
 +        {
 +            BOOL enabled;
-+            stream->night_control_poll_count = 0;
-+            enabled = read_night_mode(stream->night_control_path, stream->night_mode);
-+            if (enabled != stream->night_mode) ca_apply_night_mode(stream, enabled);
++            stream->normalize_control_poll_count = 0;
++            enabled = read_normalize_audio(stream->normalize_control_path, stream->normalize_audio);
++            if (enabled != stream->normalize_audio) ca_apply_normalize_audio(stream, enabled);
 +        }
          NtSetEvent(stream->event, NULL);
          NtDelayExecution(FALSE, &delay);

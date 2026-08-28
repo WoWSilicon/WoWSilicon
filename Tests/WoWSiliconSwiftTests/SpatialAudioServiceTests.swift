@@ -11,9 +11,9 @@ final class SpatialAudioServiceTests: XCTestCase {
 
         XCTAssertEqual(try String(contentsOf: controlURL, encoding: .utf8), "fixed\n")
 
-        let nightModeURL = directory.appendingPathComponent("night-mode")
-        try SpatialAudioService.setNightMode(true, controlURL: nightModeURL)
-        XCTAssertEqual(try String(contentsOf: nightModeURL, encoding: .utf8), "on\n")
+        let normalizeAudioURL = directory.appendingPathComponent("normalize-audio")
+        try SpatialAudioService.setNormalizeAudio(true, controlURL: normalizeAudioURL)
+        XCTAssertEqual(try String(contentsOf: normalizeAudioURL, encoding: .utf8), "on\n")
         try? FileManager.default.removeItem(at: directory)
     }
 }
