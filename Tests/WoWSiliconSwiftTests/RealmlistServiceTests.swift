@@ -84,6 +84,83 @@ final class RealmlistServiceTests: XCTestCase {
         XCTAssertEqual(RealmlistService.currentRealmValue(gamePath: gameURL.path), "logon.example.test")
     }
 
+    func testParsesActiveCommentedAndNamedServers() {
+        let content = """
+        set realmlist logon.alpha.example
+        #set realmlist 127.0.0.1
+        # WoWSilicon: Test Realm
+        # SET realmlist "logon.beta.example"
+        """
+
+        let servers = RealmlistService.servers(in: content)
+
+        XCTAssertEqual(servers.count, 3)
+        XCTAssertEqual(servers[0].displayName, "Alpha")
+        XCTAssertTrue(servers[0].isActive)
+        XCTAssertEqual(servers[1].address, "127.0.0.1")
+        XCTAssertFalse(servers[1].isActive)
+        XCTAssertEqual(servers[2].name, "Test Realm")
+        XCTAssertEqual(servers[2].address, "logon.beta.example")
+        XCTAssertFalse(servers[2].isActive)
+    }
+
+    func testActivatingServerPreservesUnrelatedContent() {
+        let content = """
+        SET locale "enUS"
+        set realmlist first.example.test
+        # A comment that must remain
+        #set realmlist second.example.test
+        SET patchlist patch.example.test
+        """
+        let second = RealmlistService.servers(in: content)[1]
+
+        let updated = RealmlistService.activatingServer(id: second.id, in: content)
+
+        XCTAssertEqual(
+            updated,
+            """
+            SET locale "enUS"
+            #set realmlist first.example.test
+            # A comment that must remain
+            set realmlist second.example.test
+            SET patchlist patch.example.test
+            """
+        )
+    }
+
+    func testAddEditAndRemoveServerRoundTrip() {
+        let original = "set realmlist first.example.test\n"
+        let added = RealmlistService.addingServer(
+            name: "Second Realm",
+            address: "second.example.test",
+            to: original
+        )
+        let addedServers = RealmlistService.servers(in: added)
+
+        XCTAssertEqual(addedServers.count, 2)
+        XCTAssertFalse(addedServers[0].isActive)
+        XCTAssertTrue(addedServers[1].isActive)
+        XCTAssertEqual(addedServers[1].name, "Second Realm")
+
+        let edited = RealmlistService.updatingServer(
+            id: addedServers[1].id,
+            name: "Renamed Realm",
+            address: "new.example.test",
+            in: added
+        )
+        let editedServer = RealmlistService.servers(in: edited)[1]
+        XCTAssertEqual(editedServer.name, "Renamed Realm")
+        XCTAssertEqual(editedServer.address, "new.example.test")
+        XCTAssertTrue(editedServer.isActive)
+
+        let removed = RealmlistService.removingServer(id: editedServer.id, from: edited)
+        let remaining = RealmlistService.servers(in: removed)
+        XCTAssertEqual(remaining.count, 1)
+        XCTAssertEqual(remaining[0].address, "first.example.test")
+        XCTAssertTrue(remaining[0].isActive)
+        XCTAssertFalse(removed.contains("WoWSilicon:"))
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("WoWSiliconSwiftTests-\(UUID().uuidString)", isDirectory: true)

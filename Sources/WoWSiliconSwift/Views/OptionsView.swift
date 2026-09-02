@@ -159,11 +159,6 @@ struct OptionsView: View {
         }
     }
 
-    private func saveRealmlist() {
-        guard let url = realmlistURL else { return }
-        try? RealmlistService.write(content: realmlistContent, to: url)
-    }
-
     @ViewBuilder
     private var realmlistSection: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -196,27 +191,7 @@ struct OptionsView: View {
                         .buttonStyle(.bordered)
                 }
             } else if let realmlistURL {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Realmlist")
-                        .font(.headline)
-                    Text(realmlistURL.path)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                    TextEditor(text: $realmlistContent)
-                        .font(.body.monospaced())
-                        .padding(12)
-                        .frame(minHeight: 80)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color(nsColor: .textBackgroundColor))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.secondary.opacity(0.2))
-                        )
-                        .onChange(of: realmlistContent) { saveRealmlist() }
-                }
+                RealmlistEditorView(url: realmlistURL, content: realmlistContent)
             }
         }
     }
