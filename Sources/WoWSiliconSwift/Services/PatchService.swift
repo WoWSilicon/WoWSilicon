@@ -88,6 +88,7 @@ enum PatchService {
 
         try removeIfExists(gameURL.appendingPathComponent("rosettax87", isDirectory: true))
 
+        try normalizeRootDllMods(in: gameURL)
         try updateDllsTxt(in: gameURL, enableLibSiliconPatch: version.settings.enableLibSiliconPatch && version.libSiliconPatchSubdirectory != nil)
 
         if version.usesRosettaPatching && version.supportsDLLLoading {
@@ -286,6 +287,101 @@ enum PatchService {
             try? fm.createDirectory(at: wtfDir, withIntermediateDirectories: true)
             let seed = "SET gxResolution \"2560x1600\"\n"
             try? seed.write(to: configURL, atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// Moves legacy mod DLLs loaded from the game root into `mods/` and updates
+    /// their dlls.txt entries. Only bare DLL names already present in dlls.txt
+    /// are considered, so client DLLs and unrelated files are left untouched.
+    static func normalizeRootDllMods(in gameDirectory: URL) throws {
+        let fileManager = FileManager.default
+        let dllsURL = gameDirectory.appendingPathComponent("dlls.txt")
+        guard let content = try? String(contentsOf: dllsURL, encoding: .utf8) else {
+            return
+        }
+
+        let excludedNames: Set<String> = [
+            "d3d9.dll",
+            "divxdecoder.dll",
+            "divxtac.dll",
+            "libdllldr.dll",
+            "libsiliconpatch.dll",
+            "winerosetta.dll",
+        ]
+
+        let rootItems: [URL]
+        do {
+            rootItems = try fileManager.contentsOfDirectory(
+                at: gameDirectory,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            throw PatchServiceError.fileOperationFailed(
+                "Failed to inspect \(gameDirectory.path) for mod DLLs: \(error.localizedDescription)"
+            )
+        }
+
+        var rootDllsByName: [String: URL] = [:]
+        for item in rootItems where item.pathExtension.lowercased() == "dll" {
+            guard (try? item.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+                continue
+            }
+            rootDllsByName[item.lastPathComponent.lowercased()] = item
+        }
+
+        let modsURL = gameDirectory.appendingPathComponent("mods", isDirectory: true)
+        var outputLines: [String] = []
+        var migratedEntries: [String: String] = [:]
+        var changed = false
+
+        for originalLine in content.components(separatedBy: .newlines) {
+            let entry = originalLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lowercasedEntry = entry.lowercased()
+            let isBareDllName = !entry.contains("/")
+                && !entry.contains("\\")
+                && (entry as NSString).pathExtension.lowercased() == "dll"
+
+            if let migratedEntry = migratedEntries[lowercasedEntry] {
+                outputLines.append(migratedEntry)
+                changed = true
+                continue
+            }
+
+            guard isBareDllName,
+                  !excludedNames.contains(lowercasedEntry),
+                  let sourceURL = rootDllsByName[lowercasedEntry] else {
+                outputLines.append(originalLine)
+                continue
+            }
+
+            do {
+                try fileManager.createDirectory(at: modsURL, withIntermediateDirectories: true)
+                let destinationURL = modsURL.appendingPathComponent(sourceURL.lastPathComponent)
+                if fileManager.fileExists(atPath: destinationURL.path) {
+                    // The root copy was delivered by the latest client update and
+                    // is therefore authoritative over an older migrated copy.
+                    try fileManager.removeItem(at: destinationURL)
+                }
+                try fileManager.moveItem(at: sourceURL, to: destinationURL)
+                let migratedEntry = "mods/\(sourceURL.lastPathComponent)"
+                migratedEntries[lowercasedEntry] = migratedEntry
+                outputLines.append(migratedEntry)
+                changed = true
+            } catch {
+                throw PatchServiceError.fileOperationFailed(
+                    "Failed to move \(sourceURL.lastPathComponent) into the mods folder: \(error.localizedDescription)"
+                )
+            }
+        }
+
+        guard changed else { return }
+        do {
+            try outputLines.joined(separator: "\n").write(to: dllsURL, atomically: true, encoding: .utf8)
+        } catch {
+            throw PatchServiceError.fileOperationFailed(
+                "Failed to update dlls.txt after moving mod DLLs: \(error.localizedDescription)"
+            )
         }
     }
 
