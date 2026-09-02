@@ -38,9 +38,7 @@ final class ModManagerViewModel: ObservableObject, Identifiable {
     }
 
     private var modsDirectoryURL: URL? {
-        let path = version.gamePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !path.isEmpty else { return nil }
-        return URL(fileURLWithPath: path, isDirectory: true)
+        version.gameDirectoryURL?
             .appendingPathComponent("mods", isDirectory: true)
     }
 

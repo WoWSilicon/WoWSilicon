@@ -46,7 +46,19 @@ final class AddonManagerViewModel: ObservableObject, Identifiable {
     private var addonsDirectoryURL: URL? {
         guard let path = gamePath?.trimmingCharacters(in: .whitespacesAndNewlines),
               !path.isEmpty else { return nil }
-        return URL(fileURLWithPath: path, isDirectory: true)
+        let selectedURL = URL(fileURLWithPath: path)
+        var isDirectory: ObjCBool = false
+        let gameDirectoryURL: URL
+        if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) {
+            gameDirectoryURL = isDirectory.boolValue
+                ? URL(fileURLWithPath: path, isDirectory: true)
+                : selectedURL.deletingLastPathComponent()
+        } else {
+            gameDirectoryURL = selectedURL.pathExtension.lowercased() == "exe"
+                ? selectedURL.deletingLastPathComponent()
+                : selectedURL
+        }
+        return gameDirectoryURL
             .appendingPathComponent("Interface", isDirectory: true)
             .appendingPathComponent("AddOns", isDirectory: true)
     }
