@@ -183,7 +183,7 @@ final class MainDashboardViewModel: ObservableObject {
                 guard let self else { return }
                 switch result {
                 case .success:
-                    self.selectLauncherPath()
+                    self.selectLauncherPath(showInstallationGuidance: true)
                 case .failure(let error):
                     self.patchFeedback = PatchFeedback(title: "Installer Failed", message: error.localizedDescription, isError: true)
                 }
@@ -192,9 +192,18 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     func selectLauncherPath() {
+        selectLauncherPath(showInstallationGuidance: false)
+    }
+
+    private func selectLauncherPath(showInstallationGuidance: Bool) {
         let panel = NSOpenPanel()
-        panel.title = "Select Launcher Executable"
-        panel.prompt = "Select"
+        panel.title = showInstallationGuidance
+            ? "Select the Installed Launcher"
+            : "Select Launcher Executable"
+        panel.prompt = "Use Launcher"
+        if showInstallationGuidance {
+            panel.message = "The installation is finished. Select the launcher's .exe file to complete setup. It is usually inside Program Files or Program Files (x86)."
+        }
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
