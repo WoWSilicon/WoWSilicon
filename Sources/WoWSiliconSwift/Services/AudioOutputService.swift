@@ -78,6 +78,44 @@ enum AudioOutputService {
         )
     }
 
+    static func shortcutSelectionCommands(
+        outputID: String,
+        inputID: String,
+        customVariables: String
+    ) throws -> [String] {
+        guard !outputID.isEmpty || !inputID.isEmpty else { return [] }
+        guard let wineURL = BundledWineRuntime.wineExecutableURL() else {
+            throw AudioOutputServiceError.wineRuntimeMissing
+        }
+        guard let helperURL = helperURL() else {
+            throw AudioOutputServiceError.helperMissing
+        }
+
+        let winePrefix = BundledWineRuntime.shellEnvironmentAssignment(
+            key: "WINEPREFIX",
+            value: WineRegistrySupport.winePrefixURL().path
+        )
+        let dyldLibraryPath = BundledWineRuntime.shellEnvironmentAssignment(
+            key: "DYLD_LIBRARY_PATH",
+            value: BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? ""
+        )
+        let custom = BundledWineRuntime.shellEnvironmentAssignments(customVariables)
+        let environment = [custom, winePrefix, dyldLibraryPath]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        let executable = shellQuote(wineURL.path)
+        let helper = shellQuote(helperURL.path)
+
+        var commands: [String] = []
+        if !outputID.isEmpty {
+            commands.append("\(environment) \(executable) \(helper) set \(shellQuote(outputID))")
+        }
+        if !inputID.isEmpty {
+            commands.append("\(environment) \(executable) \(helper) set-input \(shellQuote(inputID))")
+        }
+        return commands
+    }
+
     static func parseDeviceList(_ output: String) -> [WineAudioOutputDevice] {
         output.split(whereSeparator: { $0.isNewline }).compactMap { line in
             let fields = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
@@ -146,6 +184,10 @@ enum AudioOutputService {
             )
         }
         return result
+    }
+
+    private static func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     private static func helperURL(

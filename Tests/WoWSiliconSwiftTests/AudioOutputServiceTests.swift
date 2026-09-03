@@ -2,6 +2,17 @@ import XCTest
 @testable import WoWSiliconSwift
 
 final class AudioOutputServiceTests: XCTestCase {
+    func testShortcutSelectionSkipsHelpersWhenFollowingSystemDevices() throws {
+        XCTAssertEqual(
+            try AudioOutputService.shortcutSelectionCommands(
+                outputID: "",
+                inputID: "",
+                customVariables: ""
+            ),
+            []
+        )
+    }
+
     func testParsesAudioSnapshot() {
         let output = """
         O\t{output}\tAirPods Pro

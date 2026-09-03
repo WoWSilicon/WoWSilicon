@@ -40,6 +40,8 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var isAudioOutputBusy: Bool = false
     @Published private(set) var isWineConfigurationLoading: Bool = false
     @Published private(set) var isWineTerminalLoading: Bool = false
+    @Published private(set) var isShortcutExportInProgress: Bool = false
+    @Published private(set) var shortcutExportFeedback: PatchFeedback?
     @Published private(set) var isApplyingVanillaTweaks: Bool = false
     @Published private(set) var isOptionAsAltBusy: Bool = false
     @Published private(set) var optionAsAltStatus: OptionAsAltStatus = .unknown
@@ -560,6 +562,50 @@ final class MainDashboardViewModel: ObservableObject {
                 if case .failure(let error) = result {
                     self.patchFeedback = PatchFeedback(
                         title: "Wine Terminal",
+                        message: error.localizedDescription,
+                        isError: true
+                    )
+                }
+            }
+        }
+    }
+
+    func createLaunchShortcut() {
+        guard !isShortcutExportInProgress, let version = versionManager.currentVersion else { return }
+        isShortcutExportInProgress = true
+        shortcutExportFeedback = nil
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            do {
+                let script = try self.launchService.shortcutShellScript(for: version)
+                let shortcutURL = try ShortcutExportService.createSignedShortcut(
+                    name: "Launch \(version.displayName)",
+                    shellScript: script
+                )
+                DispatchQueue.main.async {
+                    do {
+                        try ShortcutExportService.openForImport(shortcutURL)
+                        self.isShortcutExportInProgress = false
+                        self.shortcutExportFeedback = PatchFeedback(
+                            title: "Shortcut Created",
+                            message: "The shortcut is ready to add in Shortcuts.",
+                            isError: false
+                        )
+                    } catch {
+                        self.isShortcutExportInProgress = false
+                        self.shortcutExportFeedback = PatchFeedback(
+                            title: "Shortcut Export Failed",
+                            message: error.localizedDescription,
+                            isError: true
+                        )
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.isShortcutExportInProgress = false
+                    self.shortcutExportFeedback = PatchFeedback(
+                        title: "Shortcut Export Failed",
                         message: error.localizedDescription,
                         isError: true
                     )

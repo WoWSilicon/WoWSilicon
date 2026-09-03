@@ -11,6 +11,7 @@ struct OptionsView: View {
     @State private var realmlistMultipleURLs: [URL] = []
     @State private var showsAudioDetails = false
     @State private var showsNormalizeAudioHelp = false
+    @State private var showsShortcutExportConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -100,6 +101,9 @@ struct OptionsView: View {
             Divider()
                 .padding(.vertical, 4)
             wineBottleControls
+            Divider()
+                .padding(.vertical, 4)
+            launchShortcutControls
             Divider()
                 .padding(.vertical, 4)
             telemetryControls
@@ -457,6 +461,53 @@ struct OptionsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var launchShortcutControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Launch Shortcut")
+                .font(.headline)
+
+            Text("Create a native macOS Shortcut using the current configuration. Its settings stay frozen until you create a new shortcut.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 10) {
+                Button {
+                    showsShortcutExportConfirmation = true
+                } label: {
+                    Label("Create Shortcut…", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.bordered)
+                .disabled(!viewModel.canLaunch || viewModel.isShortcutExportInProgress)
+
+                if viewModel.isShortcutExportInProgress {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Signing shortcut…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let feedback = viewModel.shortcutExportFeedback {
+                Label(
+                    feedback.message,
+                    systemImage: feedback.isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(feedback.isError ? .red : .green)
+            }
+        }
+        .alert("Create Launch Shortcut?", isPresented: $showsShortcutExportConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Create") {
+                viewModel.createLaunchShortcut()
+            }
+        } message: {
+            Text("macOS sends signed shortcut files to Apple for validation. This shortcut contains the local paths needed to launch the selected game configuration.")
         }
     }
 
