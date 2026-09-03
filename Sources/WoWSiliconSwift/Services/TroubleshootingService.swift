@@ -350,8 +350,6 @@ enum TroubleshootingService {
             baseLog += "Executable: \(version.executableName)\n"
             baseLog += "Supports Vanilla Tweaks: \(version.supportsVanillaTweaks)\n"
             baseLog += "Supports DLL Loading: \(version.supportsDLLLoading)\n"
-            baseLog += "Uses Rosetta Patching: \(version.usesRosettaPatching)\n"
-            baseLog += "Uses DivX Decoder Patch: \(version.usesDivxDecoderPatch)\n"
 
             baseLog += "\nVersion Settings:\n"
             let settings = version.settings
