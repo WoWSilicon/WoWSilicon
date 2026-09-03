@@ -192,7 +192,22 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     func selectLauncherPath() {
-        selectLauncherPath(showInstallationGuidance: false)
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Choose an Installed Launcher"
+        alert.informativeText = "Launcher Path is for the actual installed launcher .exe, not the installer file. If the launcher is not installed yet, use Install Launcher first."
+        alert.addButton(withTitle: "Choose Installed Launcher…")
+        alert.addButton(withTitle: "Install Launcher…")
+        alert.addButton(withTitle: "Cancel")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            selectLauncherPath(showInstallationGuidance: false)
+        case .alertSecondButtonReturn:
+            installLauncher()
+        default:
+            break
+        }
     }
 
     private func selectLauncherPath(showInstallationGuidance: Bool) {
