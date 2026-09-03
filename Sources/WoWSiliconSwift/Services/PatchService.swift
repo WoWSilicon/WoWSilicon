@@ -333,7 +333,25 @@ enum PatchService {
         let modsURL = gameDirectory.appendingPathComponent("mods", isDirectory: true)
         var outputLines: [String] = []
         var migratedEntries: [String: String] = [:]
+        var seenDllEntries: Set<String> = []
         var changed = false
+
+        func appendUnique(_ line: String, entry: String? = nil) {
+            let candidate = (entry ?? line).trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalized = candidate.replacingOccurrences(of: "\\", with: "/").lowercased()
+            guard (normalized as NSString).pathExtension == "dll" else {
+                outputLines.append(line)
+                return
+            }
+            guard seenDllEntries.insert(normalized).inserted else {
+                if outputLines.last?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+                    outputLines.removeLast()
+                }
+                changed = true
+                return
+            }
+            outputLines.append(line)
+        }
 
         for originalLine in content.components(separatedBy: .newlines) {
             let entry = originalLine.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -343,7 +361,7 @@ enum PatchService {
                 && (entry as NSString).pathExtension.lowercased() == "dll"
 
             if let migratedEntry = migratedEntries[lowercasedEntry] {
-                outputLines.append(migratedEntry)
+                appendUnique(migratedEntry)
                 changed = true
                 continue
             }
@@ -351,7 +369,7 @@ enum PatchService {
             guard isBareDllName,
                   !excludedNames.contains(lowercasedEntry),
                   let sourceURL = rootDllsByName[lowercasedEntry] else {
-                outputLines.append(originalLine)
+                appendUnique(originalLine)
                 continue
             }
 
@@ -366,7 +384,7 @@ enum PatchService {
                 try fileManager.moveItem(at: sourceURL, to: destinationURL)
                 let migratedEntry = "mods/\(sourceURL.lastPathComponent)"
                 migratedEntries[lowercasedEntry] = migratedEntry
-                outputLines.append(migratedEntry)
+                appendUnique(migratedEntry)
                 changed = true
             } catch {
                 throw PatchServiceError.fileOperationFailed(

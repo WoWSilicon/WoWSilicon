@@ -49,24 +49,24 @@ final class PatchServiceTests: XCTestCase {
         let gameDirectory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: gameDirectory) }
 
-        try Data("nampower-new".utf8).write(to: gameDirectory.appendingPathComponent("nampower.dll"))
-        try Data("helpers".utf8).write(to: gameDirectory.appendingPathComponent("VanillaHelpers.dll"))
+        try Data("alpha-new".utf8).write(to: gameDirectory.appendingPathComponent("TestModAlpha.dll"))
+        try Data("beta".utf8).write(to: gameDirectory.appendingPathComponent("TestModBeta.dll"))
         try Data("unrelated".utf8).write(to: gameDirectory.appendingPathComponent("unrelated.dll"))
-        try "nampower.dll\n\nVanillaHelpers.dll\nmods/winerosetta.dll\n"
+        try "TestModAlpha.dll\n\nTestModBeta.dll\nmods/winerosetta.dll\n"
             .write(to: gameDirectory.appendingPathComponent("dlls.txt"), atomically: true, encoding: .utf8)
 
         try PatchService.normalizeRootDllMods(in: gameDirectory)
 
-        XCTAssertFalse(FileManager.default.fileExists(atPath: gameDirectory.appendingPathComponent("nampower.dll").path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: gameDirectory.appendingPathComponent("VanillaHelpers.dll").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: gameDirectory.appendingPathComponent("TestModAlpha.dll").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: gameDirectory.appendingPathComponent("TestModBeta.dll").path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: gameDirectory.appendingPathComponent("unrelated.dll").path))
         XCTAssertEqual(
-            try Data(contentsOf: gameDirectory.appendingPathComponent("mods/nampower.dll")),
-            Data("nampower-new".utf8)
+            try Data(contentsOf: gameDirectory.appendingPathComponent("mods/TestModAlpha.dll")),
+            Data("alpha-new".utf8)
         )
         XCTAssertEqual(
             try String(contentsOf: gameDirectory.appendingPathComponent("dlls.txt"), encoding: .utf8),
-            "mods/nampower.dll\n\nmods/VanillaHelpers.dll\nmods/winerosetta.dll\n"
+            "mods/TestModAlpha.dll\n\nmods/TestModBeta.dll\nmods/winerosetta.dll\n"
         )
     }
 
@@ -76,9 +76,9 @@ final class PatchServiceTests: XCTestCase {
         let modsDirectory = gameDirectory.appendingPathComponent("mods", isDirectory: true)
         try FileManager.default.createDirectory(at: modsDirectory, withIntermediateDirectories: true)
 
-        try Data("new".utf8).write(to: gameDirectory.appendingPathComponent("nampower.dll"))
-        try Data("old".utf8).write(to: modsDirectory.appendingPathComponent("nampower.dll"))
-        try "nampower.dll\n".write(
+        try Data("new".utf8).write(to: gameDirectory.appendingPathComponent("TestModAlpha.dll"))
+        try Data("old".utf8).write(to: modsDirectory.appendingPathComponent("TestModAlpha.dll"))
+        try "TestModAlpha.dll\n".write(
             to: gameDirectory.appendingPathComponent("dlls.txt"),
             atomically: true,
             encoding: .utf8
@@ -87,12 +87,46 @@ final class PatchServiceTests: XCTestCase {
         try PatchService.normalizeRootDllMods(in: gameDirectory)
 
         XCTAssertEqual(
-            try Data(contentsOf: modsDirectory.appendingPathComponent("nampower.dll")),
+            try Data(contentsOf: modsDirectory.appendingPathComponent("TestModAlpha.dll")),
             Data("new".utf8)
         )
         XCTAssertEqual(
             try String(contentsOf: gameDirectory.appendingPathComponent("dlls.txt"), encoding: .utf8),
-            "mods/nampower.dll\n"
+            "mods/TestModAlpha.dll\n"
+        )
+    }
+
+    func testNormalizeRootDllModsDoesNotDuplicateRedownloadedEntries() throws {
+        let gameDirectory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: gameDirectory) }
+        let modsDirectory = gameDirectory.appendingPathComponent("mods", isDirectory: true)
+        try FileManager.default.createDirectory(at: modsDirectory, withIntermediateDirectories: true)
+
+        try Data("redownloaded".utf8).write(to: gameDirectory.appendingPathComponent("TestModAlpha.dll"))
+        try Data("previous".utf8).write(to: modsDirectory.appendingPathComponent("TestModAlpha.dll"))
+        try """
+        mods/TestModAlpha.dll
+        mods/winerosetta.dll
+        mods/libSiliconPatch.dll
+
+        TestModAlpha.dll
+
+        """.write(
+            to: gameDirectory.appendingPathComponent("dlls.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        try PatchService.normalizeRootDllMods(in: gameDirectory)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: gameDirectory.appendingPathComponent("TestModAlpha.dll").path))
+        XCTAssertEqual(
+            try Data(contentsOf: modsDirectory.appendingPathComponent("TestModAlpha.dll")),
+            Data("redownloaded".utf8)
+        )
+        XCTAssertEqual(
+            try String(contentsOf: gameDirectory.appendingPathComponent("dlls.txt"), encoding: .utf8),
+            "mods/TestModAlpha.dll\nmods/winerosetta.dll\nmods/libSiliconPatch.dll\n"
         )
     }
 
