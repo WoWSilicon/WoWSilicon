@@ -320,8 +320,12 @@ final class LaunchService: @unchecked Sendable {
 
     func terminalBootstrapCommand(scriptURL: URL) -> String {
         let script = shellQuote(scriptURL.path)
-        return "/usr/bin/clear; /bin/cat \(script); /bin/sh \(script); _wowsilicon_status=$?; "
-            + "/bin/rm -f \(script); (exit $_wowsilicon_status)"
+        return "/usr/bin/clear; _wowsilicon_command=\"$(/bin/cat \(script))\"; "
+            + "if [ -n \"$ZSH_VERSION\" ]; then print -s -- \"$_wowsilicon_command\"; "
+            + "elif [ -n \"$BASH_VERSION\" ]; then history -s \"$_wowsilicon_command\"; fi; "
+            + "/usr/bin/printf '%s\\n' \"$_wowsilicon_command\"; /bin/rm -f \(script); "
+            + "eval \"$_wowsilicon_command\"; _wowsilicon_status=$?; unset _wowsilicon_command; "
+            + "(exit $_wowsilicon_status)"
     }
 
     private func makeShellCommand(gameURL: URL, x87Runtime: BundledX87Runtime.ResolvedRuntime?, wowURL: URL, wineExecutablePath: String, settings: VersionSettings, spatialAudioControlURL: URL, normalizeAudioControlURL: URL) -> String {
