@@ -273,7 +273,24 @@ final class LaunchService: @unchecked Sendable {
     }
 
     private func launchTerminalCommand(_ shellCommand: String) throws {
-        let escaped = shellCommand
+        let commandURL = fileManager.temporaryDirectory
+            .appendingPathComponent("WoWSilicon-Launch-\(UUID().uuidString).sh", isDirectory: false)
+        do {
+            try (shellCommand + "\n").write(to: commandURL, atomically: true, encoding: .utf8)
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: commandURL.path)
+        } catch {
+            throw LaunchServiceError.appleScriptFailed(error.localizedDescription)
+        }
+
+        var terminalOwnsCommandFile = false
+        defer {
+            if !terminalOwnsCommandFile {
+                try? fileManager.removeItem(at: commandURL)
+            }
+        }
+
+        let bootstrapCommand = terminalBootstrapCommand(scriptURL: commandURL)
+        let escaped = bootstrapCommand
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         let script = """
@@ -293,11 +310,18 @@ final class LaunchService: @unchecked Sendable {
             if task.terminationStatus != 0 {
                 throw LaunchServiceError.appleScriptFailed("osascript exited with code \(task.terminationStatus)")
             }
+            terminalOwnsCommandFile = true
         } catch let error as LaunchServiceError {
             throw error
         } catch {
             throw LaunchServiceError.appleScriptFailed(error.localizedDescription)
         }
+    }
+
+    func terminalBootstrapCommand(scriptURL: URL) -> String {
+        let script = shellQuote(scriptURL.path)
+        return "/usr/bin/clear; /bin/cat \(script); /bin/sh \(script); _wowsilicon_status=$?; "
+            + "/bin/rm -f \(script); (exit $_wowsilicon_status)"
     }
 
     private func makeShellCommand(gameURL: URL, x87Runtime: BundledX87Runtime.ResolvedRuntime?, wowURL: URL, wineExecutablePath: String, settings: VersionSettings, spatialAudioControlURL: URL, normalizeAudioControlURL: URL) -> String {
