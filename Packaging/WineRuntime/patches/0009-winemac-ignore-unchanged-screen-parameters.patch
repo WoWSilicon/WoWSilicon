@@ -1,0 +1,70 @@
+diff --git a/dlls/winemac.drv/cocoa_app.h b/dlls/winemac.drv/cocoa_app.h
+index f9acd289460..e84551dd371 100644
+--- a/dlls/winemac.drv/cocoa_app.h
++++ b/dlls/winemac.drv/cocoa_app.h
+@@ -59,6 +59,7 @@ enum {
+ 
+     CGFloat primaryScreenHeight;
+     BOOL primaryScreenHeightValid;
++    NSArray* lastScreenConfiguration;
+     NSMutableData* screenFrameCGRects;
+ 
+     WineWindow* lastTargetWindow;
+diff --git a/dlls/winemac.drv/cocoa_app.m b/dlls/winemac.drv/cocoa_app.m
+index 227d68b95a0..516c2f9120e 100644
+--- a/dlls/winemac.drv/cocoa_app.m
++++ b/dlls/winemac.drv/cocoa_app.m
+@@ -2467,8 +2467,53 @@ - (void)applicationDidBecomeActive:(NSNotification *)notification
+         forceNextMouseMoveAbsolute = TRUE;
+     }
+ 
++    /* The parts of the screen configuration that Wine's view of the displays
++       depends on: which screens exist, where they are, their work areas,
++       their backing scale and their CG display mode. */
++    - (NSArray*) currentScreenConfiguration
++    {
++        NSMutableArray* config = [NSMutableArray array];
++        NSScreen* screen;
++
++        for (screen in [NSScreen screens])
++        {
++            NSNumber* displayID = [screen.deviceDescription objectForKey:@"NSScreenNumber"];
++            CGDisplayModeRef mode = CGDisplayCopyDisplayMode([displayID unsignedIntValue]);
++            NSMutableDictionary* entry = [NSMutableDictionary dictionaryWithObjectsAndKeys:
++                displayID ? displayID : (id)[NSNull null], @"id",
++                NSStringFromRect([screen frame]), @"frame",
++                NSStringFromRect([screen visibleFrame]), @"visibleFrame",
++                [NSNumber numberWithDouble:[screen backingScaleFactor]], @"scale",
++                nil];
++            if (mode)
++            {
++                [entry setObject:(id)mode forKey:@"mode"];
++                CGDisplayModeRelease(mode);
++            }
++            [config addObject:entry];
++        }
++
++        return config;
++    }
++
+     - (void)applicationDidChangeScreenParameters:(NSNotification *)notification
+     {
++        NSArray* config = [self currentScreenConfiguration];
++
++        /* macOS posts this notification for much more than display topology
++           or mode changes: on an EDR display every step of the headroom
++           ramp (which follows ambient light, thermal state and on-screen
++           content) arrives as one, at up to the refresh rate.  Each one
++           used to cost a full display re-enumeration in the desktop
++           process, a display-cache invalidation in every process and a
++           window-level pass here, with the main thread busy while other
++           threads wait on it for SetCapture or SetCursorPos.  Only react
++           when something Wine actually depends on changed. */
++        if (lastScreenConfiguration && [lastScreenConfiguration isEqualToArray:config])
++            return;
++        [lastScreenConfiguration release];
++        lastScreenConfiguration = [config retain];
++
+         primaryScreenHeightValid = FALSE;
+         [self sendDisplaysChanged:FALSE];
+         [self adjustWindowLevels];
