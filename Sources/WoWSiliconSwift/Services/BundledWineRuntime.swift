@@ -29,6 +29,20 @@ enum BundledWineRuntime {
         return fileManager.isExecutableFile(atPath: executableURL.path) ? executableURL : nil
     }
 
+    static func wineserverExecutableURL(
+        resourceURL: URL? = Bundle.main.resourceURL,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        guard let rootURL = rootURL(resourceURL: resourceURL, environment: environment) else {
+            return nil
+        }
+        let executableURL = rootURL
+            .appendingPathComponent("bin", isDirectory: true)
+            .appendingPathComponent("wineserver", isDirectory: false)
+        return fileManager.isExecutableFile(atPath: executableURL.path) ? executableURL : nil
+    }
+
     static func externalLibraryDirectoryURL(
         resourceURL: URL? = Bundle.main.resourceURL,
         environment: [String: String] = ProcessInfo.processInfo.environment

@@ -313,7 +313,7 @@ final class MainDashboardViewModel: ObservableObject {
         isForceQuittingWine = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             LaunchService.forceQuitWine()
-            let remainingProcessCount = WineProcessMonitor.waitForProcessExit()
+            let remainingProcessCount = WineProcessMonitor.waitForApplicationProcessExit()
             DispatchQueue.main.async {
                 self?.isForceQuittingWine = false
                 if let remainingProcessCount {
@@ -330,10 +330,10 @@ final class MainDashboardViewModel: ObservableObject {
     func monitorWineProcesses() async {
         while !Task.isCancelled {
             let processCount = await Task.detached(priority: .utility) {
-                WineProcessMonitor.persistentProcessCount()
+                WineProcessMonitor.currentApplicationProcessCount()
             }.value
 
-            if !isForceQuittingWine, let processCount {
+            if !isForceQuittingWine, !isAudioOutputBusy, let processCount {
                 wineProcessCount = processCount
             }
 
@@ -649,8 +649,17 @@ final class MainDashboardViewModel: ObservableObject {
         isCheckingWineProcesses = true
 
         Task { [weak self] in
+            while self?.isAudioOutputBusy == true {
+                do {
+                    try await Task.sleep(for: .milliseconds(100))
+                } catch {
+                    self?.isCheckingWineProcesses = false
+                    return
+                }
+            }
+
             let liveProcessCount = await Task.detached(priority: .userInitiated) {
-                WineProcessMonitor.persistentProcessCount()
+                WineProcessMonitor.currentApplicationProcessCount()
             }.value
 
             guard let self else { return }

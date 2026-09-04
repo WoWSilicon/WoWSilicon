@@ -145,6 +145,32 @@ final class BundledWineRuntimeTests: XCTestCase {
         )
     }
 
+    func testWineserverExecutableRequiresExecutableFile() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let bin = root.appendingPathComponent("bin", isDirectory: true)
+        let wineserver = bin.appendingPathComponent("wineserver", isDirectory: false)
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        try Data().write(to: wineserver)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let environment = [BundledWineRuntime.environmentOverride: root.path]
+        XCTAssertNil(BundledWineRuntime.wineserverExecutableURL(
+            resourceURL: nil,
+            environment: environment
+        ))
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: wineserver.path)
+
+        XCTAssertEqual(
+            BundledWineRuntime.wineserverExecutableURL(
+                resourceURL: nil,
+                environment: environment
+            )?.path,
+            wineserver.path
+        )
+    }
+
     func testMtld3dConfigurationUsesRuntimeLibDirectory() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

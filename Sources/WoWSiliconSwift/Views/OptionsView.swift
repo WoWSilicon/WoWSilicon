@@ -12,6 +12,7 @@ struct OptionsView: View {
     @State private var showsAudioDetails = false
     @State private var showsNormalizeAudioHelp = false
     @State private var showsShortcutExportConfirmation = false
+    @State private var hasLoadedAudioDevices = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -70,9 +71,13 @@ struct OptionsView: View {
             viewModel.refreshGraphicsSettings()
             viewModel.refreshVisualCppRuntimeStatus()
             viewModel.refreshGitStatus()
-            viewModel.refreshAudioOutputs()
             viewModel.beginOptionsSession()
             refreshRealmlist()
+        }
+        .onChange(of: selectedTab) { _, tab in
+            guard tab == .audio, !hasLoadedAudioDevices else { return }
+            hasLoadedAudioDevices = true
+            viewModel.refreshAudioOutputs()
         }
         .onDisappear {
             viewModel.completeOptionsSession()

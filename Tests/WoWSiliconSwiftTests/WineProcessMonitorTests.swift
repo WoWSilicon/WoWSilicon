@@ -70,4 +70,22 @@ final class WineProcessMonitorTests: XCTestCase {
 
         XCTAssertEqual(result, [401])
     }
+
+    func testApplicationProcessesExcludeWineInfrastructureAndAudioHelper() {
+        let processList = #"""
+          501 /Applications/WoWSilicon.app/Contents/Resources/Wine/bin/wineserver
+          502 services.exe
+          503 C:\windows\system32\winedevice.exe
+          504 /Applications/WoWSilicon.app/Contents/Resources/Wine/bin/wine /Applications/WoWSilicon.app/Contents/Resources/Audio/wowsilicon-audio.exe snapshot
+          505 /Applications/WoWSilicon.app/Contents/Resources/Wine/bin/wine /Volumes/Games/Wow.exe
+          506 Z:\Volumes\Games\Wow_tweaked.exe
+        """#
+
+        let result = WineProcessMonitor.applicationProcessIDs(
+            in: processList,
+            runtimeRoot: "/Applications/WoWSilicon.app/Contents/Resources/Wine"
+        )
+
+        XCTAssertEqual(result, [505, 506])
+    }
 }

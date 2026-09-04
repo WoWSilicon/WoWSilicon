@@ -716,6 +716,18 @@ final class LaunchService: @unchecked Sendable {
     // MARK: - Force quit
 
     static func forceQuitWine() {
+        if let wineserverURL = BundledWineRuntime.wineserverExecutableURL() {
+            _ = try? ProcessRunner.run(
+                executablePath: wineserverURL.path,
+                arguments: ["-k"],
+                environment: BundledWineRuntime.makeEnvironment(),
+                timeout: 5
+            )
+            if WineProcessMonitor.waitForApplicationProcessExit(timeout: 2) == 0 {
+                return
+            }
+        }
+
         let currentProcessID = ProcessInfo.processInfo.processIdentifier
 
         // A Wine helper can create another child while the session is being torn down.
