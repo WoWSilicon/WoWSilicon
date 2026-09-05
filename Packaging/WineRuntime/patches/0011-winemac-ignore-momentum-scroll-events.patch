@@ -1,0 +1,42 @@
+diff --git a/dlls/winemac.drv/cocoa_app.m b/dlls/winemac.drv/cocoa_app.m
+index b0cc447c543..3a84b2ccc5e 100644
+--- a/dlls/winemac.drv/cocoa_app.m
++++ b/dlls/winemac.drv/cocoa_app.m
+@@ -1728,6 +1728,14 @@
+ 
+     - (void) handleScrollWheel:(NSEvent*)theEvent
+     {
++        /* Do not turn macOS trackpad momentum into Windows wheel input.  Games
++           commonly bind the wheel to discrete actions such as camera zoom, for
++           which events continuing after the fingers have lifted are harmful.
++           Physical wheels and the direct phase of trackpad gestures report no
++           momentum phase and continue through the normal path below. */
++        if ([theEvent momentumPhase] != NSEventPhaseNone)
++            return;
++
+         WineWindow* window;
+ 
+         if (mouseCaptureWindow)
+@@ -1835,13 +1843,16 @@
+                    So, negate the X scroll value to translate. */
+                 x = -x;
+ 
+-                /* The x,y values so far are in pixels.  Win32 expects to receive some
+-                   fraction of WHEEL_DELTA == 120.  By my estimation, that's roughly
+-                   6 times the pixel value. */
+-                x *= 6;
+-                y *= 6;
++                /* Convert clicky-wheel distances to Windows wheel units.  Leave
++                   continuous devices in points and quantize them below so games do
++                   not treat every high-frequency trackpad update as a wheel click. */
++                if (!continuous)
++                {
++                    x *= 6;
++                    y *= 6;
++                }
+ 
+-                if (use_precise_scrolling)
++                if (use_precise_scrolling && !continuous)
+                 {
+                     event->mouse_scroll.x_scroll = x;
+                     event->mouse_scroll.y_scroll = y;
