@@ -1,0 +1,164 @@
+diff --git a/dlls/winemac.drv/cocoa_app.h b/dlls/winemac.drv/cocoa_app.h
+index e84551dd371..a56335a9fe1 100644
+--- a/dlls/winemac.drv/cocoa_app.h
++++ b/dlls/winemac.drv/cocoa_app.h
+@@ -81,6 +81,8 @@ enum {
+     int         cursorFrame;
+     NSTimer*    cursorTimer;
+     NSCursor*   cursor;
++    NSArray*    builtCursorFrames;
++    int         builtCursorFrame;
+     BOOL        cursorIsCurrent;
+     BOOL        cursorHidden;
+     BOOL        clientWantsCursorHidden;
+diff --git a/dlls/winemac.drv/cocoa_app.m b/dlls/winemac.drv/cocoa_app.m
+index 516c2f9120e..c4d24f8c567 100644
+--- a/dlls/winemac.drv/cocoa_app.m
++++ b/dlls/winemac.drv/cocoa_app.m
+@@ -221,6 +221,7 @@ - (void) dealloc
+         [clipCursorHandler release];
+         [cursorTimer release];
+         [cursorFrames release];
++        [builtCursorFrames release];
+         [latentDisplayModes release];
+         [originalDisplayModes release];
+         [keyWindows release];
+@@ -1098,6 +1099,8 @@ - (void) setCursor:(NSCursor*)newCursor
+     {
+         if (newCursor != cursor)
+         {
++            [builtCursorFrames release];
++            builtCursorFrames = nil;
+             [cursor release];
+             cursor = [newCursor retain];
+             cursorIsCurrent = FALSE;
+@@ -1119,6 +1122,8 @@ - (void) setCursor
+         hotSpot = cgpoint_mac_from_win(hotSpot);
+         self.cursor = [[[NSCursor alloc] initWithImage:image hotSpot:NSPointFromCGPoint(hotSpot)] autorelease];
+         [image release];
++        builtCursorFrames = [cursorFrames retain];
++        builtCursorFrame = cursorFrame;
+         [self unhideCursor];
+     }
+ 
+@@ -1165,7 +1170,18 @@ - (void) setCursorWithFrames:(NSArray*)frames
+                 [[NSRunLoop currentRunLoop] addTimer:cursorTimer forMode:NSRunLoopCommonModes];
+             }
+ 
+-            [self setCursor];
++            /* A hidden -> shown round trip arrives as frames -> nil -> the
++               same frames (the per-HCURSOR frame arrays are cached).  The
++               cursor built from those frames is still set: rebuilding it and
++               [cursor set]ing pushes a fresh cursor image to the window
++               server on every show, which can slip the next presents by a
++               whole refresh (measured as a 120 Hz game dropping to ~107 fps
++               under rapid clicking, one to two late presents per show).
++               Reuse it and just unhide. */
++            if (builtCursorFrame == 0 && [builtCursorFrames isEqualToArray:frames])
++                [self unhideCursor];
++            else
++                [self setCursor];
+         }
+     }
+ 
+diff --git a/dlls/winemac.drv/cocoa_app.m b/dlls/winemac.drv/cocoa_app.m
+--- a/dlls/winemac.drv/cocoa_app.m
++++ b/dlls/winemac.drv/cocoa_app.m
+@@ -2340,6 +2340,12 @@ - (void)applicationDidBecomeActive:(NSNotification *)notification
+         // movement deltas are invalidated.  Make sure the next mouse move event
+         // starts over from an absolute baseline.
+         forceNextMouseMoveAbsolute = TRUE;
++
++        // macOS can replace the application cursor while switching spaces or
++        // leaving Mission Control without updating our cached cursor state.
++        cursorIsCurrent = FALSE;
++        cursorHidden = FALSE;
++        [self updateCursor:FALSE];
+     }
+ 
+     /* The parts of the screen configuration that Wine's view of the displays
+diff --git a/dlls/winemac.drv/cocoa_app.m b/dlls/winemac.drv/cocoa_app.m
+index c4d24f8c567..b0cc447c543 100644
+--- a/dlls/winemac.drv/cocoa_app.m
++++ b/dlls/winemac.drv/cocoa_app.m
+@@ -1040,38 +1040,65 @@ - (BOOL) areDisplaysCaptured
+         return ([originalDisplayModes count] > 0 || displaysCapturedForFullscreen);
+     }
+ 
++    /* A fully transparent cursor, set instead of [NSCursor hide].
++       Toggling the cursor plane off and on makes the window server present
++       the next frames of a full-screen Metal layer one refresh late, which
++       a game hiding the cursor while a mouse button is held turns into a
++       sustained frame-rate drop under rapid clicking (measured 120 -> ~107
++       fps; with the toggle gone the rate holds).  Swapping the cursor
++       image has no such cost, so hidden = blank image, plane always on. */
++    static NSCursor* blank_cursor(void)
++    {
++        static NSCursor* blank;
++        if (!blank)
++        {
++            NSBitmapImageRep* rep = [[NSBitmapImageRep alloc]
++                initWithBitmapDataPlanes:NULL
++                              pixelsWide:1
++                              pixelsHigh:1
++                           bitsPerSample:8
++                         samplesPerPixel:4
++                                hasAlpha:YES
++                                isPlanar:NO
++                          colorSpaceName:NSDeviceRGBColorSpace
++                             bytesPerRow:4
++                            bitsPerPixel:32];
++            NSImage* image = [[NSImage alloc] initWithSize:NSMakeSize(1, 1)];
++            memset([rep bitmapData], 0, 4);
++            [image addRepresentation:rep];
++            [rep release];
++            blank = [[NSCursor alloc] initWithImage:image hotSpot:NSZeroPoint];
++            [image release];
++        }
++        return blank;
++    }
++
+     - (void) updateCursor:(BOOL)force
+     {
+         if (force || lastTargetWindow)
+         {
+-            if (clientWantsCursorHidden && !cursorHidden)
++            if (clientWantsCursorHidden)
+             {
+-                [NSCursor hide];
+-                cursorHidden = TRUE;
++                if (!cursorHidden || [NSCursor currentCursor] != blank_cursor())
++                {
++                    [blank_cursor() set];
++                    cursorIsCurrent = FALSE;
++                    cursorHidden = TRUE;
++                }
+             }
+-
+-            if (!cursorIsCurrent)
++            else if (!cursorIsCurrent || cursorHidden)
+             {
+                 [cursor set];
+                 cursorIsCurrent = TRUE;
+-            }
+-
+-            if (!clientWantsCursorHidden && cursorHidden)
+-            {
+-                [NSCursor unhide];
+                 cursorHidden = FALSE;
+             }
+         }
+         else
+         {
+-            if (cursorIsCurrent)
++            if (cursorIsCurrent || cursorHidden)
+             {
+                 [[NSCursor arrowCursor] set];
+                 cursorIsCurrent = FALSE;
+-            }
+-            if (cursorHidden)
+-            {
+-                [NSCursor unhide];
+                 cursorHidden = FALSE;
+             }
+         }
