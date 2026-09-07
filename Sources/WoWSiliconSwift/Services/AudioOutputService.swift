@@ -67,9 +67,7 @@ enum AudioOutputService {
         try SpatialAudioService.setNormalizeAudio(normalizeAudio)
         let environment = [
             "WOWSILICON_SPATIAL_AUDIO_MODE": spatializeStereo ? "fixed" : "off",
-            "WOWSILICON_SPATIAL_AUDIO_CONTROL": SpatialAudioService.controlURL().path,
-            "WOWSILICON_NORMALIZE_AUDIO": normalizeAudio ? "1" : "0",
-            "WOWSILICON_NORMALIZE_AUDIO_CONTROL": SpatialAudioService.normalizeAudioControlURL().path
+            "WOWSILICON_NORMALIZE_AUDIO": normalizeAudio ? "1" : "0"
         ]
         _ = try runHelper(
             arguments: ["test"],

@@ -181,7 +181,7 @@ index c7e0dc2..f9a6f0d 100644
  static void dump_adesc(const char *aux, AudioStreamBasicDescription *desc)
  {
      TRACE("%s: mSampleRate: %f\n", aux, desc->mSampleRate);
-@@ -669,6 +813,250 @@ static HRESULT ca_setup_audiounit(EDataFlow dataflow, AudioComponentInstance uni
+@@ -669,6 +813,260 @@ static HRESULT ca_setup_audiounit(EDataFlow dataflow, AudioComponentInstance uni
      return S_OK;
  }
 
@@ -210,6 +210,22 @@ index c7e0dc2..f9a6f0d 100644
 +    return fallback;
 +}
 +
++static char *get_wowsilicon_control_path(const char *environment, const char *name)
++{
++    static const char directory[] = "/Library/Application Support/WoWSilicon/";
++    const char *path = getenv(environment);
++    const char *home;
++    char *default_path;
++    size_t size;
++
++    if (path && *path) return strdup(path);
++    if (!(home = getenv("HOME")) || !*home) return NULL;
++    size = strlen(home) + sizeof(directory) - 1 + strlen(name) + 1;
++    if (!(default_path = malloc(size))) return NULL;
++    snprintf(default_path, size, "%s%s%s", home, directory, name);
++    return default_path;
++}
++
 +static BOOL read_normalize_audio(const char *path, BOOL fallback)
 +{
 +    char buffer[32];
@@ -233,16 +249,13 @@ index c7e0dc2..f9a6f0d 100644
 +
 +static void ca_setup_normalize_audio(struct coreaudio_stream *stream)
 +{
-+    const char *control_path = getenv("WOWSILICON_NORMALIZE_AUDIO_CONTROL");
-+
 +    stream->normalize_audio = parse_normalize_audio(getenv("WOWSILICON_NORMALIZE_AUDIO"), FALSE);
 +    stream->normalize_gain = 1.0f;
-+    if (control_path && *control_path)
-+    {
-+        if ((stream->normalize_control_path = strdup(control_path)))
-+            stream->normalize_audio = read_normalize_audio(stream->normalize_control_path,
-+                                                 stream->normalize_audio);
-+    }
++    stream->normalize_control_path = get_wowsilicon_control_path(
++            "WOWSILICON_NORMALIZE_AUDIO_CONTROL", "normalize-audio");
++    if (stream->normalize_control_path)
++        stream->normalize_audio = read_normalize_audio(stream->normalize_control_path,
++                                                       stream->normalize_audio);
 +    TRACE("Normalize Audio initialized %s\n", stream->normalize_audio ? "on" : "off");
 +}
 +
@@ -307,11 +320,11 @@ index c7e0dc2..f9a6f0d 100644
 +    UInt32 size;
 +    UInt32 value;
 +    OSStatus sc;
-+    const char *control_path;
 +    const char *legacy_value;
 +    const char *mode_value;
 +
-+    control_path = getenv("WOWSILICON_SPATIAL_AUDIO_CONTROL");
++    stream->spatial_control_path = get_wowsilicon_control_path(
++            "WOWSILICON_SPATIAL_AUDIO_CONTROL", "spatial-audio-mode");
 +    legacy_value = getenv("WOWSILICON_SPATIAL_AUDIO");
 +    mode_value = getenv("WOWSILICON_SPATIAL_AUDIO_MODE");
 +    stream->spatial_mode = parse_spatial_audio_mode(mode_value,
@@ -319,15 +332,12 @@ index c7e0dc2..f9a6f0d 100644
 +            ? SPATIAL_AUDIO_FIXED : SPATIAL_AUDIO_OFF);
 +
 +    if (stream->flow != eRender || stream->fmt->nChannels != 2 ||
-+        ((!control_path || !*control_path) && stream->spatial_mode == SPATIAL_AUDIO_OFF))
++        (!stream->spatial_control_path && stream->spatial_mode == SPATIAL_AUDIO_OFF))
 +        return FALSE;
 +
-+    if (control_path && *control_path)
-+    {
-+        if (!(stream->spatial_control_path = strdup(control_path))) return FALSE;
++    if (stream->spatial_control_path)
 +        stream->spatial_mode = read_spatial_audio_mode(stream->spatial_control_path,
 +                                                       stream->spatial_mode);
-+    }
 +
 +    if (!(stream->spatial_unit = get_spatial_audiounit())) return FALSE;
 +
@@ -541,7 +551,7 @@ index c7e0dc2..f9a6f0d 100644
      stream->flags = params->flags;
      stream->share = params->share;
 +    stream->follow_system_device = !strcmp(getenv(stream->flow == eCapture
-+            ? "WOWSILICON_FOLLOW_SYSTEM_INPUT" : "WOWSILICON_FOLLOW_SYSTEM_OUTPUT") ?: "", "1");
++            ? "WOWSILICON_FOLLOW_SYSTEM_INPUT" : "WOWSILICON_FOLLOW_SYSTEM_OUTPUT") ?: "1", "1");
 +    stream->dev_id = stream->follow_system_device ? get_default_device_id(stream->flow)
 +                                                   : dev_id_from_device(params->device);
 +    if (stream->dev_id == kAudioObjectUnknown)

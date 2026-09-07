@@ -146,9 +146,7 @@ final class LaunchService: @unchecked Sendable {
             x87Runtime: x87Runtime,
             wowURL: wowExecutableURL,
             wineExecutablePath: wineExecutableURL.path,
-            settings: version.settings,
-            spatialAudioControlURL: spatialAudioControlURL,
-            normalizeAudioControlURL: normalizeAudioControlURL
+            settings: version.settings
         )
 
         return LaunchConfiguration(
@@ -328,7 +326,7 @@ final class LaunchService: @unchecked Sendable {
             + "(exit $_wowsilicon_status)"
     }
 
-    private func makeShellCommand(gameURL: URL, x87Runtime: BundledX87Runtime.ResolvedRuntime?, wowURL: URL, wineExecutablePath: String, settings: VersionSettings, spatialAudioControlURL: URL, normalizeAudioControlURL: URL) -> String {
+    private func makeShellCommand(gameURL: URL, x87Runtime: BundledX87Runtime.ResolvedRuntime?, wowURL: URL, wineExecutablePath: String, settings: VersionSettings) -> String {
         let game = shellQuote(gameURL.path)
         let wow = shellQuote(wowURL.path)
         let wine = shellQuote(wineExecutablePath)
@@ -336,23 +334,15 @@ final class LaunchService: @unchecked Sendable {
         let mtlValue = settings.enableMetalHud ? "1" : "0"
         let spatialAudioMode = settings.spatializeStereo ? "fixed" : "off"
         let normalizeAudio = settings.normalizeAudio ? "1" : "0"
-        let followSystemOutput = settings.audioOutputDeviceID.isEmpty ? "1" : "0"
-        let followSystemInput = settings.audioInputDeviceID.isEmpty ? "1" : "0"
+        let outputDeviceOverride = settings.audioOutputDeviceID.isEmpty ? "" : " WOWSILICON_FOLLOW_SYSTEM_OUTPUT=0"
+        let inputDeviceOverride = settings.audioInputDeviceID.isEmpty ? "" : " WOWSILICON_FOLLOW_SYSTEM_INPUT=0"
         let dllOverride = settings.graphicsSettings.backend.wineDLLOverride
         let dyldLibraryPath = shellQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let winePrefix = BundledWineRuntime.shellEnvironmentAssignment(
             key: "WINEPREFIX",
             value: WineRegistrySupport.winePrefixURL().path
         )
-        let spatialAudioControl = BundledWineRuntime.shellEnvironmentAssignment(
-            key: "WOWSILICON_SPATIAL_AUDIO_CONTROL",
-            value: spatialAudioControlURL.path
-        )
-        let normalizeAudioControl = BundledWineRuntime.shellEnvironmentAssignment(
-            key: "WOWSILICON_NORMALIZE_AUDIO_CONTROL",
-            value: normalizeAudioControlURL.path
-        )
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" WOWSILICON_BLOCK_LEGACY_ALERTS=1 WOWSILICON_FOLLOW_SYSTEM_OUTPUT=\(followSystemOutput) WOWSILICON_FOLLOW_SYSTEM_INPUT=\(followSystemInput) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) \(spatialAudioControl) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) \(normalizeAudioControl) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\"\(outputDeviceOverride)\(inputDeviceOverride) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = BundledWineRuntime.shellEnvironmentAssignments(settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
@@ -541,23 +531,15 @@ final class LaunchService: @unchecked Sendable {
         let mtlValue = version.settings.enableMetalHud ? "1" : "0"
         let spatialAudioMode = version.settings.spatializeStereo ? "fixed" : "off"
         let normalizeAudio = version.settings.normalizeAudio ? "1" : "0"
-        let followSystemOutput = version.settings.audioOutputDeviceID.isEmpty ? "1" : "0"
-        let followSystemInput = version.settings.audioInputDeviceID.isEmpty ? "1" : "0"
+        let outputDeviceOverride = version.settings.audioOutputDeviceID.isEmpty ? "" : " WOWSILICON_FOLLOW_SYSTEM_OUTPUT=0"
+        let inputDeviceOverride = version.settings.audioInputDeviceID.isEmpty ? "" : " WOWSILICON_FOLLOW_SYSTEM_INPUT=0"
         let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverrideWithBuiltinFallback
         let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let winePrefix = BundledWineRuntime.shellEnvironmentAssignment(
             key: "WINEPREFIX",
             value: WineRegistrySupport.winePrefixURL().path
         )
-        let spatialAudioControl = BundledWineRuntime.shellEnvironmentAssignment(
-            key: "WOWSILICON_SPATIAL_AUDIO_CONTROL",
-            value: spatialAudioControlURL.path
-        )
-        let normalizeAudioControl = BundledWineRuntime.shellEnvironmentAssignment(
-            key: "WOWSILICON_NORMALIZE_AUDIO_CONTROL",
-            value: normalizeAudioControlURL.path
-        )
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_D3D_CONFIG=renderer=vulkan WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\" WOWSILICON_FOLLOW_SYSTEM_OUTPUT=\(followSystemOutput) WOWSILICON_FOLLOW_SYSTEM_INPUT=\(followSystemInput) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) \(spatialAudioControl) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) \(normalizeAudioControl) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_D3D_CONFIG=renderer=vulkan WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\"\(outputDeviceOverride)\(inputDeviceOverride) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = BundledWineRuntime.shellEnvironmentAssignments(version.settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 

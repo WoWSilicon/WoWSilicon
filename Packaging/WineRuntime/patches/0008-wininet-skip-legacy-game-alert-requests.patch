@@ -12,8 +12,8 @@ index ae746db..994021e 100644
 +    WCHAR enabled[2];
 +    size_t path_len;
 +
-+    if (GetEnvironmentVariableW(L"WOWSILICON_BLOCK_LEGACY_ALERTS", enabled, ARRAY_SIZE(enabled)) != 1 ||
-+        enabled[0] != '1' || wcsicmp(request->verb, L"GET"))
++    if ((GetEnvironmentVariableW(L"WOWSILICON_BLOCK_LEGACY_ALERTS", enabled, ARRAY_SIZE(enabled)) == 1 &&
++         enabled[0] != '1') || wcsicmp(request->verb, L"GET"))
 +        return FALSE;
 +
 +    /* Legacy game clients request /alert or /<locale>/alert. Ignore a query
