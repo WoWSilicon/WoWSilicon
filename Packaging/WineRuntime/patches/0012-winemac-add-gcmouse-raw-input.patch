@@ -1,0 +1,335 @@
+From bfa3c0fdc2da180185dd0e542e85e60e120233a2 Mon Sep 17 00:00:00 2001
+From: Elvin Hayatov <AlvinHV@proton.me>
+Date: Mon, 31 Aug 2026 02:38:54 +0400
+Subject: [PATCH] winemac.drv: Add GCMouse raw input support.
+
+---
+ dlls/winemac.drv/Makefile.in     |   2 +
+ dlls/winemac.drv/cocoa_gcmouse.m | 159 +++++++++++++++++++++++++++++++
+ dlls/winemac.drv/event.c         |   3 +
+ dlls/winemac.drv/macdrv_cocoa.h  |   4 +
+ dlls/winemac.drv/macdrv_main.c   |   5 +
+ dlls/winemac.drv/mouse.c         |  23 ++++-
+ 6 files changed, 194 insertions(+), 2 deletions(-)
+ create mode 100644 dlls/winemac.drv/cocoa_gcmouse.m
+
+diff --git a/dlls/winemac.drv/Makefile.in b/dlls/winemac.drv/Makefile.in
+index ac705625efc..c5a7fcb439c 100644
+--- a/dlls/winemac.drv/Makefile.in
++++ b/dlls/winemac.drv/Makefile.in
+@@ -7,6 +7,7 @@ UNIX_LIBS    = \
+ 	-framework AppKit \
+ 	-framework Carbon \
+ 	-framework CoreVideo \
+ 	-framework Foundation \
++	-weak_framework GameController \
+ 	-framework IOKit \
+ 	-framework Metal \
+@@ -20,6 +21,7 @@ SOURCES = \
+ 	cocoa_cursorclipping.m \
+ 	cocoa_display.m \
+ 	cocoa_event.m \
++	cocoa_gcmouse.m \
+ 	cocoa_main.m \
+ 	cocoa_opengl.m \
+ 	cocoa_status_item.m \
+diff --git a/dlls/winemac.drv/cocoa_gcmouse.m b/dlls/winemac.drv/cocoa_gcmouse.m
+new file mode 100644
+index 00000000000..5096768e7af
+--- /dev/null
++++ b/dlls/winemac.drv/cocoa_gcmouse.m
+@@ -0,0 +1,159 @@
++/*
++ * MACDRV GameController mouse support
++ *
++ * Copyright 2026 Elvin Hayatov
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++#import <AppKit/AppKit.h>
++#import <GameController/GameController.h>
++
++#include "macdrv_cocoa.h"
++#import "cocoa_app.h"
++#import "cocoa_event.h"
++#import "cocoa_window.h"
++
++#pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
++
++
++static NSMutableSet *configured_mice;
++static dispatch_queue_t gcmouse_queue;
++static BOOL observing_mice;
++static bool gcmouse_active;
++
++
++@interface WineApplicationController (GCMouseAccess)
++
++    - (WineWindow *) mouseCaptureWindow;
++
++@end
++
++
++@interface WineApplicationController (GCMouseNotifications)
++
++    - (void) gcmouseDidConnect:(NSNotification *)notification;
++    - (void) gcmouseDidDisconnect:(NSNotification *)notification;
++
++@end
++
++
++static void post_mouse_movement(float delta_x, float delta_y)
++{
++    WineApplicationController *controller;
++    WineWindow *window;
++    macdrv_event *event;
++
++    if (!macdrv_gcmouse_input_active() || !NSApp || (!delta_x && !delta_y)) return;
++
++    controller = [WineApplicationController sharedController];
++    window = [controller mouseCaptureWindow] ?: [controller frontWineWindow];
++    if (!window) return;
++
++    event = macdrv_create_event(MOUSE_MOVED_RAW, window);
++    event->mouse_moved.x = delta_x;
++    event->mouse_moved.y = -delta_y;
++    event->mouse_moved.time_ms = [controller ticksForEventTime:[[NSProcessInfo processInfo] systemUptime]];
++    [window.queue postEvent:event];
++    macdrv_release_event(event);
++}
++
++
++static void configure_mouse(GCMouse *mouse)
++{
++    GCMouseInput *input;
++
++    if (!mouse || [configured_mice containsObject:mouse]) return;
++
++    if (!(input = [mouse mouseInput])) return;
++
++    [mouse setHandlerQueue:gcmouse_queue];
++    [input setMouseMovedHandler:^(GCMouseInput *input, float delta_x, float delta_y) {
++        post_mouse_movement(delta_x, delta_y);
++    }];
++
++    [configured_mice addObject:mouse];
++    __atomic_store_n(&gcmouse_active, true, __ATOMIC_SEQ_CST);
++}
++
++
++static void remove_mouse(GCMouse *mouse)
++{
++    if (!mouse || ![configured_mice containsObject:mouse]) return;
++
++    [[mouse mouseInput] setMouseMovedHandler:nil];
++    [configured_mice removeObject:mouse];
++    __atomic_store_n(&gcmouse_active, [configured_mice count] != 0, __ATOMIC_SEQ_CST);
++}
++
++
++static void start_gcmouse_input(void)
++{
++    NSNotificationCenter *center;
++    WineApplicationController *controller;
++    GCMouse *mouse;
++
++    if (!use_gcmouse) return;
++    if (observing_mice) return;
++
++    if (@available(macOS 14.0, *))
++    {
++        if (!NSClassFromString(@"GCMouse")) return;
++
++        center = [NSNotificationCenter defaultCenter];
++        controller = [WineApplicationController sharedController];
++        gcmouse_queue = dispatch_queue_create("org.winehq.GCMouse", DISPATCH_QUEUE_SERIAL);
++        if (!gcmouse_queue) return;
++        dispatch_set_target_queue(gcmouse_queue,
++                                  dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0));
++        configured_mice = [[NSMutableSet alloc] init];
++        observing_mice = TRUE;
++
++        [center addObserver:controller selector:@selector(gcmouseDidConnect:)
++                     name:GCMouseDidConnectNotification object:nil];
++        [center addObserver:controller selector:@selector(gcmouseDidDisconnect:)
++                     name:GCMouseDidDisconnectNotification object:nil];
++
++        for (mouse in [GCMouse mice])
++            configure_mouse(mouse);
++    }
++}
++
++
++@implementation WineApplicationController (GCMouseNotifications)
++
++    - (void) gcmouseDidConnect:(NSNotification *)notification
++    {
++        configure_mouse([notification object]);
++    }
++
++    - (void) gcmouseDidDisconnect:(NSNotification *)notification
++    {
++        remove_mouse([notification object]);
++    }
++
++@end
++
++
++void macdrv_start_gcmouse_input(void)
++{
++    OnMainThreadAsync(^{ start_gcmouse_input(); });
++}
++
++
++bool macdrv_gcmouse_input_active(void)
++{
++    return __atomic_load_n(&gcmouse_active, __ATOMIC_SEQ_CST);
++}
+diff --git a/dlls/winemac.drv/event.c b/dlls/winemac.drv/event.c
+index 2808a09f834..f0e22d64306 100644
+--- a/dlls/winemac.drv/event.c
++++ b/dlls/winemac.drv/event.c
+@@ -55,6 +55,7 @@ static const char *dbgstr_event(int type)
+         "MOUSE_BUTTON",
+         "MOUSE_MOVED_RELATIVE",
+         "MOUSE_MOVED_ABSOLUTE",
++        "MOUSE_MOVED_RAW",
+         "MOUSE_SCROLL",
+         "QUERY_EVENT",
+         "QUERY_EVENT_NO_PREEMPT_WAIT",
+@@ -112,6 +113,7 @@ static macdrv_event_mask get_event_mask(DWORD mask)
+     {
+         event_mask |= event_mask_for_type(MOUSE_MOVED_RELATIVE);
+         event_mask |= event_mask_for_type(MOUSE_MOVED_ABSOLUTE);
++        event_mask |= event_mask_for_type(MOUSE_MOVED_RAW);
+     }
+ 
+     if (mask & QS_POSTMESSAGE)
+@@ -417,6 +419,7 @@ void macdrv_handle_event(const macdrv_event *event)
+         break;
+     case MOUSE_MOVED_RELATIVE:
+     case MOUSE_MOVED_ABSOLUTE:
++    case MOUSE_MOVED_RAW:
+         macdrv_mouse_moved(hwnd, event);
+         break;
+     case MOUSE_SCROLL:
+diff --git a/dlls/winemac.drv/macdrv_cocoa.h b/dlls/winemac.drv/macdrv_cocoa.h
+index 5fc7168416b..ff3101986dd 100644
+--- a/dlls/winemac.drv/macdrv_cocoa.h
++++ b/dlls/winemac.drv/macdrv_cocoa.h
+@@ -124,6 +124,7 @@
+ extern bool use_confinement_cursor_clipping;
+ extern bool cursor_clipping_locks_windows;
+ extern bool use_precise_scrolling;
++extern bool use_gcmouse;
+ extern int gl_surface_mode;
+ extern CFDictionaryRef localized_strings;
+ extern bool retina_enabled;  /* Whether Retina mode is enabled via registry setting. */
+@@ -283,6 +284,7 @@ static inline CGPoint cgpoint_win_from_mac(CGPoint point)
+     MOUSE_BUTTON,
+     MOUSE_MOVED_RELATIVE,
+     MOUSE_MOVED_ABSOLUTE,
++    MOUSE_MOVED_RAW,
+     MOUSE_SCROLL,
+     QUERY_EVENT,
+     QUERY_EVENT_NO_PREEMPT_WAIT,
+@@ -465,6 +467,8 @@ extern int macdrv_copy_event_from_queue(macdrv_event_queue queue,
+ extern int macdrv_register_hot_key(macdrv_event_queue q, unsigned int vkey, unsigned int mod_flags,
+                                    unsigned int keycode, unsigned int modifiers);
+ extern void macdrv_unregister_hot_key(macdrv_event_queue q, unsigned int vkey, unsigned int mod_flags);
++extern void macdrv_start_gcmouse_input(void);
++extern bool macdrv_gcmouse_input_active(void);
+ 
+ 
+ /* window */
+diff --git a/dlls/winemac.drv/macdrv_main.c b/dlls/winemac.drv/macdrv_main.c
+index 7510e2b7761..ee85ef56302 100644
+--- a/dlls/winemac.drv/macdrv_main.c
++++ b/dlls/winemac.drv/macdrv_main.c
+@@ -54,6 +54,7 @@ bool allow_immovable_windows = true;
+ bool use_confinement_cursor_clipping = true;
+ bool cursor_clipping_locks_windows = true;
+ bool use_precise_scrolling = true;
++bool use_gcmouse = true;
+ int gl_surface_mode = GL_SURFACE_IN_FRONT_OPAQUE;
+ bool retina_enabled = false;
+ bool enable_app_nap = false;
+@@ -357,6 +358,9 @@ static void setup_options(void)
+     if (!get_config_key(hkey, appkey, "UsePreciseScrolling", buffer, sizeof(buffer)))
+         use_precise_scrolling = IS_OPTION_TRUE(buffer[0]);
+ 
++    if (!get_config_key(hkey, appkey, "UseGCMouse", buffer, sizeof(buffer)))
++        use_gcmouse = IS_OPTION_TRUE(buffer[0]);
++
+     if (!get_config_key(hkey, appkey, "OpenGLSurfaceMode", buffer, sizeof(buffer)))
+     {
+         static const WCHAR transparentW[] = {'t','r','a','n','s','p','a','r','e','n','t',0};
+@@ -449,6 +453,7 @@ static NTSTATUS macdrv_init(void *arg)
+         return STATUS_UNSUCCESSFUL;
+     }
+ 
++    macdrv_start_gcmouse_input();
+     init_user_driver();
+     return STATUS_SUCCESS;
+ }
+diff --git a/dlls/winemac.drv/mouse.c b/dlls/winemac.drv/mouse.c
+index 51ae29ae84e..edb1764fc96 100644
+--- a/dlls/winemac.drv/mouse.c
++++ b/dlls/winemac.drv/mouse.c
+@@ -139,7 +139,8 @@ static void send_mouse_input(HWND hwnd, macdrv_window cocoa_window, UINT flags,
+     input.mi.time           = time;
+     input.mi.dwExtraInfo    = 0;
+ 
+-    NtUserSendHardwareInput(hwnd, 0, &input, 0);
++    /* GCMouse provides WM_INPUT movement; keep NSEvents for legacy cursor updates without duplicating it. */
++    NtUserSendHardwareInput(hwnd, macdrv_gcmouse_input_active() ? SEND_HWMSG_RAWINPUT : 0, &input, 0);
+ }
+ 
+ 
+@@ -877,12 +878,30 @@ void macdrv_mouse_button(HWND hwnd, const macdrv_event *event)
+ /***********************************************************************
+  *              macdrv_mouse_moved
+  *
+- * Handler for MOUSE_MOVED_RELATIVE and MOUSE_MOVED_ABSOLUTE events.
++ * Handler for mouse movement events.
+  */
+ void macdrv_mouse_moved(HWND hwnd, const macdrv_event *event)
+ {
+     UINT flags = MOUSEEVENTF_MOVE;
+ 
++    if (event->type == MOUSE_MOVED_RAW)
++    {
++        struct raw_mouse raw = { .count = 1 };
++        INPUT input = { .type = INPUT_MOUSE };
++
++        raw.data[0].x = event->mouse_moved.x;
++        raw.data[0].y = event->mouse_moved.y;
++        input.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_MOVE_NOCOALESCE;
++        input.mi.time = event->mouse_moved.time_ms;
++
++        TRACE("win %p/%p raw (%d,%d) time %lu (%lu ticks ago)\n", hwnd, event->window,
++              event->mouse_moved.x, event->mouse_moved.y, event->mouse_moved.time_ms,
++              (NtGetTickCount() - event->mouse_moved.time_ms));
++
++        NtUserSendHardwareInput(hwnd, SEND_HWMSG_RAWINPUT, &input, (LPARAM)&raw);
++        return;
++    }
++
+     TRACE("win %p/%p %s (%d,%d) drag %d time %lu (%lu ticks ago)\n", hwnd, event->window,
+           (event->type == MOUSE_MOVED_RELATIVE) ? "relative" : "absolute",
+           event->mouse_moved.x, event->mouse_moved.y, event->mouse_moved.drag,
+-- 
+GitLab
