@@ -15,8 +15,8 @@ let project = Project(
     ),
     settings: .settings(
         base: [
-            "MARKETING_VERSION": "3.0.2",
-            "CURRENT_PROJECT_VERSION": "30002",
+            "MARKETING_VERSION": "3.1.0",
+            "CURRENT_PROJECT_VERSION": "30100",
             "SWIFT_VERSION": "6.0",
             "MACOSX_DEPLOYMENT_TARGET": "14.0",
             "DEVELOPMENT_TEAM": "",
