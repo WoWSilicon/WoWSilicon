@@ -2,6 +2,7 @@ import Foundation
 
 enum BundledWineRuntime {
     static let environmentOverride = "WOWSILICON_WINE_RUNTIME"
+    static let stableANSIKeyboardLayoutEnvironmentKey = "WOWSILICON_STABLE_ANSI_HKL"
 
     static func rootURL(
         resourceURL: URL? = Bundle.main.resourceURL,
@@ -99,10 +100,16 @@ enum BundledWineRuntime {
         return result
     }
 
-    static func shellEnvironmentAssignments(_ rawValue: String) -> String {
+    static func shellEnvironmentAssignments(
+        _ rawValue: String,
+        stabilizeANSIKeyboardLayout: Bool = false
+    ) -> String {
         var variables = BundledX87Runtime.removingWineEnvironmentKeys(
             from: parseEnvironmentVariables(rawValue)
         )
+        if stabilizeANSIKeyboardLayout, variables[stableANSIKeyboardLayoutEnvironmentKey] == nil {
+            variables[stableANSIKeyboardLayoutEnvironmentKey] = "1"
+        }
         variables.removeValue(forKey: "WINEPREFIX")
         return variables.sorted { $0.key < $1.key }
             .map { "\($0.key)=\(shellQuote($0.value))" }

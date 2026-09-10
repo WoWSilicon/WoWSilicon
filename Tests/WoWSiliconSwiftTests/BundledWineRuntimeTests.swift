@@ -120,6 +120,35 @@ final class BundledWineRuntimeTests: XCTestCase {
         )
     }
 
+    func testShellEnvironmentAssignmentsDefaultsStableANSIKeyboardLayoutForWoW() {
+        let variables = "WINEPREFIX=/tmp/ignored;LANG=ru_RU.UTF-8"
+        XCTAssertEqual(
+            BundledWineRuntime.shellEnvironmentAssignments(variables),
+            "LANG='ru_RU.UTF-8'"
+        )
+        XCTAssertEqual(
+            BundledWineRuntime.shellEnvironmentAssignments(
+                variables,
+                stabilizeANSIKeyboardLayout: true
+            ),
+            "LANG='ru_RU.UTF-8' WOWSILICON_STABLE_ANSI_HKL='1'"
+        )
+    }
+
+    func testShellEnvironmentAssignmentsPreservesExplicitKeyboardWorkaroundSetting() {
+        for value in ["0", "1", ""] {
+            for automatic in [false, true] {
+                XCTAssertEqual(
+                    BundledWineRuntime.shellEnvironmentAssignments(
+                        "WOWSILICON_STABLE_ANSI_HKL=\(value);WINEPREFIX=/tmp/ignored;LANG=ru_RU.UTF-8",
+                        stabilizeANSIKeyboardLayout: automatic
+                    ),
+                    "LANG='ru_RU.UTF-8' WOWSILICON_STABLE_ANSI_HKL='\(value)'"
+                )
+            }
+        }
+    }
+
     func testWineExecutableRequiresExecutableFile() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

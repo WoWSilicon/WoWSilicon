@@ -1,0 +1,71 @@
+diff --git a/dlls/winemac.drv/keyboard.c b/dlls/winemac.drv/keyboard.c
+--- a/dlls/winemac.drv/keyboard.c
++++ b/dlls/winemac.drv/keyboard.c
+@@ -442,10 +442,18 @@
+     return locale->inotneutral ? entry->id : locale->idefaultlanguage;
+ }
+ 
++static BOOL stable_ansi_hkl_enabled(void)
++{
++    const char *value = getenv("WOWSILICON_STABLE_ANSI_HKL");
++    return value && !strcmp(value, "1");
++}
++
+ static HKL get_layout_hkl(struct layout *layout)
+ {
+-    if (!layout->layout_id) return UlongToHandle(MAKELONG(layout->lang, layout->lang));
+-    return UlongToHandle(MAKELONG(layout->lang, layout->layout_id));
++    LCID locale = stable_ansi_hkl_enabled() ? LOWORD(NtUserGetKeyboardLayout(0)) : layout->lang;
++
++    if (!layout->layout_id) return UlongToHandle(MAKELONG(locale, layout->lang));
++    return UlongToHandle(MAKELONG(locale, layout->layout_id));
+ }
+ 
+ /******************************************************************
+@@ -535,6 +543,7 @@
+  */
+ HKL macdrv_get_hkl_from_source(TISInputSourceRef input)
+ {
++    LCID locale = LOWORD(NtUserGetKeyboardLayout(0));
+     struct layout *layout;
+     HKL ret = 0;
+ 
+@@ -542,7 +551,9 @@
+ 
+     update_layout_list();
+     layout = get_layout_from_source(input);
+-    if (layout) ret = get_layout_hkl(layout);
++    if (layout && stable_ansi_hkl_enabled())
++        ret = UlongToHandle(MAKELONG(locale, locale));
++    else if (layout) ret = get_layout_hkl(layout);
+ 
+     pthread_mutex_unlock(&layout_list_mutex);
+ 
+@@ -1439,6 +1450,14 @@
+ 
+             if (scan & 0x100) vkey |= 0x100;
+ 
++            if ('A' <= vkey && vkey <= 'Z')
++            {
++                if (size < 2) return 0;
++                buffer[0] = vkey;
++                buffer[1] = 0;
++                return 1;
++            }
++
+             for (i = 0; i < ARRAY_SIZE(vkey_names); i++)
+             {
+                 if (vkey_names[i].vkey == vkey)
+@@ -1598,6 +1617,12 @@
+             UInt32 deadKeyState;
+             UniCharCount len;
+             BOOL deadKey = FALSE;
++
++            if ('A' <= wCode && wCode <= 'Z')
++            {
++                ret = wCode;
++                break;
++            }
+ 
+             if ((VK_PRIOR <= wCode && wCode <= VK_HELP) ||
+                 (VK_F1 <= wCode && wCode <= VK_F24))
