@@ -71,6 +71,7 @@ struct OptionsView: View {
             viewModel.refreshGraphicsSettings()
             viewModel.refreshVisualCppRuntimeStatus()
             viewModel.refreshGitStatus()
+            viewModel.refreshRosettaStatus()
             viewModel.beginOptionsSession()
             refreshRealmlist()
         }
@@ -247,6 +248,34 @@ struct OptionsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Dependencies")
                 .font(.headline)
+
+            dependencyStatusRow(
+                title: "Rosetta 2",
+                status: viewModel.rosettaStatus,
+                isBusy: viewModel.isRosettaInstallInProgress
+            )
+
+            HStack(spacing: 12) {
+                Button("Install Rosetta 2") {
+                    viewModel.installRosetta()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.isRosettaInstallInProgress || viewModel.rosettaStatus == .installed)
+
+                Button("Refresh") {
+                    viewModel.refreshRosettaStatus()
+                }
+                .buttonStyle(.bordered)
+                .disabled(viewModel.isRosettaInstallInProgress)
+            }
+
+            Text("Required to run Intel components on Apple silicon. This opens Terminal and runs Apple's Rosetta installer; follow its license prompt to continue.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+                .padding(.vertical, 4)
 
             dependencyStatusRow(
                 title: "Microsoft Visual C++ Runtime 2022",

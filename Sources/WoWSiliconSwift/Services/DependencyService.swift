@@ -30,6 +30,7 @@ enum DependencyServiceError: LocalizedError {
     case verificationFailed
     case monoInstallFailed(String)
     case gitInstallFailed(String)
+    case rosettaInstallFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -45,11 +46,14 @@ enum DependencyServiceError: LocalizedError {
             return reason.isEmpty ? "Wine Mono was not installed." : reason
         case .gitInstallFailed(let reason):
             return reason
+        case .rosettaInstallFailed(let reason):
+            return reason.isEmpty ? "Failed to open the Rosetta 2 installer." : reason
         }
     }
 }
 
 enum DependencyService {
+    static let rosettaInstallCommand = "/usr/sbin/softwareupdate --install-rosetta"
     private static let visualCppX86RedistURL = URL(string: "https://aka.ms/vs/17/release/vc_redist.x86.exe")!
     private static let visualCppX64RedistURL = URL(string: "https://aka.ms/vs/17/release/vc_redist.x64.exe")!
     private static let requiredX86RuntimeDLLs = [
@@ -74,6 +78,45 @@ enum DependencyService {
         "vcruntime140",
         "vcruntime140_1"
     ]
+
+    static func isRosettaInstalled() -> Bool {
+        guard let result = try? ProcessRunner.run(
+            executablePath: "/usr/bin/arch",
+            arguments: ["-x86_64", "/usr/bin/true"],
+            timeout: 30
+        ) else {
+            return false
+        }
+        return rosettaProbeIndicatesInstalled(exitCode: result.exitCode)
+    }
+
+    static func rosettaProbeIndicatesInstalled(exitCode: Int32) -> Bool {
+        exitCode == 0
+    }
+
+    static func installRosetta() throws {
+        let script = """
+        tell application "Terminal"
+            do script "\(rosettaInstallCommand)"
+            activate
+        end tell
+        """
+
+        let result: ProcessRunResult
+        do {
+            result = try ProcessRunner.run(
+                executablePath: "/usr/bin/osascript",
+                arguments: ["-e", script],
+                timeout: 30
+            )
+        } catch {
+            throw DependencyServiceError.rosettaInstallFailed(error.localizedDescription)
+        }
+
+        guard result.exitCode == 0 else {
+            throw DependencyServiceError.rosettaInstallFailed(result.combinedOutput)
+        }
+    }
 
     static func isGitInstalled() -> Bool {
         guard let gitURL = gitExecutableURL() else { return false }

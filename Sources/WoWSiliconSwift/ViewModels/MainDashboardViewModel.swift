@@ -53,6 +53,8 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var wineMonoStatus: DependencyInstallStatus = .unknown
     @Published private(set) var isGitInstallInProgress: Bool = false
     @Published private(set) var gitStatus: DependencyInstallStatus = .unknown
+    @Published private(set) var isRosettaInstallInProgress: Bool = false
+    @Published private(set) var rosettaStatus: DependencyInstallStatus = .unknown
     @Published private(set) var currentVersion: GameVersion?
     @Published private(set) var supportsAddons: Bool = false
     @Published private(set) var supportsMods: Bool = false
@@ -116,6 +118,7 @@ final class MainDashboardViewModel: ObservableObject {
         refreshVisualCppRuntimeStatus()
         refreshWineMonoStatus()
         refreshGitStatus()
+        refreshRosettaStatus()
     }
 
     func selectVersion(id: String) {
@@ -1181,6 +1184,46 @@ final class MainDashboardViewModel: ObservableObject {
             let installed = DependencyService.isGitInstalled()
             DispatchQueue.main.async {
                 self?.gitStatus = installed ? .installed : .missing
+            }
+        }
+    }
+
+    func installRosetta() {
+        guard !isRosettaInstallInProgress, rosettaStatus != .installed else { return }
+
+        isRosettaInstallInProgress = true
+        rosettaStatus = .inProgress("Opening installer...")
+        patchFeedback = nil
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                try DependencyService.installRosetta()
+                DispatchQueue.main.async {
+                    self?.isRosettaInstallInProgress = false
+                    self?.rosettaStatus = .inProgress("Installer opened")
+                    self?.patchFeedback = PatchFeedback(
+                        title: "Rosetta 2",
+                        message: "Finish the Rosetta 2 installation in Terminal, then refresh the status.",
+                        isError: false
+                    )
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.isRosettaInstallInProgress = false
+                    self?.rosettaStatus = .error(error.localizedDescription)
+                    self?.patchFeedback = PatchFeedback(title: "Rosetta 2 Install Failed", message: error.localizedDescription, isError: true)
+                }
+            }
+        }
+    }
+
+    func refreshRosettaStatus() {
+        guard !isRosettaInstallInProgress else { return }
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let installed = DependencyService.isRosettaInstalled()
+            DispatchQueue.main.async {
+                self?.rosettaStatus = installed ? .installed : .missing
             }
         }
     }
