@@ -5,6 +5,7 @@ enum LaunchServiceError: LocalizedError {
     case alreadyRunning
     case gamePathMissing
     case x87RuntimeMissing(String)
+    case vulkanDriverMissing(String)
     case wineMissing(String)
     case executableMissing(String)
     case vanillaTweaksMissing
@@ -21,6 +22,8 @@ enum LaunchServiceError: LocalizedError {
             return "Game path is not set. Please configure it before launching."
         case .x87RuntimeMissing(let path):
             return "Selected x87 runtime not found at \(path). Reinstall WoWSilicon and try again."
+        case .vulkanDriverMissing(let driver):
+            return "The \(driver) Vulkan driver is not installed in this Wine runtime. Run tools/wine-runtime/install-kosmickrisp.sh and rebuild WoWSilicon."
         case .wineMissing(let path):
             return "Bundled Wine executable not found at \(path). Reinstall WoWSilicon and try again."
         case .executableMissing(let path):
@@ -53,6 +56,9 @@ final class LaunchService: @unchecked Sendable {
 
     func launch(version: GameVersion, completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void) {
         do {
+            if version.settings.graphicsSettings.backend == .d9vk {
+                try PatchService.installD3D9DLL(for: version)
+            }
             let result = try prepareLaunchArtifacts(for: version)
 
             if !patchesAppearValid(for: version) {
@@ -102,6 +108,12 @@ final class LaunchService: @unchecked Sendable {
             let expectedPath = BundledWineRuntime.rootURL()?
                 .appendingPathComponent("bin/wine", isDirectory: false).path ?? "Contents/Resources/Wine/bin/wine"
             throw LaunchServiceError.wineMissing(expectedPath)
+        }
+
+        if version.settings.graphicsSettings.backend == .d9vk,
+           version.settings.graphicsSettings.vulkanDriver == .kosmicKrisp,
+           BundledWineRuntime.vulkanDriverManifestURL(for: .kosmicKrisp) == nil {
+            throw LaunchServiceError.vulkanDriverMissing(VulkanDriver.kosmicKrisp.displayName)
         }
 
         let wowExecutableURL: URL
@@ -160,6 +172,9 @@ final class LaunchService: @unchecked Sendable {
     }
 
     func shortcutShellScript(for version: GameVersion) throws -> String {
+        if version.settings.graphicsSettings.backend == .d9vk {
+            try PatchService.installD3D9DLL(for: version)
+        }
         let configuration = try prepareLaunchArtifacts(
             for: version,
             performPrelaunchActions: false
@@ -179,6 +194,22 @@ final class LaunchService: @unchecked Sendable {
             "/usr/bin/printf '%s\\n' \(shellQuote(spatialMode)) > \(shellQuote(spatialControlURL.path))",
             "/usr/bin/printf '%s\\n' \(shellQuote(normalizeMode)) > \(shellQuote(normalizeControlURL.path))"
         ]
+        if version.settings.graphicsSettings.backend == .d9vk {
+            guard let source = PatchService.resourceURL(
+                named: "d3d9",
+                extension: "dll",
+                subdirectory: PatchService.d3d9ResourceSubdirectory(
+                    for: version.settings.graphicsSettings.vulkanDriver
+                )
+            ) else {
+                throw LaunchServiceError.patchNotApplied
+            }
+            let destination = configuration.gameURL.appendingPathComponent("d3d9.dll")
+            setupCommands.insert(
+                "/bin/cp \(shellQuote(source.path)) \(shellQuote(destination.path)) || exit 1",
+                at: 0
+            )
+        }
         setupCommands.append(contentsOf: try AudioOutputService.shortcutSelectionCommands(
             outputID: version.settings.audioOutputDeviceID,
             inputID: version.settings.audioInputDeviceID,
@@ -342,7 +373,8 @@ final class LaunchService: @unchecked Sendable {
             key: "WINEPREFIX",
             value: WineRegistrySupport.winePrefixURL().path
         )
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\"\(outputDeviceOverride)\(inputDeviceOverride) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let vulkanDriver = vulkanDriverShellAssignment(for: settings.graphicsSettings)
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath)\(vulkanDriver) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\"\(outputDeviceOverride)\(inputDeviceOverride) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = BundledWineRuntime.shellEnvironmentAssignments(settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
@@ -386,7 +418,8 @@ final class LaunchService: @unchecked Sendable {
             value: WineRegistrySupport.winePrefixURL().path
         )
         let custom = BundledWineRuntime.shellEnvironmentAssignments(version.settings.environmentVariables)
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINEDLLOVERRIDES=\"\(dllOverride)\""
+        let vulkanDriver = vulkanDriverShellAssignment(for: version.settings.graphicsSettings)
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath)\(vulkanDriver) WINEDLLOVERRIDES=\"\(dllOverride)\""
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
         let shellCommand = "\(envPart) \(wine) \(installer)"
 
@@ -492,6 +525,15 @@ final class LaunchService: @unchecked Sendable {
     }
 
     func launchThirdPartyLauncher(version: GameVersion, completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void) {
+        if version.settings.graphicsSettings.backend == .d9vk,
+           version.settings.graphicsSettings.vulkanDriver == .kosmicKrisp,
+           BundledWineRuntime.vulkanDriverManifestURL(for: .kosmicKrisp) == nil {
+            DispatchQueue.main.async {
+                completion(.failure(.vulkanDriverMissing(VulkanDriver.kosmicKrisp.displayName)))
+            }
+            return
+        }
+
         let exePath = version.launcherExePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !exePath.isEmpty else {
             DispatchQueue.main.async { completion(.failure(.executableMissing("No launcher configured"))) }
@@ -539,7 +581,8 @@ final class LaunchService: @unchecked Sendable {
             key: "WINEPREFIX",
             value: WineRegistrySupport.winePrefixURL().path
         )
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_D3D_CONFIG=renderer=vulkan WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\"\(outputDeviceOverride)\(inputDeviceOverride) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let vulkanDriver = vulkanDriverShellAssignment(for: version.settings.graphicsSettings)
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath)\(vulkanDriver) WINE_D3D_CONFIG=renderer=vulkan WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\"\(outputDeviceOverride)\(inputDeviceOverride) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = BundledWineRuntime.shellEnvironmentAssignments(version.settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
@@ -570,6 +613,16 @@ final class LaunchService: @unchecked Sendable {
         } catch {
             DispatchQueue.main.async { completion(.failure(.processLaunchFailed(error.localizedDescription))) }
         }
+    }
+
+    private func vulkanDriverShellAssignment(for settings: GraphicsSettings) -> String {
+        guard settings.backend == .d9vk,
+              let assignment = BundledWineRuntime.vulkanDriverShellAssignment(
+                for: settings.vulkanDriver
+              ) else {
+            return ""
+        }
+        return " \(assignment)"
     }
 
     func checkVersionMismatch(for version: GameVersion) -> (base: String, tweaked: String)? {

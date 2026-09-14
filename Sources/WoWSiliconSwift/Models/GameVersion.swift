@@ -8,7 +8,7 @@ enum GraphicsBackend: String, Codable, CaseIterable, Sendable {
 
     var displayName: String {
         switch self {
-        case .d9vk: return "D9VK"
+        case .d9vk: return "DXVK"
         case .mtld3d: return "MTLD3D"
         }
     }
@@ -24,6 +24,25 @@ enum GraphicsBackend: String, Codable, CaseIterable, Sendable {
         switch self {
         case .d9vk: return "d3d9=n,b"
         case .mtld3d: return "d3d9=b"
+        }
+    }
+}
+
+enum VulkanDriver: String, Codable, CaseIterable, Sendable {
+    case moltenVK = "moltenvk"
+    case kosmicKrisp = "kosmickrisp"
+
+    var displayName: String {
+        switch self {
+        case .moltenVK: return "MoltenVK"
+        case .kosmicKrisp: return "KosmicKrisp"
+        }
+    }
+
+    var manifestFileName: String {
+        switch self {
+        case .moltenVK: return "MoltenVK_icd.json"
+        case .kosmicKrisp: return "KosmicKrisp_icd.json"
         }
     }
 }
@@ -109,6 +128,7 @@ enum ShadowQuality: String, Codable, CaseIterable, Sendable {
 
 struct GraphicsSettings: Codable, Equatable, Sendable {
     var backend: GraphicsBackend
+    var vulkanDriver: VulkanDriver
     var hdrEnabled: Bool
     var windowMode: WindowMode
     var resolution: String
@@ -126,6 +146,7 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
 
     static let `default` = GraphicsSettings(
         backend: .d9vk,
+        vulkanDriver: .moltenVK,
         hdrEnabled: false,
         windowMode: .windowed,
         resolution: "",
@@ -150,13 +171,14 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
     static let commonRefreshRates = [30, 60, 120, 144, 165, 240]
 
     enum CodingKeys: String, CodingKey {
-        case backend, hdrEnabled, windowMode, resolution, refreshRate, vsync, multisampling
+        case backend, vulkanDriver, hdrEnabled, windowMode, resolution, refreshRate, vsync, multisampling
         case textureFiltering, specular, projectedTextures
         case viewDistance, groundEffectDensity, weatherDensity, particleDensity, shadowQuality
     }
 
     init(
         backend: GraphicsBackend = .d9vk,
+        vulkanDriver: VulkanDriver = .moltenVK,
         hdrEnabled: Bool = false,
         windowMode: WindowMode = .windowed,
         resolution: String = "",
@@ -173,6 +195,7 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
         shadowQuality: ShadowQuality = .off
     ) {
         self.backend = backend
+        self.vulkanDriver = vulkanDriver
         self.hdrEnabled = hdrEnabled
         self.windowMode = windowMode
         self.resolution = resolution
@@ -192,6 +215,7 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         backend = try c.decodeIfPresent(GraphicsBackend.self, forKey: .backend) ?? .d9vk
+        vulkanDriver = try c.decodeIfPresent(VulkanDriver.self, forKey: .vulkanDriver) ?? .moltenVK
         hdrEnabled = try c.decodeIfPresent(Bool.self, forKey: .hdrEnabled) ?? false
         windowMode = try c.decodeIfPresent(WindowMode.self, forKey: .windowMode) ?? .windowed
         resolution = try c.decodeIfPresent(String.self, forKey: .resolution) ?? ""

@@ -36,6 +36,32 @@ final class BundledWineRuntimeTests: XCTestCase {
         )
     }
 
+    func testVulkanDriverManifestRequiresInstalledFile() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let manifests = root.appendingPathComponent("lib/vulkan/icd.d", isDirectory: true)
+        try FileManager.default.createDirectory(at: manifests, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let environment = [BundledWineRuntime.environmentOverride: root.path]
+
+        XCTAssertNil(BundledWineRuntime.vulkanDriverManifestURL(
+            for: .kosmicKrisp,
+            resourceURL: nil,
+            environment: environment
+        ))
+
+        let manifest = manifests.appendingPathComponent(VulkanDriver.kosmicKrisp.manifestFileName)
+        XCTAssertTrue(FileManager.default.createFile(atPath: manifest.path, contents: Data()))
+        XCTAssertEqual(
+            BundledWineRuntime.vulkanDriverManifestURL(
+                for: .kosmicKrisp,
+                resourceURL: nil,
+                environment: environment
+            ),
+            manifest
+        )
+    }
+
     func testEnvironmentRemovesX87TranslationFromHelperProcesses() {
         let environment = BundledWineRuntime.makeEnvironment(
             resourceURL: nil,

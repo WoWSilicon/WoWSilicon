@@ -54,7 +54,9 @@ enum PatchingStatusChecker {
             if let bundledURL = PatchService.resourceURL(
                 named: "d3d9",
                 extension: "dll",
-                subdirectory: "Patching/d9vk"
+                subdirectory: PatchService.d3d9ResourceSubdirectory(
+                    for: version.settings.graphicsSettings.vulkanDriver
+                )
             ), fileChecksum(at: d3d9URL) != fileChecksum(at: bundledURL) {
                 return PatchStatusDescriptor(
                     applied: false,
@@ -220,7 +222,9 @@ enum PatchingStatusChecker {
                 relativePath: "d3d9.dll",
                 resourceName: "d3d9",
                 resourceExtension: "dll",
-                resourceSubdirectory: "Patching/d9vk",
+                resourceSubdirectory: PatchService.d3d9ResourceSubdirectory(
+                    for: version.settings.graphicsSettings.vulkanDriver
+                ),
                 displayName: "d3d9.dll"
             ),
         ]
