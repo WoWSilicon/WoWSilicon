@@ -8,7 +8,7 @@
     "commit": "37540b5d94ac1c86e2599ef55d7f3a15e3237ce8"
   },
   "mtld3d": {
-    "version": "v0.7.0"
+    "version": "v0.9.0"
   },
   "overlays": {
     "winerosetta": [],
@@ -16,22 +16,22 @@
       {
         "source": "mtld3d.conf",
         "destination": "lib/mtld3d.conf",
-        "sha256": "7d6292a82cecd8ee190f53aac444157f98822aa264d08329ba3344b57cf16917"
+        "sha256": "f72c6dc11830e7edfc919fc34a254da0727c971aaa4b737b6face33891ef8cb3"
       },
       {
         "source": "wine/i386-windows/d3d9.dll",
         "destination": "lib/wine/i386-windows/d3d9.dll",
-        "sha256": "daeb5f40f07ccf901a07947b44f5caac6206adeb8022058c7b90257e6d6bf4fd"
+        "sha256": "917270c6e28fec31ef35d933e5c8b6b10347b271092159991ac8192d603aca13"
       },
       {
         "source": "wine/i386-windows/mtld3d.dll",
         "destination": "lib/wine/i386-windows/mtld3d.dll",
-        "sha256": "19ae5c0a90dba32c8faf1543c80e521737677b3401499282a090e26af27d24cd"
+        "sha256": "27fbea668585f8d6b9f3381c7239090a68d5cd98951a026b45f45966a30b2833"
       },
       {
         "source": "wine/x86_64-unix/mtld3d.so",
         "destination": "lib/wine/x86_64-unix/mtld3d.so",
-        "sha256": "6f7ec6e4d000c25000ac114c80d90dae86a75aeef3057c0d43590ee6c51de982"
+        "sha256": "bd7fb25ea21f3e3b9344fa61f7be6d93066c0368336ee5956d36dbe78864cc50"
       }
     ],
     "external": [
