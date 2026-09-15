@@ -55,6 +55,7 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var gitStatus: DependencyInstallStatus = .unknown
     @Published private(set) var isRosettaInstallInProgress: Bool = false
     @Published private(set) var rosettaStatus: DependencyInstallStatus = .unknown
+    @Published var shouldShowRosettaInstallPrompt: Bool = false
     @Published private(set) var currentVersion: GameVersion?
     @Published private(set) var supportsAddons: Bool = false
     @Published private(set) var supportsMods: Bool = false
@@ -118,7 +119,7 @@ final class MainDashboardViewModel: ObservableObject {
         refreshVisualCppRuntimeStatus()
         refreshWineMonoStatus()
         refreshGitStatus()
-        refreshRosettaStatus()
+        refreshRosettaStatus(promptIfMissing: true)
     }
 
     func selectVersion(id: String) {
@@ -1217,14 +1218,24 @@ final class MainDashboardViewModel: ObservableObject {
         }
     }
 
-    func refreshRosettaStatus() {
+    func refreshRosettaStatus(promptIfMissing: Bool = false) {
         guard !isRosettaInstallInProgress else { return }
 
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let installed = DependencyService.isRosettaInstalled()
             DispatchQueue.main.async {
                 self?.rosettaStatus = installed ? .installed : .missing
+                if promptIfMissing && !installed {
+                    self?.shouldShowRosettaInstallPrompt = true
+                }
             }
+        }
+    }
+
+    func handleRosettaInstallPrompt(install: Bool) {
+        shouldShowRosettaInstallPrompt = false
+        if install {
+            installRosetta()
         }
     }
 
