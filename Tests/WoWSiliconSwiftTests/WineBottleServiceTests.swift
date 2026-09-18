@@ -88,6 +88,64 @@ final class WineBottleServiceTests: XCTestCase {
         ))
     }
 
+    func testExternalUserProfileMigrationCopiesDataIntoBottleAndKeepsSource() throws {
+        let home = temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let bottle = WineBottleService.defaultBottleURL(homeDirectory: home)
+        let users = bottle.appendingPathComponent("drive_c/users", isDirectory: true)
+        let externalProfile = home.appendingPathComponent("Wine", isDirectory: true)
+        let bottleProfile = users.appendingPathComponent("tester", isDirectory: true)
+
+        try FileManager.default.createDirectory(at: users, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: externalProfile.appendingPathComponent("AppData", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try Data("settings".utf8).write(
+            to: externalProfile.appendingPathComponent("AppData/settings.txt")
+        )
+        try FileManager.default.createSymbolicLink(
+            at: bottleProfile,
+            withDestinationURL: externalProfile
+        )
+
+        XCTAssertTrue(try WineBottleService.migrateExternalUserProfileIfNeeded(
+            bottleURL: bottle,
+            homeDirectory: home
+        ))
+        XCTAssertFalse(try bottleProfile.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink ?? true)
+        XCTAssertEqual(
+            try String(contentsOf: bottleProfile.appendingPathComponent("AppData/settings.txt"), encoding: .utf8),
+            "settings"
+        )
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: externalProfile.appendingPathComponent("AppData/settings.txt").path
+        ))
+        XCTAssertFalse(try WineBottleService.migrateExternalUserProfileIfNeeded(
+            bottleURL: bottle,
+            homeDirectory: home
+        ))
+    }
+
+    func testExternalUserProfileMigrationIgnoresOtherSymlinks() throws {
+        let home = temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let bottle = WineBottleService.defaultBottleURL(homeDirectory: home)
+        let users = bottle.appendingPathComponent("drive_c/users", isDirectory: true)
+        let otherProfile = home.appendingPathComponent("OtherProfile", isDirectory: true)
+        let bottleProfile = users.appendingPathComponent("tester", isDirectory: true)
+
+        try FileManager.default.createDirectory(at: users, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: otherProfile, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: bottleProfile, withDestinationURL: otherProfile)
+
+        XCTAssertFalse(try WineBottleService.migrateExternalUserProfileIfNeeded(
+            bottleURL: bottle,
+            homeDirectory: home
+        ))
+        XCTAssertTrue(try bottleProfile.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink ?? false)
+    }
+
     private func temporaryHome() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("WoWSiliconBottleTests-\(UUID().uuidString)", isDirectory: true)

@@ -128,6 +128,67 @@ enum WineBottleService {
         return destination
     }
 
+    @discardableResult
+    static func migrateExternalUserProfileIfNeeded(
+        bottleURL: URL = currentBottleURL(),
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
+        fileManager: FileManager = .default
+    ) throws -> Bool {
+        let usersURL = bottleURL.appendingPathComponent("drive_c/users", isDirectory: true)
+        guard fileManager.fileExists(atPath: usersURL.path) else { return false }
+        let userURLs = try fileManager.contentsOfDirectory(
+            at: usersURL,
+            includingPropertiesForKeys: [.isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        )
+
+        let externalProfileURL = homeDirectory
+            .appendingPathComponent("Wine", isDirectory: true)
+            .standardizedFileURL
+        var migrated = false
+
+        for userURL in userURLs {
+            let values = try userURL.resourceValues(forKeys: [.isSymbolicLinkKey])
+            guard values.isSymbolicLink == true else { continue }
+
+            let rawDestination = try fileManager.destinationOfSymbolicLink(atPath: userURL.path)
+            let destinationURL: URL
+            if rawDestination.hasPrefix("/") {
+                destinationURL = URL(fileURLWithPath: rawDestination, isDirectory: true)
+            } else {
+                destinationURL = userURL.deletingLastPathComponent()
+                    .appendingPathComponent(rawDestination, isDirectory: true)
+            }
+            guard destinationURL.standardizedFileURL == externalProfileURL else { continue }
+
+            let temporaryURL = usersURL.appendingPathComponent(
+                ".\(userURL.lastPathComponent)-WoWSilicon-migration-\(UUID().uuidString)",
+                isDirectory: true
+            )
+            defer { try? fileManager.removeItem(at: temporaryURL) }
+
+            if fileManager.fileExists(atPath: externalProfileURL.path) {
+                try fileManager.copyItem(at: externalProfileURL, to: temporaryURL)
+            } else {
+                try fileManager.createDirectory(at: temporaryURL, withIntermediateDirectories: false)
+            }
+
+            try fileManager.removeItem(at: userURL)
+            do {
+                try fileManager.moveItem(at: temporaryURL, to: userURL)
+            } catch {
+                try? fileManager.createSymbolicLink(
+                    atPath: userURL.path,
+                    withDestinationPath: rawDestination
+                )
+                throw error
+            }
+            migrated = true
+        }
+
+        return migrated
+    }
+
     private static func destinationIsAvailable(_ url: URL, fileManager: FileManager) -> Bool {
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return true }

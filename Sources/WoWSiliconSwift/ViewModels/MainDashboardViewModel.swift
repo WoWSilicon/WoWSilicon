@@ -96,6 +96,20 @@ final class MainDashboardViewModel: ObservableObject {
         userPrefs = prefsStore.load()
         normalizeTelemetryPrefs()
         wineBottlePath = WineBottleService.currentBottleURL(prefs: userPrefs).path
+        do {
+            if try WineBottleService.migrateExternalUserProfileIfNeeded(
+                bottleURL: WineBottleService.currentBottleURL(prefs: userPrefs)
+            ) {
+                debugPrint("Copied the Wine user profile into the configured WoWSilicon bottle; ~/Wine was kept as a backup.")
+            }
+        } catch {
+            debugPrint("Wine user profile migration failed: \(error.localizedDescription)")
+            patchFeedback = PatchFeedback(
+                title: "Wine Profile Migration Failed",
+                message: "WoWSilicon could not move the Windows user profile into the selected bottle. Your existing ~/Wine folder was not removed. \(error.localizedDescription)",
+                isError: true
+            )
+        }
         updateWineBottleMigrationPromptState()
         TelemetryService.shared.setClientTelemetryEnabled(userPrefs.telemetryEnabled)
 
