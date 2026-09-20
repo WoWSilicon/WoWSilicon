@@ -24,7 +24,6 @@ final class VersionStoreTests: XCTestCase {
             supportsVanillaTweaks: true,
             supportsDLLLoading: true,
             usesRosettaPatching: true,
-            usesDivxDecoderPatch: false,
             settings: VersionSettings(enableMetalHud: true)
         )
         var manager = VersionManager.makeDefault()

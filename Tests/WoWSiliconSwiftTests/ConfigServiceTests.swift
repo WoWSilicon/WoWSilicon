@@ -121,7 +121,6 @@ final class ConfigServiceTests: XCTestCase {
             supportsVanillaTweaks: wowVersion == "1.12.1",
             supportsDLLLoading: true,
             usesRosettaPatching: true,
-            usesDivxDecoderPatch: false,
             settings: VersionSettings(graphicsSettings: settings)
         )
     }

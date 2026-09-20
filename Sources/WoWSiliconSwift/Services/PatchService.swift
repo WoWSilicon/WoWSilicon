@@ -88,12 +88,16 @@ enum PatchService {
 
         if version.usesRosettaPatching && version.supportsDLLLoading {
             try patchDivxDecoder(gameURL: gameURL, customVariables: version.settings.environmentVariables)
+        } else {
+            try revertDivxDecoder(gameURL: gameURL)
         }
 
         ensureGxResolution(in: gameURL)
     }
 
     private static func patchDivxDecoder(gameURL: URL, customVariables: String) throws {
+        try revertDivxDecoder(gameURL: gameURL)
+
         guard let wineExecutable = BundledWineRuntime.wineExecutableURL() else {
             let expectedPath = BundledWineRuntime.rootURL()?
                 .appendingPathComponent("bin/wine", isDirectory: false).path ?? "Contents/Resources/Wine/bin/wine"
@@ -158,7 +162,7 @@ enum PatchService {
         }
     }
 
-    private static func revertDivxDecoder(gameURL: URL) throws {
+    static func revertDivxDecoder(gameURL: URL) throws {
         for name in ["DivxDecoder.dll", "DivxTac.dll"] {
             let fileURL = gameURL.appendingPathComponent(name)
             let bakURL  = gameURL.appendingPathComponent("\(name).bak")

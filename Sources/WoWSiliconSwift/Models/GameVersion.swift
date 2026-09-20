@@ -421,7 +421,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     var supportsVanillaTweaks: Bool
     var supportsDLLLoading: Bool
     var usesRosettaPatching: Bool
-    var usesDivxDecoderPatch: Bool
     var optimizationLevel: OptimizationLevel
     var settings: VersionSettings
     var launcherExePath: String
@@ -514,7 +513,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         supportsVanillaTweaks: Bool,
         supportsDLLLoading: Bool,
         usesRosettaPatching: Bool,
-        usesDivxDecoderPatch: Bool,
         optimizationLevel: OptimizationLevel = .low,
         settings: VersionSettings = VersionSettings(),
         launcherExePath: String = "",
@@ -529,7 +527,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         self.supportsVanillaTweaks = supportsVanillaTweaks
         self.supportsDLLLoading = supportsDLLLoading
         self.usesRosettaPatching = usesRosettaPatching
-        self.usesDivxDecoderPatch = usesDivxDecoderPatch
         self.optimizationLevel = optimizationLevel
         self.settings = settings
         self.launcherExePath = launcherExePath
@@ -546,7 +543,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         case supportsVanillaTweaks = "supports_vanilla_tweaks"
         case supportsDLLLoading = "supports_dll_loading"
         case usesRosettaPatching = "uses_rosetta_patching"
-        case usesDivxDecoderPatch = "uses_divx_decoder_patch"
         case optimizationLevel = "optimization_level"
         case settings
         case launcherExePath = "launcher_exe_path"
@@ -564,7 +560,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         supportsVanillaTweaks = try container.decodeIfPresent(Bool.self, forKey: .supportsVanillaTweaks) ?? false
         supportsDLLLoading = try container.decodeIfPresent(Bool.self, forKey: .supportsDLLLoading) ?? false
         usesRosettaPatching = try container.decodeIfPresent(Bool.self, forKey: .usesRosettaPatching) ?? false
-        usesDivxDecoderPatch = try container.decodeIfPresent(Bool.self, forKey: .usesDivxDecoderPatch) ?? false
         optimizationLevel = try container.decodeIfPresent(OptimizationLevel.self, forKey: .optimizationLevel) ?? .low
         settings = try container.decodeIfPresent(VersionSettings.self, forKey: .settings) ?? VersionSettings()
         launcherExePath = try container.decodeIfPresent(String.self, forKey: .launcherExePath) ?? ""
@@ -577,7 +572,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         supportsVanillaTweaks = defaults.supportsVanillaTweaks
         supportsDLLLoading = defaults.supportsDLLLoading
         usesRosettaPatching = defaults.usesRosettaPatching
-        usesDivxDecoderPatch = defaults.usesDivxDecoderPatch
         optimizationLevel = defaults.optimizationLevel
 
         if !supportsVanillaTweaks {
@@ -607,7 +601,6 @@ struct VersionManager: Codable, Sendable {
             supportsVanillaTweaks: true,
             supportsDLLLoading: true,
             usesRosettaPatching: true,
-            usesDivxDecoderPatch: false,
             optimizationLevel: .high,
             settings: VersionSettings(autoDeleteWdb: true, enableLibSiliconPatch: true)
         ),
@@ -619,7 +612,6 @@ struct VersionManager: Codable, Sendable {
             supportsVanillaTweaks: false,
             supportsDLLLoading: true,
             usesRosettaPatching: true,
-            usesDivxDecoderPatch: false,
             optimizationLevel: .mid,
             settings: VersionSettings(autoDeleteWdb: true)
         ),
@@ -631,7 +623,6 @@ struct VersionManager: Codable, Sendable {
             supportsVanillaTweaks: false,
             supportsDLLLoading: true,
             usesRosettaPatching: true,
-            usesDivxDecoderPatch: false,
             optimizationLevel: .high,
             settings: VersionSettings(autoDeleteWdb: true, enableLibSiliconPatch: true)
         )
@@ -646,7 +637,6 @@ struct VersionManager: Codable, Sendable {
         supportsVanillaTweaks: false,
         supportsDLLLoading: false,
         usesRosettaPatching: false,
-        usesDivxDecoderPatch: false,
         settings: VersionSettings(autoDeleteWdb: false)
     )
 
