@@ -68,6 +68,7 @@ final class MainDashboardViewModel: ObservableObject {
     private var userPrefs: UserPrefs
     private var pendingVanillaTweaksLaunch = false
     private var pendingWineLaunchVersion: GameVersion?
+    private var playToWineInterval: LaunchPerformanceInterval?
     private var optionsSessionInitialVanillaTweaksParameters: String?
     private var optionsSessionInitialVersionID: String?
     private var hasActiveOptionsSession = false
@@ -663,6 +664,7 @@ final class MainDashboardViewModel: ObservableObject {
             return
         }
         guard !isCheckingWineProcesses else { return }
+        beginPlayToWine(for: currentVersion)
 
         patchFeedback = nil
         isCheckingWineProcesses = true
@@ -673,12 +675,15 @@ final class MainDashboardViewModel: ObservableObject {
                     try await Task.sleep(for: .milliseconds(100))
                 } catch {
                     self?.isCheckingWineProcesses = false
+                    self?.endPlayToWine(outcome: "cancelled")
                     return
                 }
             }
 
             let liveProcessCount = await Task.detached(priority: .userInitiated) {
-                WineProcessMonitor.currentApplicationProcessCount()
+                LaunchPerformance.measure("Wine Process Check") {
+                    WineProcessMonitor.currentApplicationProcessCount()
+                }
             }.value
 
             guard let self else { return }
@@ -689,6 +694,7 @@ final class MainDashboardViewModel: ObservableObject {
             }
 
             if let liveProcessCount, liveProcessCount > 0 {
+                self.endPlayToWine(outcome: "existing Wine prompt")
                 self.pendingWineLaunchVersion = currentVersion
                 self.shouldShowExistingWinePrompt = true
             } else {
@@ -703,6 +709,7 @@ final class MainDashboardViewModel: ObservableObject {
         pendingWineLaunchVersion = nil
 
         guard let cleanUp else { return }
+        beginPlayToWine(for: pendingVersion)
         if cleanUp {
             forceQuitWine(launchAfter: pendingVersion)
         } else {
@@ -715,6 +722,7 @@ final class MainDashboardViewModel: ObservableObject {
         // Check for version mismatch if using vanilla tweaks
         if currentVersion.settings.enableVanillaTweaks {
             if let mismatch = launchService.checkVersionMismatch(for: currentVersion) {
+                endPlayToWine(outcome: "version mismatch prompt")
                 self.versionMismatchData = mismatch
                 self.shouldShowVersionMismatchPrompt = true
                 return
@@ -725,7 +733,9 @@ final class MainDashboardViewModel: ObservableObject {
         let outputID = currentVersion.settings.audioOutputDeviceID
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                try AudioOutputService.selectOutput(id: outputID, customVariables: customVariables)
+                try LaunchPerformance.measure("Audio Output Setup") {
+                    try AudioOutputService.selectOutput(id: outputID, customVariables: customVariables)
+                }
                 DispatchQueue.main.async {
                     self?.launchPreparedVersion(currentVersion)
                 }
@@ -749,9 +759,11 @@ final class MainDashboardViewModel: ObservableObject {
                 guard let self else { return }
                 switch result {
                 case .success:
+                    self.endPlayToWine(outcome: "Wine process started")
                     self.recordWowStartTelemetry(for: currentVersion)
                     break
                 case .failure(let error):
+                    self.endPlayToWine(outcome: "failed")
                     switch error {
                     case .vanillaTweaksMissing:
                         self.pendingVanillaTweaksLaunch = true
@@ -763,6 +775,17 @@ final class MainDashboardViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    private func beginPlayToWine(for version: GameVersion) {
+        endPlayToWine(outcome: "superseded")
+        playToWineInterval = LaunchPerformance.beginPlayToWine(profile: version.id)
+    }
+
+    private func endPlayToWine(outcome: String) {
+        guard let playToWineInterval else { return }
+        LaunchPerformance.endPlayToWine(playToWineInterval, outcome: outcome)
+        self.playToWineInterval = nil
     }
 
     func audioOutputBinding() -> Binding<String> {

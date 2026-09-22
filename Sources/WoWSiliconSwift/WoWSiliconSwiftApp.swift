@@ -19,6 +19,7 @@ struct WoWSiliconSwiftApp: App {
                 ))
                 .registerEnvironmentValues(viewModel)
                 .onAppear {
+                    appDelegate.firstWindowDidAppear()
                     configureApplication()
                 }
         }
@@ -42,7 +43,16 @@ struct WoWSiliconSwiftApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var appLaunchInterval: LaunchPerformanceInterval? = LaunchPerformance.beginAppLaunch()
+
+    func firstWindowDidAppear() {
+        guard let appLaunchInterval else { return }
+        LaunchPerformance.endAppLaunch(appLaunchInterval)
+        self.appLaunchInterval = nil
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         .terminateNow
     }

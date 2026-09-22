@@ -57,20 +57,31 @@ final class LaunchService: @unchecked Sendable {
     func launch(version: GameVersion, completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void) {
         do {
             if version.settings.graphicsSettings.backend == .d9vk {
-                try PatchService.installD3D9DLL(for: version)
+                try LaunchPerformance.measure("D3D9 Installation") {
+                    try PatchService.installD3D9DLL(for: version)
+                }
             }
-            let result = try prepareLaunchArtifacts(for: version)
+            let result = try LaunchPerformance.measure("Launch Artifact Preparation") {
+                try prepareLaunchArtifacts(for: version)
+            }
 
-            if !patchesAppearValid(for: version) {
+            let patchesAreValid = LaunchPerformance.measure("Patch Validation") {
+                patchesAppearValid(for: version)
+            }
+            if !patchesAreValid {
                 throw LaunchServiceError.patchNotApplied
             }
 
             if version.settings.showTerminalNormally {
-                try launchViaTerminal(configuration: result)
+                try LaunchPerformance.measure("Wine Process Spawn") {
+                    try launchViaTerminal(configuration: result)
+                }
                 DispatchQueue.main.async { completion(.success(())) }
                 DispatchQueue.main.async { self.processDidTerminate?() }
             } else {
-                try launchIntegrated(configuration: result, completion: completion)
+                try LaunchPerformance.measure("Wine Process Spawn") {
+                    try launchIntegrated(configuration: result, completion: completion)
+                }
             }
         } catch let error as LaunchServiceError {
             DispatchQueue.main.async { completion(.failure(error)) }
@@ -143,14 +154,18 @@ final class LaunchService: @unchecked Sendable {
         }
 
         if performPrelaunchActions && version.settings.autoDeleteWdb {
-            deleteWDBDirectories(at: gameURL)
+            LaunchPerformance.measure("WDB Cleanup") {
+                deleteWDBDirectories(at: gameURL)
+            }
         }
 
         let spatialAudioControlURL = SpatialAudioService.controlURL()
         let normalizeAudioControlURL = SpatialAudioService.normalizeAudioControlURL()
         if performPrelaunchActions {
-            try SpatialAudioService.setEnabled(version.settings.spatializeStereo, controlURL: spatialAudioControlURL)
-            try SpatialAudioService.setNormalizeAudio(version.settings.normalizeAudio, controlURL: normalizeAudioControlURL)
+            try LaunchPerformance.measure("Audio Control Writes") {
+                try SpatialAudioService.setEnabled(version.settings.spatializeStereo, controlURL: spatialAudioControlURL)
+                try SpatialAudioService.setNormalizeAudio(version.settings.normalizeAudio, controlURL: normalizeAudioControlURL)
+            }
         }
 
         let shellCommand = makeShellCommand(
