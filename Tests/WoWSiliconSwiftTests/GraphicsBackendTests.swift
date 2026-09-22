@@ -25,6 +25,15 @@ final class GraphicsBackendTests: XCTestCase {
         XCTAssertEqual(VulkanDriver.kosmicKrisp.manifestFileName, "KosmicKrisp_icd.json")
     }
 
+    func testKosmicKrispRequiresMacOS26OrLater() {
+        let macOS15 = OperatingSystemVersion(majorVersion: 15, minorVersion: 6, patchVersion: 0)
+        let macOS26 = OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0)
+
+        XCTAssertTrue(VulkanDriver.moltenVK.isSupported(onMacOS: macOS15))
+        XCTAssertFalse(VulkanDriver.kosmicKrisp.isSupported(onMacOS: macOS15))
+        XCTAssertTrue(VulkanDriver.kosmicKrisp.isSupported(onMacOS: macOS26))
+    }
+
     func testVulkanDriverSelectionSurvivesSettingsRoundTrip() throws {
         for driver in VulkanDriver.allCases {
             let settings = GraphicsSettings(vulkanDriver: driver)

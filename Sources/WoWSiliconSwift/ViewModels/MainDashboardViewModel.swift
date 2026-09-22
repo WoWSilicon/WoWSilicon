@@ -1056,6 +1056,15 @@ final class MainDashboardViewModel: ObservableObject {
                 guard var version = self.versionManager.currentVersion else { return }
                 let previousValue = version.settings.graphicsSettings
                 var normalizedValue = newValue
+                if normalizedValue.vulkanDriver != previousValue.vulkanDriver,
+                   !normalizedValue.vulkanDriver.isSupportedOnCurrentMacOS {
+                    self.patchFeedback = PatchFeedback(
+                        title: "KosmicKrisp Unavailable",
+                        message: "KosmicKrisp requires macOS 26 or later.",
+                        isError: true
+                    )
+                    return
+                }
                 if normalizedValue.backend != .mtld3d {
                     normalizedValue.hdrEnabled = false
                 }

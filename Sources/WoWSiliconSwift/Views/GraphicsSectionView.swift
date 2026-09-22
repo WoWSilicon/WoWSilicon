@@ -25,7 +25,7 @@ struct GraphicsSectionView: View {
                     if settings.backend == .d9vk {
                         Picker("Vulkan Driver", selection: $settings.vulkanDriver) {
                             ForEach(VulkanDriver.allCases, id: \.self) { driver in
-                                Text(driver.displayName)
+                                Text(vulkanDriverLabel(driver))
                                     .tag(driver)
                                     .disabled(!isVulkanDriverAvailable(driver))
                             }
@@ -40,7 +40,7 @@ struct GraphicsSectionView: View {
 
                     Text(backendHelpText)
                         .font(.caption)
-                        .foregroundStyle(settings.backend == .mtld3d ? .orange : .secondary)
+                        .foregroundStyle(backendHelpIsWarning ? .orange : .secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(8)
@@ -94,6 +94,9 @@ struct GraphicsSectionView: View {
     }
 
     private var backendHelpText: String {
+        if settings.backend == .d9vk && !settings.vulkanDriver.isSupportedOnCurrentMacOS {
+            return "KosmicKrisp requires macOS 26 or later. Select MoltenVK to use this profile on the current Mac."
+        }
         if !showsWoWSettings {
             return settings.backend == .mtld3d
                 ? "Uses the bundled Metal-based Direct3D 9 renderer."
@@ -110,8 +113,18 @@ struct GraphicsSectionView: View {
         return "Default Vulkan-based backend with broad compatibility. MTLD3D is required for HDR mode."
     }
 
+    private var backendHelpIsWarning: Bool {
+        settings.backend == .mtld3d
+            || (settings.backend == .d9vk && !settings.vulkanDriver.isSupportedOnCurrentMacOS)
+    }
+
+    private func vulkanDriverLabel(_ driver: VulkanDriver) -> String {
+        driver.isSupportedOnCurrentMacOS ? driver.displayName : "\(driver.displayName) (macOS 26+)"
+    }
+
     private func isVulkanDriverAvailable(_ driver: VulkanDriver) -> Bool {
-        driver == .moltenVK || BundledWineRuntime.vulkanDriverManifestURL(for: driver) != nil
+        driver.isSupportedOnCurrentMacOS
+            && (driver == .moltenVK || BundledWineRuntime.vulkanDriverManifestURL(for: driver) != nil)
     }
 
     // MARK: - Row builders

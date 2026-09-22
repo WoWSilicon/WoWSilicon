@@ -42,6 +42,7 @@ enum LaunchServiceError: LocalizedError {
     case alreadyRunning
     case gamePathMissing
     case x87RuntimeMissing(String)
+    case vulkanDriverUnsupported(String)
     case vulkanDriverMissing(String)
     case wineMissing(String)
     case executableMissing(String)
@@ -60,6 +61,8 @@ enum LaunchServiceError: LocalizedError {
             return "Game path is not set. Please configure it before launching."
         case .x87RuntimeMissing(let path):
             return "Selected x87 runtime not found at \(path). Reinstall WoWSilicon and try again."
+        case .vulkanDriverUnsupported(let driver):
+            return "\(driver) requires macOS 26 or later. Select MoltenVK in Graphics settings."
         case .vulkanDriverMissing(let driver):
             return "The \(driver) Vulkan driver is not installed in this Wine runtime. Run tools/wine-runtime/install-kosmickrisp.sh and rebuild WoWSilicon."
         case .wineMissing(let path):
@@ -192,10 +195,15 @@ final class LaunchService: @unchecked Sendable {
             throw LaunchServiceError.wineMissing(expectedPath)
         }
 
-        if version.settings.graphicsSettings.backend == .d9vk,
-           version.settings.graphicsSettings.vulkanDriver == .kosmicKrisp,
-           BundledWineRuntime.vulkanDriverManifestURL(for: .kosmicKrisp) == nil {
-            throw LaunchServiceError.vulkanDriverMissing(VulkanDriver.kosmicKrisp.displayName)
+        if version.settings.graphicsSettings.backend == .d9vk {
+            let driver = version.settings.graphicsSettings.vulkanDriver
+            guard driver.isSupportedOnCurrentMacOS else {
+                throw LaunchServiceError.vulkanDriverUnsupported(driver.displayName)
+            }
+            if driver == .kosmicKrisp,
+               BundledWineRuntime.vulkanDriverManifestURL(for: driver) == nil {
+                throw LaunchServiceError.vulkanDriverMissing(driver.displayName)
+            }
         }
 
         let wowExecutableURL: URL
@@ -613,13 +621,17 @@ final class LaunchService: @unchecked Sendable {
 
     @MainActor
     func launchThirdPartyLauncher(version: GameVersion, completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void) {
-        if version.settings.graphicsSettings.backend == .d9vk,
-           version.settings.graphicsSettings.vulkanDriver == .kosmicKrisp,
-           BundledWineRuntime.vulkanDriverManifestURL(for: .kosmicKrisp) == nil {
-            DispatchQueue.main.async {
-                completion(.failure(.vulkanDriverMissing(VulkanDriver.kosmicKrisp.displayName)))
+        if version.settings.graphicsSettings.backend == .d9vk {
+            let driver = version.settings.graphicsSettings.vulkanDriver
+            guard driver.isSupportedOnCurrentMacOS else {
+                completion(.failure(.vulkanDriverUnsupported(driver.displayName)))
+                return
             }
-            return
+            if driver == .kosmicKrisp,
+               BundledWineRuntime.vulkanDriverManifestURL(for: driver) == nil {
+                completion(.failure(.vulkanDriverMissing(driver.displayName)))
+                return
+            }
         }
 
         let exePath = version.launcherExePath.trimmingCharacters(in: .whitespacesAndNewlines)

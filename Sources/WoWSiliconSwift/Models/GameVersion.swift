@@ -32,6 +32,8 @@ enum VulkanDriver: String, Codable, CaseIterable, Sendable {
     case moltenVK = "moltenvk"
     case kosmicKrisp = "kosmickrisp"
 
+    static let kosmicKrispMinimumMacOSMajorVersion = 26
+
     var displayName: String {
         switch self {
         case .moltenVK: return "MoltenVK"
@@ -44,6 +46,14 @@ enum VulkanDriver: String, Codable, CaseIterable, Sendable {
         case .moltenVK: return "MoltenVK_icd.json"
         case .kosmicKrisp: return "KosmicKrisp_icd.json"
         }
+    }
+
+    func isSupported(onMacOS version: OperatingSystemVersion) -> Bool {
+        self != .kosmicKrisp || version.majorVersion >= Self.kosmicKrispMinimumMacOSMajorVersion
+    }
+
+    var isSupportedOnCurrentMacOS: Bool {
+        isSupported(onMacOS: ProcessInfo.processInfo.operatingSystemVersion)
     }
 }
 
