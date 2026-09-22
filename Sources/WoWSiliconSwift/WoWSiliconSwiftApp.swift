@@ -10,7 +10,7 @@ struct WoWSiliconSwiftApp: App {
 
     var body: some Scene {
         Window("WoWSilicon", id: "main") {
-            MainDashboardView(viewModel: viewModel)
+            MainDashboardView(viewModel: viewModel, wineMigration: viewModel.wineMigration)
                 .frame(width: windowWidth, height: windowHeight)
                 .background(WindowConfigurator(
                     title: "WoWSilicon v\(appVersion)",
@@ -60,6 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 #Preview {
-    MainDashboardView(viewModel: .preview)
+    MainDashboardView(
+        viewModel: .preview,
+        wineMigration: MainDashboardViewModel.preview.wineMigration
+    )
         .fixedSize()
 }

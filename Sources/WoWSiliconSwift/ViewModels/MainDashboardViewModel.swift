@@ -32,8 +32,6 @@ final class MainDashboardViewModel: ObservableObject {
     @Published var shouldShowMigrationPrompt: Bool = false
     @Published var shouldShowWineBottleMigrationPrompt: Bool = false
     @Published var shouldShowTelemetryConsentPrompt: Bool = false
-    @Published private(set) var isWineBottleMigrationInProgress: Bool = false
-    @Published private(set) var canRetryWineProfileMigration: Bool = false
     @Published private(set) var wineBottlePath: String = ""
     @Published private(set) var audioOutputDevices: [WineAudioOutputDevice] = []
     @Published private(set) var audioInputDevices: [WineAudioOutputDevice] = []
@@ -59,12 +57,11 @@ final class MainDashboardViewModel: ObservableObject {
     private let launchService = LaunchService.shared
     private let gameLaunchCoordinator = GameLaunchCoordinator()
     let dependencies = DependencyStatusViewModel()
+    let wineMigration = WineMigrationViewModel()
     private var versionManager: VersionManager
     private var userPrefs: UserPrefs
     private var pendingVanillaTweaksLaunch = false
     private var launchTask: Task<Void, Never>?
-    private var wineProfileMigrationTask: Task<Void, Never>?
-    private var didRequestWineProfileMigration = false
     private var optionsSessionInitialVanillaTweaksParameters: String?
     private var optionsSessionInitialVersionID: String?
     private var hasActiveOptionsSession = false
@@ -470,57 +467,29 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     func startWineProfileMigrationIfNeeded() {
-        guard !didRequestWineProfileMigration,
-              wineProfileMigrationTask == nil,
-              !isWineBottleMigrationInProgress,
-              !shouldShowMigrationPrompt,
-              !shouldShowWineBottleMigrationPrompt else {
-            return
-        }
-
-        didRequestWineProfileMigration = true
-        canRetryWineProfileMigration = false
-        isWineBottleMigrationInProgress = true
-        shouldShowTelemetryConsentPrompt = false
         let bottleURL = WineBottleService.currentBottleURL(prefs: userPrefs)
-
-        wineProfileMigrationTask = Task { [weak self] in
-            let migration = Task.detached(priority: .utility) {
-                try WineBottleService.migrateExternalUserProfileIfNeeded(bottleURL: bottleURL)
-            }
-
-            do {
-                let migrated = try await withTaskCancellationHandler {
-                    try await migration.value
-                } onCancel: {
-                    migration.cancel()
-                }
-                if migrated {
-                    debugPrint("Copied the Wine user profile into the configured WoWSilicon bottle; ~/Wine was kept as a backup.")
-                }
-            } catch is CancellationError {
-                self?.didRequestWineProfileMigration = false
-            } catch {
-                guard let self else { return }
-                debugPrint("Wine user profile migration failed: \(error.localizedDescription)")
-                self.canRetryWineProfileMigration = true
-                self.patchFeedback = PatchFeedback(
-                    title: "Wine Profile Migration Failed",
-                    message: "WoWSilicon could not copy the Windows user profile into the selected bottle. Your existing ~/Wine folder was not removed. You can retry from Options. \(error.localizedDescription)",
-                    isError: true
-                )
-            }
-
-            self?.isWineBottleMigrationInProgress = false
-            self?.wineProfileMigrationTask = nil
-            self?.updateTelemetryConsentPromptState()
+        let blocked = shouldShowMigrationPrompt || shouldShowWineBottleMigrationPrompt
+        let task = wineMigration.startProfileMigration(
+            bottleURL: bottleURL,
+            blocked: blocked,
+            completion: handleWineProfileMigrationOutcome
+        )
+        if task != nil {
+            shouldShowTelemetryConsentPrompt = false
         }
     }
 
     func retryWineProfileMigration() {
-        guard canRetryWineProfileMigration, wineProfileMigrationTask == nil else { return }
-        didRequestWineProfileMigration = false
-        startWineProfileMigrationIfNeeded()
+        let bottleURL = WineBottleService.currentBottleURL(prefs: userPrefs)
+        let blocked = shouldShowMigrationPrompt || shouldShowWineBottleMigrationPrompt
+        let task = wineMigration.retryProfileMigration(
+            bottleURL: bottleURL,
+            blocked: blocked,
+            completion: handleWineProfileMigrationOutcome
+        )
+        if task != nil {
+            shouldShowTelemetryConsentPrompt = false
+        }
     }
 
     func handleWineBottleMigration(copyLegacyBottle: Bool) {
@@ -533,36 +502,28 @@ final class MainDashboardViewModel: ObservableObject {
             return
         }
 
-        isWineBottleMigrationInProgress = true
-        Task.detached { [weak self] in
-            do {
-                let destination = try WineBottleService.copyLegacyBottle()
-                await MainActor.run {
-                    guard let self else { return }
-                    self.userPrefs.wineBottlePath = ""
-                    self.userPrefs.wineBottleMigrationAsked = true
-                    self.persistUserPrefs()
-                    self.wineBottlePath = destination.path
-                    self.isWineBottleMigrationInProgress = false
-                    self.patchFeedback = PatchFeedback(
-                        title: "Wine Bottle Copied",
-                        message: "Your legacy bottle was copied to \(destination.path). The original ~/.wine bottle was kept.",
-                        isError: false
-                    )
-                    self.refreshWineBottleDependentStatuses()
-                    self.updateTelemetryConsentPromptState()
-                    self.startWineProfileMigrationIfNeeded()
-                }
-            } catch {
-                await MainActor.run {
-                    guard let self else { return }
-                    self.isWineBottleMigrationInProgress = false
-                    self.patchFeedback = PatchFeedback(
-                        title: "Wine Bottle Migration Failed",
-                        message: error.localizedDescription,
-                        isError: true
-                    )
-                }
+        wineMigration.copyLegacyBottle { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let destination):
+                self.userPrefs.wineBottlePath = ""
+                self.userPrefs.wineBottleMigrationAsked = true
+                self.persistUserPrefs()
+                self.wineBottlePath = destination.path
+                self.patchFeedback = PatchFeedback(
+                    title: "Wine Bottle Copied",
+                    message: "Your legacy bottle was copied to \(destination.path). The original ~/.wine bottle was kept.",
+                    isError: false
+                )
+                self.refreshWineBottleDependentStatuses()
+                self.updateTelemetryConsentPromptState()
+                self.startWineProfileMigrationIfNeeded()
+            case .failure(let error):
+                self.patchFeedback = PatchFeedback(
+                    title: "Wine Bottle Migration Failed",
+                    message: error.message,
+                    isError: true
+                )
             }
         }
     }
@@ -572,7 +533,7 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     var canChangeWineBottleLocation: Bool {
-        !isWineBottleMigrationInProgress
+        !wineMigration.isMigrationInProgress
     }
 
     func selectWineBottleLocation() {
@@ -600,7 +561,7 @@ final class MainDashboardViewModel: ObservableObject {
             wineBottlePath = validated.path
             refreshWineBottleDependentStatuses()
             refreshAudioOutputs()
-            didRequestWineProfileMigration = false
+            wineMigration.resetProfileMigrationRequest()
             startWineProfileMigrationIfNeeded()
         } catch {
             presentWineBottleAlert(error.localizedDescription)
@@ -615,7 +576,7 @@ final class MainDashboardViewModel: ObservableObject {
         wineBottlePath = WineBottleService.defaultBottleURL().path
         refreshWineBottleDependentStatuses()
         refreshAudioOutputs()
-        didRequestWineProfileMigration = false
+        wineMigration.resetProfileMigrationRequest()
         startWineProfileMigrationIfNeeded()
     }
 
@@ -1711,7 +1672,7 @@ final class MainDashboardViewModel: ObservableObject {
     private func updateTelemetryConsentPromptState() {
         shouldShowTelemetryConsentPrompt = !shouldShowMigrationPrompt
             && !shouldShowWineBottleMigrationPrompt
-            && !isWineBottleMigrationInProgress
+            && !wineMigration.isMigrationInProgress
             && !userPrefs.telemetryConsentAsked
     }
 
@@ -1744,6 +1705,23 @@ final class MainDashboardViewModel: ObservableObject {
         refreshRetinaModeStatus()
         refreshVisualCppRuntimeStatus()
         refreshWineMonoStatus()
+    }
+
+    private func handleWineProfileMigrationOutcome(_ outcome: WineProfileMigrationOutcome) {
+        switch outcome {
+        case .succeeded(let migrated):
+            if migrated {
+                debugPrint("Copied the Wine user profile into the configured WoWSilicon bottle; ~/Wine was kept as a backup.")
+            }
+        case .failed(let message):
+            debugPrint("Wine user profile migration failed: \(message)")
+            patchFeedback = PatchFeedback(
+                title: "Wine Profile Migration Failed",
+                message: "WoWSilicon could not copy the Windows user profile into the selected bottle. Your existing ~/Wine folder was not removed. You can retry from Options. \(message)",
+                isError: true
+            )
+        }
+        updateTelemetryConsentPromptState()
     }
 
     private func presentWineBottleAlert(_ message: String) {

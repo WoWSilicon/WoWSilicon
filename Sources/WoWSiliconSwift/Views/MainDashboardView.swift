@@ -3,6 +3,7 @@ import AppKit
 
 struct MainDashboardView: View {
     @ObservedObject var viewModel: MainDashboardViewModel
+    @ObservedObject var wineMigration: WineMigrationViewModel
     @State private var showOptionsSheet = false
     @State private var showPatchAlert = false
     @State private var patchAlertTitle = "Patching"
@@ -90,7 +91,7 @@ struct MainDashboardView: View {
                     isBusy: viewModel.isGameOperationInProgress
                         || viewModel.isForceQuittingWine
                         || viewModel.isCheckingWineProcesses
-                        || viewModel.isWineBottleMigrationInProgress
+                        || wineMigration.isMigrationInProgress
                 )
                 .padding(.horizontal, 32)
                 .padding(.bottom, 24)
@@ -104,6 +105,7 @@ struct MainDashboardView: View {
             OptionsView(
                 viewModel: viewModel,
                 dependencies: viewModel.dependencies,
+                wineMigration: wineMigration,
                 onClose: { showOptionsSheet = false }
             )
             .frame(width: 780, height: 540)
@@ -228,7 +230,7 @@ struct MainDashboardView: View {
                 .interactiveDismissDisabled(true)
         }
         .sheet(isPresented: Binding(
-            get: { viewModel.isWineBottleMigrationInProgress },
+            get: { wineMigration.isMigrationInProgress },
             set: { _ in }
         )) {
             WineMigrationLoadingView()

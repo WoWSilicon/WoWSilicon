@@ -4,6 +4,7 @@ import AppKit
 struct OptionsView: View {
     @ObservedObject var viewModel: MainDashboardViewModel
     @ObservedObject var dependencies: DependencyStatusViewModel
+    @ObservedObject var wineMigration: WineMigrationViewModel
     let onClose: () -> Void
 
     @State private var selectedTab: OptionsTab = .general
@@ -470,7 +471,7 @@ struct OptionsView: View {
                     .disabled(viewModel.usesDefaultWineBottleLocation || !viewModel.canChangeWineBottleLocation)
             }
 
-            if viewModel.isWineBottleMigrationInProgress {
+            if wineMigration.isMigrationInProgress {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
@@ -478,7 +479,7 @@ struct OptionsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-            } else if viewModel.canRetryWineProfileMigration {
+            } else if wineMigration.canRetryProfileMigration {
                 Button("Retry Profile Copy", action: viewModel.retryWineProfileMigration)
                     .buttonStyle(.bordered)
             }
