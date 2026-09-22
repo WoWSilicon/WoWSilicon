@@ -2,6 +2,34 @@ import XCTest
 @testable import WoWSiliconSwift
 
 final class AudioOutputServiceTests: XCTestCase {
+    func testSavedDeviceArgumentsSkipHelperWhenFollowingSystemDevices() {
+        XCTAssertEqual(
+            AudioOutputService.savedDeviceArguments(outputID: "", inputID: ""),
+            []
+        )
+    }
+
+    func testSavedDeviceArgumentsIncludeOnlyOutputOverride() {
+        XCTAssertEqual(
+            AudioOutputService.savedDeviceArguments(outputID: "{output}", inputID: ""),
+            [["set", "{output}"]]
+        )
+    }
+
+    func testSavedDeviceArgumentsIncludeOnlyInputOverride() {
+        XCTAssertEqual(
+            AudioOutputService.savedDeviceArguments(outputID: "", inputID: "{input}"),
+            [["set-input", "{input}"]]
+        )
+    }
+
+    func testSavedDeviceArgumentsIncludeBothOverrides() {
+        XCTAssertEqual(
+            AudioOutputService.savedDeviceArguments(outputID: "{output}", inputID: "{input}"),
+            [["set", "{output}"], ["set-input", "{input}"]]
+        )
+    }
+
     func testShortcutSelectionSkipsHelpersWhenFollowingSystemDevices() throws {
         XCTAssertEqual(
             try AudioOutputService.shortcutSelectionCommands(

@@ -288,8 +288,9 @@ final class MainDashboardViewModel: ObservableObject {
         isLauncherLoading = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                try AudioOutputService.selectOutput(
-                    id: version.settings.audioOutputDeviceID,
+                try AudioOutputService.applySavedDevices(
+                    outputID: version.settings.audioOutputDeviceID,
+                    inputID: version.settings.audioInputDeviceID,
                     customVariables: version.settings.environmentVariables
                 )
                 DispatchQueue.main.async {
@@ -731,10 +732,15 @@ final class MainDashboardViewModel: ObservableObject {
 
         let customVariables = currentVersion.settings.environmentVariables
         let outputID = currentVersion.settings.audioOutputDeviceID
+        let inputID = currentVersion.settings.audioInputDeviceID
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                try LaunchPerformance.measure("Audio Output Setup") {
-                    try AudioOutputService.selectOutput(id: outputID, customVariables: customVariables)
+                try LaunchPerformance.measure("Audio Device Setup") {
+                    try AudioOutputService.applySavedDevices(
+                        outputID: outputID,
+                        inputID: inputID,
+                        customVariables: customVariables
+                    )
                 }
                 DispatchQueue.main.async {
                     self?.launchPreparedVersion(currentVersion)
