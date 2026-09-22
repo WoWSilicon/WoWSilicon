@@ -65,6 +65,7 @@ final class TroubleshootingServiceTests: XCTestCase {
         )
 
         XCTAssertTrue(result.full.contains("x87 Translation: x87sidecar (x87sidecar)"))
+        XCTAssertTrue(result.full.contains("x87sidecar version: v1.7.0"))
     }
 
     func testDebugLogReadsGameDirectoryWhenGamePathIsExecutable() throws {

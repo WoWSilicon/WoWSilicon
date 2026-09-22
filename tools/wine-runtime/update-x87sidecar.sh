@@ -80,6 +80,7 @@ mkdir -p "$destination_dir"
 install -m 0755 "$binary" "$destination_dir/x87sidecar"
 curl -fsSL "https://raw.githubusercontent.com/athei/x87sidecar/$release_tag/LICENSE" \
   -o "$destination_dir/LICENSE"
+printf '%s\n' "$release_tag" > "$destination_dir/VERSION"
 
 python3 - "$lock_file" "$release_tag" "$asset_name" "$actual_asset_sha256" "$binary_sha256" <<'PYEOF'
 import json
