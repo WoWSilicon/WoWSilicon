@@ -51,13 +51,16 @@ enum PatchingStatusChecker {
                 )
             }
 
-            if let bundledURL = PatchService.resourceURL(
+            if PatchService.resourceURL(
                 named: "d3d9",
                 extension: "dll",
                 subdirectory: PatchService.d3d9ResourceSubdirectory(
                     for: version.settings.graphicsSettings.vulkanDriver
                 )
-            ), fileChecksum(at: d3d9URL) != fileChecksum(at: bundledURL) {
+            ) != nil,
+               fileChecksum(at: d3d9URL) != bundledD3D9Checksum(
+                   for: version.settings.graphicsSettings.vulkanDriver
+               ) {
                 return PatchStatusDescriptor(
                     applied: false,
                     text: "d3d9.dll outdated",
@@ -177,9 +180,13 @@ enum PatchingStatusChecker {
                 named: expectation.resourceName,
                 extension: expectation.resourceExtension,
                 subdirectory: expectation.resourceSubdirectory
-            ), let sourceChecksum = fileChecksum(at: sourceURL) else {
+            ) else {
                 continue
             }
+            let sourceChecksum = expectation.relativePath == "d3d9.dll"
+                ? bundledD3D9Checksum(for: version.settings.graphicsSettings.vulkanDriver)
+                : fileChecksum(at: sourceURL)
+            guard let sourceChecksum else { continue }
 
             if targetChecksum != sourceChecksum {
                 return expectation.displayName
@@ -241,6 +248,29 @@ enum PatchingStatusChecker {
         }
         let hash = SHA256.hash(data: data)
         return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func bundledD3D9Checksum(for driver: VulkanDriver) -> String? {
+        switch driver {
+        case .moltenVK:
+            return moltenVKD3D9Checksum
+        case .kosmicKrisp:
+            return kosmicKrispD3D9Checksum
+        }
+    }
+
+    private static let moltenVKD3D9Checksum = computeBundledD3D9Checksum(for: .moltenVK)
+    private static let kosmicKrispD3D9Checksum = computeBundledD3D9Checksum(for: .kosmicKrisp)
+
+    private static func computeBundledD3D9Checksum(for driver: VulkanDriver) -> String? {
+        guard let url = PatchService.resourceURL(
+            named: "d3d9",
+            extension: "dll",
+            subdirectory: PatchService.d3d9ResourceSubdirectory(for: driver)
+        ) else {
+            return nil
+        }
+        return fileChecksum(at: url)
     }
 }
 

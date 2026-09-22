@@ -1,7 +1,76 @@
 import XCTest
+import Darwin
 @testable import WoWSiliconSwift
 
 final class LaunchServiceTests: XCTestCase {
+    func testShortcutGenerationDoesNotRewriteD3D9DLL() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WoWSiliconLaunchServiceTests-\(UUID().uuidString)", isDirectory: true)
+        let gameDirectory = root.appendingPathComponent("Game", isDirectory: true)
+        let wineRoot = root.appendingPathComponent("Wine", isDirectory: true)
+        let wineExecutable = wineRoot.appendingPathComponent("bin/wine", isDirectory: false)
+        try FileManager.default.createDirectory(
+            at: wineExecutable.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(at: gameDirectory, withIntermediateDirectories: true)
+        try "#!/bin/sh\nexit 0\n".write(to: wineExecutable, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: wineExecutable.path
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let environmentKey = BundledWineRuntime.environmentOverride
+        let previousEnvironmentValue = ProcessInfo.processInfo.environment[environmentKey]
+        setenv(environmentKey, wineRoot.path, 1)
+        defer {
+            if let previousEnvironmentValue {
+                setenv(environmentKey, previousEnvironmentValue, 1)
+            } else {
+                unsetenv(environmentKey)
+            }
+        }
+
+        let gameExecutable = gameDirectory.appendingPathComponent("Game.exe")
+        XCTAssertTrue(FileManager.default.createFile(atPath: gameExecutable.path, contents: Data()))
+        var version = VersionManager.genericD3D9Template
+        version.gamePath = gameExecutable.path
+        version.executableName = gameExecutable.lastPathComponent
+        version.settings.x87Backend = .disabled
+        try PatchService.applyGamePatch(for: version)
+
+        let installedD3D9 = gameDirectory.appendingPathComponent("d3d9.dll")
+        let fixedDate = Date(timeIntervalSince1970: 1_000_000)
+        try FileManager.default.setAttributes(
+            [.modificationDate: fixedDate],
+            ofItemAtPath: installedD3D9.path
+        )
+        let modificationDateBefore = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: installedD3D9.path)[.modificationDate] as? Date
+        )
+
+        let script = try LaunchService.shared.shortcutShellScript(for: version)
+
+        let modificationDateAfter = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: installedD3D9.path)[.modificationDate] as? Date
+        )
+        let bundledD3D9 = try XCTUnwrap(PatchService.resourceURL(
+            named: "d3d9",
+            extension: "dll",
+            subdirectory: PatchService.d3d9ResourceSubdirectory(for: .moltenVK)
+        ))
+        XCTAssertEqual(modificationDateAfter, modificationDateBefore)
+        XCTAssertFalse(script.contains(bundledD3D9.path))
+
+        try Data("outdated".utf8).write(to: installedD3D9)
+        XCTAssertThrowsError(try LaunchService.shared.shortcutShellScript(for: version)) { error in
+            guard case LaunchServiceError.patchNotApplied = error else {
+                return XCTFail("Expected patchNotApplied, got \(error)")
+            }
+        }
+    }
+
     func testShellQuotePreservesMetacharactersAsOneLiteralArgument() throws {
         let markerURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("WoWSiliconShellQuote-\(UUID().uuidString)")

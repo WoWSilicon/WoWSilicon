@@ -56,11 +56,6 @@ final class LaunchService: @unchecked Sendable {
 
     func launch(version: GameVersion, completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void) {
         do {
-            if version.settings.graphicsSettings.backend == .d9vk {
-                try LaunchPerformance.measure("D3D9 Installation") {
-                    try PatchService.installD3D9DLL(for: version)
-                }
-            }
             let result = try LaunchPerformance.measure("Launch Artifact Preparation") {
                 try prepareLaunchArtifacts(for: version)
             }
@@ -187,9 +182,6 @@ final class LaunchService: @unchecked Sendable {
     }
 
     func shortcutShellScript(for version: GameVersion) throws -> String {
-        if version.settings.graphicsSettings.backend == .d9vk {
-            try PatchService.installD3D9DLL(for: version)
-        }
         let configuration = try prepareLaunchArtifacts(
             for: version,
             performPrelaunchActions: false
@@ -209,22 +201,6 @@ final class LaunchService: @unchecked Sendable {
             "/usr/bin/printf '%s\\n' \(shellQuote(spatialMode)) > \(shellQuote(spatialControlURL.path))",
             "/usr/bin/printf '%s\\n' \(shellQuote(normalizeMode)) > \(shellQuote(normalizeControlURL.path))"
         ]
-        if version.settings.graphicsSettings.backend == .d9vk {
-            guard let source = PatchService.resourceURL(
-                named: "d3d9",
-                extension: "dll",
-                subdirectory: PatchService.d3d9ResourceSubdirectory(
-                    for: version.settings.graphicsSettings.vulkanDriver
-                )
-            ) else {
-                throw LaunchServiceError.patchNotApplied
-            }
-            let destination = configuration.gameURL.appendingPathComponent("d3d9.dll")
-            setupCommands.insert(
-                "/bin/cp \(shellQuote(source.path)) \(shellQuote(destination.path)) || exit 1",
-                at: 0
-            )
-        }
         setupCommands.append(contentsOf: try AudioOutputService.shortcutSelectionCommands(
             outputID: version.settings.audioOutputDeviceID,
             inputID: version.settings.audioInputDeviceID,

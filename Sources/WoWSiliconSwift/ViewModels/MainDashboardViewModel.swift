@@ -1084,17 +1084,28 @@ final class MainDashboardViewModel: ObservableObject {
             },
             set: { newValue in
                 guard var version = self.versionManager.currentVersion else { return }
+                let previousValue = version.settings.graphicsSettings
                 var normalizedValue = newValue
                 if normalizedValue.backend != .mtld3d {
                     normalizedValue.hdrEnabled = false
                 }
+                let d3d9SelectionChanged = normalizedValue.backend == .d9vk
+                    && (previousValue.backend != normalizedValue.backend
+                        || previousValue.vulkanDriver != normalizedValue.vulkanDriver)
+                let shouldInstallD3D9 = d3d9SelectionChanged
+                    && PatchingStatusChecker.evaluateGamePatch(for: version).applied
                 version.settings.graphicsSettings = normalizedValue
                 self.updateCurrentVersion { current in current = version }
-                guard version.supportsCustomGraphicsSettings else { return }
+                guard version.supportsCustomGraphicsSettings || shouldInstallD3D9 else { return }
                 let versionForWork = version
                 DispatchQueue.global(qos: .userInitiated).async {
                     do {
-                        try ConfigService.applyGraphicsSettings(for: versionForWork)
+                        if shouldInstallD3D9 {
+                            try PatchService.installD3D9DLL(for: versionForWork)
+                        }
+                        if versionForWork.supportsCustomGraphicsSettings {
+                            try ConfigService.applyGraphicsSettings(for: versionForWork)
+                        }
                     } catch {
                         DispatchQueue.main.async {
                             self.patchFeedback = PatchFeedback(title: "Graphics Settings", message: error.localizedDescription, isError: true)
