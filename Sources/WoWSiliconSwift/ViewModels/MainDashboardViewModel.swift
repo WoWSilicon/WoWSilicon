@@ -121,7 +121,9 @@ final class MainDashboardViewModel: ObservableObject {
                 userPrefs.autoDeleteWdb = true
                 persistUserPrefs()
             }
-            applyLegacyPrefsToVersion()
+            if result.requiresLegacyPrefsMigration {
+                migrateLegacyPrefsToCurrentVersion()
+            }
             persistVersionManager()
         }
 
@@ -140,7 +142,6 @@ final class MainDashboardViewModel: ObservableObject {
         guard id != currentVersionID else { return }
 
         versionManager.setCurrentVersion(id: id)
-        applyLegacyPrefsToVersion()
         persistVersionManager()
         refreshSnapshot()
         refreshOptionAsAltStatus()
@@ -458,7 +459,7 @@ final class MainDashboardViewModel: ObservableObject {
         if userPrefs.autoDeleteWdb == false {
             userPrefs.autoDeleteWdb = true
         }
-        applyLegacyPrefsToVersion()
+        migrateLegacyPrefsToCurrentVersion()
         persistVersionManager()
         persistUserPrefs()
         refreshSnapshot()
@@ -1603,8 +1604,6 @@ final class MainDashboardViewModel: ObservableObject {
         launcherPathStatus = makePathStatus(for: currentVersion.launcherExePath)
         currentVersionLauncherName = "Open Launcher"
 
-        syncLegacyPrefs(from: currentVersion.settings)
-
         if !isOptionAsAltBusy {
             refreshOptionAsAltStatus()
         }
@@ -1638,7 +1637,7 @@ final class MainDashboardViewModel: ObservableObject {
         refreshSnapshot()
     }
 
-    private func applyLegacyPrefsToVersion() {
+    private func migrateLegacyPrefsToCurrentVersion() {
         versionManager.updateCurrentVersion { version in
             version.settings.showTerminalNormally = userPrefs.showTerminalNormally
             version.settings.enableMetalHud = userPrefs.enableMetalHud
@@ -1737,27 +1736,6 @@ final class MainDashboardViewModel: ObservableObject {
         }
         return updated
     }
-
-    private func syncLegacyPrefs(from settings: VersionSettings) {
-        var updated = userPrefs
-        updated.showTerminalNormally = settings.showTerminalNormally
-        updated.enableMetalHud = settings.enableMetalHud
-        updated.enableVanillaTweaks = settings.enableVanillaTweaks
-        updated.autoDeleteWdb = true
-        updated.remapOptionAsAlt = settings.remapOptionAsAlt
-        updated.telemetryEnabled = userPrefs.telemetryEnabled
-        updated.telemetryConsentAsked = userPrefs.telemetryConsentAsked
-        updated.telemetryInstallID = userPrefs.telemetryInstallID
-        updated.environmentVariables = settings.environmentVariables
-        updated.vanillaTweaksParameters = settings.vanillaTweaksParameters
-        updated.x87Backend = settings.x87Backend
-
-        if updated != userPrefs {
-            userPrefs = updated
-            persistUserPrefs()
-        }
-    }
-
 
     private func persistVersionManager() {
         do {
