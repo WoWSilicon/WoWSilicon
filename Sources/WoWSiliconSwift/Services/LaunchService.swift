@@ -54,40 +54,69 @@ final class LaunchService: @unchecked Sendable {
 
     private init() {}
 
-    func launch(version: GameVersion, completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void) {
-        do {
+    func launch(version: GameVersion) async throws {
+        try Task.checkCancellation()
+        let preparation = Task.detached(priority: .userInitiated) { [self] in
+            try Task.checkCancellation()
+            if version.settings.enableVanillaTweaks,
+               let mismatch = checkVersionMismatch(for: version) {
+                throw LaunchServiceError.versionMismatch(mismatch.base, mismatch.tweaked)
+            }
+
+            do {
+                try LaunchPerformance.measure("Audio Device Setup") {
+                    try AudioOutputService.applySavedDevices(
+                        outputID: version.settings.audioOutputDeviceID,
+                        inputID: version.settings.audioInputDeviceID,
+                        customVariables: version.settings.environmentVariables
+                    )
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                debugPrint("Could not apply the saved Wine audio output: \(error.localizedDescription)")
+            }
+
+            try Task.checkCancellation()
             let result = try LaunchPerformance.measure("Launch Artifact Preparation") {
                 try prepareLaunchArtifacts(for: version)
             }
 
+            try Task.checkCancellation()
             let patchesAreValid = LaunchPerformance.measure("Patch Validation") {
                 patchesAppearValid(for: version)
             }
             if !patchesAreValid {
                 throw LaunchServiceError.patchNotApplied
             }
+            try Task.checkCancellation()
+            return result
+        }
+        let result = try await withTaskCancellationHandler {
+            try await preparation.value
+        } onCancel: {
+            preparation.cancel()
+        }
 
+        try Task.checkCancellation()
+        try await MainActor.run {
+            try Task.checkCancellation()
             if version.settings.showTerminalNormally {
                 try LaunchPerformance.measure("Wine Process Spawn") {
                     try launchViaTerminal(configuration: result)
                 }
-                DispatchQueue.main.async { completion(.success(())) }
                 DispatchQueue.main.async { self.processDidTerminate?() }
             } else {
                 try LaunchPerformance.measure("Wine Process Spawn") {
-                    try launchIntegrated(configuration: result, completion: completion)
+                    try launchIntegrated(configuration: result)
                 }
             }
-        } catch let error as LaunchServiceError {
-            DispatchQueue.main.async { completion(.failure(error)) }
-        } catch {
-            DispatchQueue.main.async { completion(.failure(.processLaunchFailed(error.localizedDescription))) }
         }
     }
 
     // MARK: - Preparation
 
-    private struct LaunchConfiguration {
+    private struct LaunchConfiguration: Sendable {
         let version: GameVersion
         let gameURL: URL
         let wowExecutableURL: URL
@@ -148,12 +177,14 @@ final class LaunchService: @unchecked Sendable {
             throw LaunchServiceError.executableMissing(wowExecutableURL.path)
         }
 
+        try Task.checkCancellation()
         if performPrelaunchActions && version.settings.autoDeleteWdb {
             LaunchPerformance.measure("WDB Cleanup") {
                 deleteWDBDirectories(at: gameURL)
             }
         }
 
+        try Task.checkCancellation()
         let spatialAudioControlURL = SpatialAudioService.controlURL()
         let normalizeAudioControlURL = SpatialAudioService.normalizeAudioControlURL()
         if performPrelaunchActions {
@@ -231,7 +262,7 @@ final class LaunchService: @unchecked Sendable {
 
     // MARK: - Launch paths
 
-    private func launchIntegrated(configuration: LaunchConfiguration, completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void) throws {
+    private func launchIntegrated(configuration: LaunchConfiguration) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", configuration.shellCommand]
@@ -278,16 +309,20 @@ final class LaunchService: @unchecked Sendable {
         }
 
         do {
+            try Task.checkCancellation()
             try process.run()
             trackProcess(process)
             startFocusTimer()
-            DispatchQueue.main.async { completion(.success(())) }
         } catch {
+            if error is CancellationError {
+                throw error
+            }
             throw LaunchServiceError.processLaunchFailed(error.localizedDescription)
         }
     }
 
     private func launchViaTerminal(configuration: LaunchConfiguration) throws {
+        try Task.checkCancellation()
         try launchTerminalCommand(configuration.shellCommand)
         startFocusTimer()
     }

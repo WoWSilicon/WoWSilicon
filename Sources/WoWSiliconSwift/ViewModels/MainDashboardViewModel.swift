@@ -68,6 +68,7 @@ final class MainDashboardViewModel: ObservableObject {
     private var userPrefs: UserPrefs
     private var pendingVanillaTweaksLaunch = false
     private var pendingWineLaunchVersion: GameVersion?
+    private var launchTask: Task<Void, Never>?
     private var playToWineInterval: LaunchPerformanceInterval?
     private var optionsSessionInitialVanillaTweaksParameters: String?
     private var optionsSessionInitialVersionID: String?
@@ -664,18 +665,21 @@ final class MainDashboardViewModel: ObservableObject {
             patchFeedback = PatchFeedback(title: "Cannot Launch", message: "Ensure the game path is set and the game patch is applied.", isError: true)
             return
         }
-        guard !isCheckingWineProcesses else { return }
+        guard !isGameOperationInProgress, !isCheckingWineProcesses, launchTask == nil else { return }
         beginPlayToWine(for: currentVersion)
 
         patchFeedback = nil
         isCheckingWineProcesses = true
+        isGameOperationInProgress = true
 
-        Task { [weak self] in
+        launchTask = Task { [weak self] in
             while self?.isAudioOutputBusy == true {
                 do {
                     try await Task.sleep(for: .milliseconds(100))
                 } catch {
                     self?.isCheckingWineProcesses = false
+                    self?.isGameOperationInProgress = false
+                    self?.launchTask = nil
                     self?.endPlayToWine(outcome: "cancelled")
                     return
                 }
@@ -688,6 +692,13 @@ final class MainDashboardViewModel: ObservableObject {
             }.value
 
             guard let self else { return }
+            guard !Task.isCancelled else {
+                self.isCheckingWineProcesses = false
+                self.isGameOperationInProgress = false
+                self.launchTask = nil
+                self.endPlayToWine(outcome: "cancelled")
+                return
+            }
             self.isCheckingWineProcesses = false
 
             if let liveProcessCount {
@@ -695,6 +706,8 @@ final class MainDashboardViewModel: ObservableObject {
             }
 
             if let liveProcessCount, liveProcessCount > 0 {
+                self.isGameOperationInProgress = false
+                self.launchTask = nil
                 self.endPlayToWine(outcome: "existing Wine prompt")
                 self.pendingWineLaunchVersion = currentVersion
                 self.shouldShowExistingWinePrompt = true
@@ -710,6 +723,7 @@ final class MainDashboardViewModel: ObservableObject {
         pendingWineLaunchVersion = nil
 
         guard let cleanUp else { return }
+        isGameOperationInProgress = true
         beginPlayToWine(for: pendingVersion)
         if cleanUp {
             forceQuitWine(launchAfter: pendingVersion)
@@ -719,67 +733,44 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     private func continueLaunch(_ currentVersion: GameVersion) {
-
-        // Check for version mismatch if using vanilla tweaks
-        if currentVersion.settings.enableVanillaTweaks {
-            if let mismatch = launchService.checkVersionMismatch(for: currentVersion) {
-                endPlayToWine(outcome: "version mismatch prompt")
-                self.versionMismatchData = mismatch
-                self.shouldShowVersionMismatchPrompt = true
-                return
-            }
-        }
-
-        let customVariables = currentVersion.settings.environmentVariables
-        let outputID = currentVersion.settings.audioOutputDeviceID
-        let inputID = currentVersion.settings.audioInputDeviceID
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            do {
-                try LaunchPerformance.measure("Audio Device Setup") {
-                    try AudioOutputService.applySavedDevices(
-                        outputID: outputID,
-                        inputID: inputID,
-                        customVariables: customVariables
-                    )
-                }
-                DispatchQueue.main.async {
-                    self?.launchPreparedVersion(currentVersion)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    debugPrint("Could not apply the saved Wine audio output: \(error.localizedDescription)")
-                    self?.launchPreparedVersion(currentVersion)
-                }
-            }
-        }
-    }
-
-    private func launchPreparedVersion(_ currentVersion: GameVersion) {
         launchService.processDidTerminate = { [weak self] in
             guard let self else { return }
             self.refreshSnapshot()
         }
 
-        launchService.launch(version: currentVersion) { [weak self] result in
-            DispatchQueue.main.async { [weak self] in
+        launchTask = Task { [weak self] in
+            do {
                 guard let self else { return }
-                switch result {
-                case .success:
-                    self.endPlayToWine(outcome: "Wine process started")
-                    self.recordWowStartTelemetry(for: currentVersion)
-                    break
-                case .failure(let error):
-                    self.endPlayToWine(outcome: "failed")
-                    switch error {
-                    case .vanillaTweaksMissing:
-                        self.pendingVanillaTweaksLaunch = true
-                        self.shouldShowVanillaTweaksPrompt = true
-                    default:
-                        self.patchFeedback = PatchFeedback(title: "Launch Failed", message: error.localizedDescription, isError: true)
-                        self.refreshSnapshot()
-                    }
-                }
+                try Task.checkCancellation()
+                try await self.launchService.launch(version: currentVersion)
+                self.endPlayToWine(outcome: "Wine process started")
+                self.recordWowStartTelemetry(for: currentVersion)
+            } catch is CancellationError {
+                self?.endPlayToWine(outcome: "cancelled")
+            } catch let error as LaunchServiceError {
+                self?.handleLaunchFailure(error)
+            } catch {
+                self?.handleLaunchFailure(.processLaunchFailed(error.localizedDescription))
             }
+            self?.isGameOperationInProgress = false
+            self?.launchTask = nil
+        }
+    }
+
+    private func handleLaunchFailure(_ error: LaunchServiceError) {
+        switch error {
+        case .versionMismatch(let base, let tweaked):
+            endPlayToWine(outcome: "version mismatch prompt")
+            versionMismatchData = (base, tweaked)
+            shouldShowVersionMismatchPrompt = true
+        case .vanillaTweaksMissing:
+            endPlayToWine(outcome: "failed")
+            pendingVanillaTweaksLaunch = true
+            shouldShowVanillaTweaksPrompt = true
+        default:
+            endPlayToWine(outcome: "failed")
+            patchFeedback = PatchFeedback(title: "Launch Failed", message: error.localizedDescription, isError: true)
+            refreshSnapshot()
         }
     }
 

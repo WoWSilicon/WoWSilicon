@@ -3,6 +3,41 @@ import Darwin
 @testable import WoWSiliconSwift
 
 final class LaunchServiceTests: XCTestCase {
+    func testLaunchReportsPreparationFailure() async {
+        var version = VersionManager.genericD3D9Template
+        version.gamePath = ""
+        version.settings.x87Backend = .disabled
+
+        do {
+            try await LaunchService.shared.launch(version: version)
+            XCTFail("Expected gamePathMissing")
+        } catch LaunchServiceError.gamePathMissing {
+            // Expected.
+        } catch {
+            XCTFail("Expected gamePathMissing, got \(error)")
+        }
+    }
+
+    func testCancelledLaunchStopsBeforePreparation() async {
+        var version = VersionManager.genericD3D9Template
+        version.gamePath = ""
+        version.settings.x87Backend = .disabled
+
+        let task = Task {
+            try await LaunchService.shared.launch(version: version)
+        }
+        task.cancel()
+
+        do {
+            try await task.value
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            XCTFail("Expected cancellation, got \(error)")
+        }
+    }
+
     func testShortcutGenerationDoesNotRewriteD3D9DLL() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WoWSiliconLaunchServiceTests-\(UUID().uuidString)", isDirectory: true)
