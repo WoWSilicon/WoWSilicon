@@ -9,7 +9,7 @@ struct WoWSiliconSwiftApp: App {
     @StateObject private var viewModel = MainDashboardViewModel()
 
     var body: some Scene {
-        WindowGroup {
+        Window("WoWSilicon", id: "main") {
             MainDashboardView(viewModel: viewModel)
                 .frame(width: windowWidth, height: windowHeight)
                 .background(WindowConfigurator(
