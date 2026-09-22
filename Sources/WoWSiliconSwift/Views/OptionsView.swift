@@ -3,6 +3,7 @@ import AppKit
 
 struct OptionsView: View {
     @ObservedObject var viewModel: MainDashboardViewModel
+    @ObservedObject var dependencies: DependencyStatusViewModel
     let onClose: () -> Void
 
     @State private var selectedTab: OptionsTab = .general
@@ -251,8 +252,8 @@ struct OptionsView: View {
 
             dependencyStatusRow(
                 title: "Rosetta 2",
-                status: viewModel.rosettaStatus,
-                isBusy: viewModel.isRosettaInstallInProgress
+                status: dependencies.rosettaStatus,
+                isBusy: dependencies.isRosettaInstallInProgress
             )
 
             HStack(spacing: 12) {
@@ -260,13 +261,13 @@ struct OptionsView: View {
                     viewModel.installRosetta()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(viewModel.isRosettaInstallInProgress || viewModel.rosettaStatus == .installed)
+                .disabled(dependencies.isRosettaInstallInProgress || dependencies.rosettaStatus == .installed)
 
                 Button("Refresh") {
                     viewModel.refreshRosettaStatus()
                 }
                 .buttonStyle(.bordered)
-                .disabled(viewModel.isRosettaInstallInProgress)
+                .disabled(dependencies.isRosettaInstallInProgress)
             }
 
             Text("Required to run Intel components on Apple silicon. This opens Terminal and runs Apple's Rosetta installer; follow its license prompt to continue.")
@@ -279,15 +280,15 @@ struct OptionsView: View {
 
             dependencyStatusRow(
                 title: "Microsoft Visual C++ Runtime 2022",
-                status: viewModel.visualCppRuntimeStatus,
-                isBusy: viewModel.isDependencyInstallInProgress
+                status: dependencies.visualCppRuntimeStatus,
+                isBusy: dependencies.isVisualCppInstallInProgress
             )
 
             Button("Install VC++ Runtime 2022") {
                 viewModel.installVisualCppRuntime()
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!viewModel.canInstallDependencies || viewModel.visualCppRuntimeStatus == .installed)
+            .disabled(!dependencies.canInstallVisualCppRuntime || dependencies.visualCppRuntimeStatus == .installed)
 
             Text(dependenciesHelpText)
                 .font(.caption)
@@ -299,15 +300,15 @@ struct OptionsView: View {
 
             dependencyStatusRow(
                 title: "Wine Mono",
-                status: viewModel.wineMonoStatus,
-                isBusy: viewModel.isWineMonoInstallInProgress
+                status: dependencies.wineMonoStatus,
+                isBusy: dependencies.isWineMonoInstallInProgress
             )
 
             Button("Install Wine Mono") {
                 viewModel.installWineMono()
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!viewModel.canInstallWineMono || viewModel.wineMonoStatus == .installed)
+            .disabled(!dependencies.canInstallWineMono || dependencies.wineMonoStatus == .installed)
 
             Text("Provides .NET support for third-party launchers. Wine downloads the compatible package and opens its installer.")
                 .font(.caption)
@@ -319,8 +320,8 @@ struct OptionsView: View {
 
             dependencyStatusRow(
                 title: "Git",
-                status: viewModel.gitStatus,
-                isBusy: viewModel.isGitInstallInProgress
+                status: dependencies.gitStatus,
+                isBusy: dependencies.isGitInstallInProgress
             )
 
             HStack(spacing: 12) {
@@ -328,13 +329,13 @@ struct OptionsView: View {
                     viewModel.installGit()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(viewModel.isGitInstallInProgress || viewModel.gitStatus == .installed)
+                .disabled(dependencies.isGitInstallInProgress || dependencies.gitStatus == .installed)
 
                 Button("Refresh") {
                     viewModel.refreshGitStatus()
                 }
                 .buttonStyle(.bordered)
-                .disabled(viewModel.isGitInstallInProgress)
+                .disabled(dependencies.isGitInstallInProgress)
             }
 
             Text("Git is required for addon installs and updates. This opens Apple's Command Line Tools installer, which includes Git.")

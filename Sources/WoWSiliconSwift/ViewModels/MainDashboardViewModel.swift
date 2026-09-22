@@ -48,14 +48,6 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var optionAsAltStatus: OptionAsAltStatus = .unknown
     @Published private(set) var isRetinaModeBusy: Bool = false
     @Published private(set) var retinaModeStatus: OptionAsAltStatus = .unknown
-    @Published private(set) var isDependencyInstallInProgress: Bool = false
-    @Published private(set) var visualCppRuntimeStatus: DependencyInstallStatus = .unknown
-    @Published private(set) var isWineMonoInstallInProgress: Bool = false
-    @Published private(set) var wineMonoStatus: DependencyInstallStatus = .unknown
-    @Published private(set) var isGitInstallInProgress: Bool = false
-    @Published private(set) var gitStatus: DependencyInstallStatus = .unknown
-    @Published private(set) var isRosettaInstallInProgress: Bool = false
-    @Published private(set) var rosettaStatus: DependencyInstallStatus = .unknown
     @Published var shouldShowRosettaInstallPrompt: Bool = false
     @Published private(set) var currentVersion: GameVersion?
     @Published private(set) var supportsAddons: Bool = false
@@ -66,6 +58,7 @@ final class MainDashboardViewModel: ObservableObject {
     private let prefsStore = UserPrefsStore()
     private let launchService = LaunchService.shared
     private let gameLaunchCoordinator = GameLaunchCoordinator()
+    let dependencies = DependencyStatusViewModel()
     private var versionManager: VersionManager
     private var userPrefs: UserPrefs
     private var pendingVanillaTweaksLaunch = false
@@ -1140,164 +1133,60 @@ final class MainDashboardViewModel: ObservableObject {
 
     func disableRetinaMode() { setRetinaMode(false) }
 
-    var canInstallDependencies: Bool {
-        BundledWineRuntime.wineExecutableURL() != nil && !isDependencyInstallInProgress
-    }
-
     func installVisualCppRuntime() {
-        guard canInstallDependencies else { return }
-        isDependencyInstallInProgress = true
-        visualCppRuntimeStatus = .inProgress("Installing...")
-        patchFeedback = nil
         let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            do {
-                try DependencyService.installVisualCppRuntime(customVariables: customVariables)
-                DispatchQueue.main.async {
-                    self?.isDependencyInstallInProgress = false
-                    self?.visualCppRuntimeStatus = DependencyService.isVisualCppRuntimeInstalled() ? .installed : .missing
-                    self?.patchFeedback = PatchFeedback(title: "Dependencies", message: "Microsoft Visual C++ Runtime 2022 installed successfully.", isError: false)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self?.isDependencyInstallInProgress = false
-                    self?.visualCppRuntimeStatus = .error(error.localizedDescription)
-                    self?.patchFeedback = PatchFeedback(title: "Dependencies Failed", message: error.localizedDescription, isError: true)
-                    self?.refreshVisualCppRuntimeStatus()
-                }
-            }
+        let task = dependencies.installVisualCppRuntime(customVariables: customVariables) { [weak self] feedback in
+            self?.patchFeedback = feedback
+        }
+        if task != nil {
+            patchFeedback = nil
         }
     }
 
     func refreshVisualCppRuntimeStatus() {
-        guard !isDependencyInstallInProgress else { return }
-
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let installed = DependencyService.isVisualCppRuntimeInstalled()
-            DispatchQueue.main.async {
-                self?.visualCppRuntimeStatus = installed ? .installed : .missing
-            }
-        }
-    }
-
-    var canInstallWineMono: Bool {
-        BundledWineRuntime.wineExecutableURL() != nil && !isWineMonoInstallInProgress
+        dependencies.refreshVisualCppRuntimeStatus()
     }
 
     func installWineMono() {
-        guard canInstallWineMono else { return }
-        isWineMonoInstallInProgress = true
-        wineMonoStatus = .inProgress("Waiting for installer...")
-        patchFeedback = nil
         let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            do {
-                try DependencyService.installWineMono(customVariables: customVariables)
-                DispatchQueue.main.async {
-                    self?.isWineMonoInstallInProgress = false
-                    self?.wineMonoStatus = .installed
-                    self?.patchFeedback = PatchFeedback(title: "Dependencies", message: "Wine Mono installed successfully.", isError: false)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self?.isWineMonoInstallInProgress = false
-                    self?.wineMonoStatus = .error(error.localizedDescription)
-                    self?.patchFeedback = PatchFeedback(title: "Wine Mono Install Failed", message: error.localizedDescription, isError: true)
-                    self?.refreshWineMonoStatus()
-                }
-            }
+        let task = dependencies.installWineMono(customVariables: customVariables) { [weak self] feedback in
+            self?.patchFeedback = feedback
+        }
+        if task != nil {
+            patchFeedback = nil
         }
     }
 
     func refreshWineMonoStatus() {
-        guard !isWineMonoInstallInProgress else { return }
-
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let installed = DependencyService.isWineMonoInstalled()
-            DispatchQueue.main.async {
-                self?.wineMonoStatus = installed ? .installed : .missing
-            }
-        }
+        dependencies.refreshWineMonoStatus()
     }
 
     func installGit() {
-        guard !isGitInstallInProgress else { return }
-
-        isGitInstallInProgress = true
-        gitStatus = .inProgress("Opening installer...")
-        patchFeedback = nil
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            do {
-                try DependencyService.installGit()
-                DispatchQueue.main.async {
-                    self?.isGitInstallInProgress = false
-                    self?.gitStatus = DependencyService.isGitInstalled() ? .installed : .inProgress("Installer opened")
-                    self?.patchFeedback = PatchFeedback(title: "Git", message: "Apple's Git installer has been opened. Finish the installation, then refresh the status.", isError: false)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self?.isGitInstallInProgress = false
-                    self?.gitStatus = .error(error.localizedDescription)
-                    self?.patchFeedback = PatchFeedback(title: "Git Install Failed", message: error.localizedDescription, isError: true)
-                    self?.refreshGitStatus()
-                }
-            }
+        let task = dependencies.installGit { [weak self] feedback in
+            self?.patchFeedback = feedback
+        }
+        if task != nil {
+            patchFeedback = nil
         }
     }
 
     func refreshGitStatus() {
-        guard !isGitInstallInProgress else { return }
-
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let installed = DependencyService.isGitInstalled()
-            DispatchQueue.main.async {
-                self?.gitStatus = installed ? .installed : .missing
-            }
-        }
+        dependencies.refreshGitStatus()
     }
 
     func installRosetta() {
-        guard !isRosettaInstallInProgress, rosettaStatus != .installed else { return }
-
-        isRosettaInstallInProgress = true
-        rosettaStatus = .inProgress("Opening installer...")
-        patchFeedback = nil
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            do {
-                try DependencyService.installRosetta()
-                DispatchQueue.main.async {
-                    self?.isRosettaInstallInProgress = false
-                    self?.rosettaStatus = .inProgress("Installer opened")
-                    self?.patchFeedback = PatchFeedback(
-                        title: "Rosetta 2",
-                        message: "Finish the Rosetta 2 installation in Terminal, then refresh the status.",
-                        isError: false
-                    )
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self?.isRosettaInstallInProgress = false
-                    self?.rosettaStatus = .error(error.localizedDescription)
-                    self?.patchFeedback = PatchFeedback(title: "Rosetta 2 Install Failed", message: error.localizedDescription, isError: true)
-                }
-            }
+        let task = dependencies.installRosetta { [weak self] feedback in
+            self?.patchFeedback = feedback
+        }
+        if task != nil {
+            patchFeedback = nil
         }
     }
 
     func refreshRosettaStatus(promptIfMissing: Bool = false) {
-        guard !isRosettaInstallInProgress else { return }
-
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let installed = DependencyService.isRosettaInstalled()
-            DispatchQueue.main.async {
-                self?.rosettaStatus = installed ? .installed : .missing
-                if promptIfMissing && !installed {
-                    self?.shouldShowRosettaInstallPrompt = true
-                }
+        dependencies.refreshRosettaStatus { [weak self] in
+            if promptIfMissing {
+                self?.shouldShowRosettaInstallPrompt = true
             }
         }
     }

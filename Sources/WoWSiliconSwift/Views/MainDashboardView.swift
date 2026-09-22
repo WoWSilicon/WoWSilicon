@@ -103,6 +103,7 @@ struct MainDashboardView: View {
         .sheet(isPresented: $showOptionsSheet) {
             OptionsView(
                 viewModel: viewModel,
+                dependencies: viewModel.dependencies,
                 onClose: { showOptionsSheet = false }
             )
             .frame(width: 780, height: 540)
