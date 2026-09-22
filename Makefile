@@ -3,10 +3,8 @@ BINARY_NAME := WoWSilicon
 BUILD_DIR := $(CURDIR)/.build
 VERSION ?= $(shell /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Packaging/Info.plist)
 BUILD_NUMBER ?= $(shell /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Packaging/Info.plist)
-RELEASE_BIN := $(BUILD_DIR)/arm64-apple-macosx/release/$(BINARY_NAME)
 DEBUG_BIN := $(BUILD_DIR)/arm64-apple-macosx/debug/$(BINARY_NAME)
 APP_BUNDLE := $(BUILD_DIR)/$(APP_NAME).app
-SPARKLE_FRAMEWORK := $(BUILD_DIR)/arm64-apple-macosx/release/Sparkle.framework
 SPARKLE_ACCOUNT ?= com.wowsilicon.updates
 SPARKLE_GENERATE_APPCAST := $(BUILD_DIR)/artifacts/sparkle/Sparkle/bin/generate_appcast
 DOWNLOAD_URL_PREFIX ?= https://github.com/WoWSilicon/WoWSilicon/releases/download/v$(VERSION)/
@@ -21,8 +19,7 @@ ICONSET := $(BUILD_DIR)/turtle.iconset
 APP_ICON := $(BUILD_DIR)/turtle.icns
 ICON_SCRIPT := $(BUILD_DIR)/make_icns.py
 SWIFT_ENV := SWIFT_MODULECACHE_PATH="$(BUILD_DIR)/swift-module-cache" CLANG_MODULE_CACHE_PATH="$(BUILD_DIR)/clang-module-cache"
-SWIFT_BUILD := $(SWIFT_ENV) swift build --arch arm64 --disable-sandbox --build-path "$(BUILD_DIR)" --cache-path "$(BUILD_DIR)/spm-cache" --manifest-cache none
-RESOURCE_BUNDLE := $(BUILD_DIR)/arm64-apple-macosx/release/WoWSilicon-swift_WoWSiliconSwift.bundle
+SWIFT_BUILD := $(SWIFT_ENV) swift build --build-system native --arch arm64 --disable-sandbox --build-path "$(BUILD_DIR)" --cache-path "$(BUILD_DIR)/spm-cache" --manifest-cache none
 WINE_RUNTIME_DIR ?= $(CURDIR)/.wine-runtime
 AUDIO_HELPER_SRC := tools/wine-audio-helper/wowsilicon-audio.c
 AUDIO_HELPER_DIR := $(BUILD_DIR)/audio-helper
@@ -80,13 +77,19 @@ bundle: build validate_wine_runtime audio_helper
 	@cp Packaging/Info.plist "$(APP_BUNDLE)/Contents/Info.plist"
 	@/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" "$(APP_BUNDLE)/Contents/Info.plist"
 	@/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(BUILD_NUMBER)" "$(APP_BUNDLE)/Contents/Info.plist"
-	@cp "$(RELEASE_BIN)" "$(APP_BUNDLE)/Contents/MacOS/$(BINARY_NAME)"
-	@chmod +x "$(APP_BUNDLE)/Contents/MacOS/$(BINARY_NAME)"
-	@cp -R "$(SPARKLE_FRAMEWORK)" "$(APP_BUNDLE)/Contents/Frameworks/"
-	@if [ -d "$(RESOURCE_BUNDLE)" ]; then \
-		cp -R "$(RESOURCE_BUNDLE)" "$(APP_BUNDLE)/Contents/Resources/"; \
+	@release_dir="$$( $(SWIFT_BUILD) -c release --show-bin-path )"; \
+		release_bin="$$release_dir/$(BINARY_NAME)"; \
+		sparkle_framework="$$release_dir/Sparkle.framework"; \
+		resource_bundle="$$release_dir/WoWSilicon-swift_WoWSiliconSwift.bundle"; \
+		test -x "$$release_bin" || { echo "Release binary not found at $$release_bin" >&2; exit 1; }; \
+		test -d "$$sparkle_framework" || { echo "Sparkle framework not found at $$sparkle_framework" >&2; exit 1; }; \
+		cp "$$release_bin" "$(APP_BUNDLE)/Contents/MacOS/$(BINARY_NAME)"; \
+		chmod +x "$(APP_BUNDLE)/Contents/MacOS/$(BINARY_NAME)"; \
+		cp -R "$$sparkle_framework" "$(APP_BUNDLE)/Contents/Frameworks/"; \
+		if [ -d "$$resource_bundle" ]; then \
+		cp -R "$$resource_bundle" "$(APP_BUNDLE)/Contents/Resources/"; \
 	else \
-		echo "warning: resource bundle not found at $(RESOURCE_BUNDLE)"; \
+		echo "warning: resource bundle not found at $$resource_bundle"; \
 		rsync -a Sources/WoWSiliconSwift/Resources/ "$(APP_BUNDLE)/Contents/Resources/"; \
 	fi
 	@mkdir -p "$(APP_BUNDLE)/Contents/Resources/Wine"
