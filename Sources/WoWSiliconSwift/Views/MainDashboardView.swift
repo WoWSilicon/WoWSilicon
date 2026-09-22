@@ -230,7 +230,7 @@ struct MainDashboardView: View {
                 .interactiveDismissDisabled(true)
         }
         .sheet(isPresented: Binding(
-            get: { viewModel.isGameOperationInProgress && !viewModel.isApplyingVanillaTweaks && !viewModel.isUnpatchingOperation },
+            get: { viewModel.isPatchingOperation },
             set: { _ in }
         )) {
             PatchingLoadingView()

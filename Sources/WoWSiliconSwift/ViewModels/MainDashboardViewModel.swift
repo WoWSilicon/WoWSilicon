@@ -14,6 +14,7 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var isGamePatched: Bool = false
     @Published private(set) var isGamePatchActionable: Bool = false
     @Published private(set) var isGameOperationInProgress: Bool = false
+    @Published private(set) var isPatchingOperation: Bool = false
     @Published private(set) var isUnpatchingOperation: Bool = false
     @Published private(set) var patchFeedback: PatchFeedback?
     @Published private(set) var canLaunch: Bool = false
@@ -1403,6 +1404,7 @@ final class MainDashboardViewModel: ObservableObject {
         }
 
         isGameOperationInProgress = true
+        isPatchingOperation = true
         isUnpatchingOperation = false
         var versionSnapshot = version
 
@@ -1430,6 +1432,7 @@ final class MainDashboardViewModel: ObservableObject {
         }
 
         isGameOperationInProgress = true
+        isPatchingOperation = false
         isUnpatchingOperation = true
         let versionSnapshot = version
 
@@ -1451,6 +1454,7 @@ final class MainDashboardViewModel: ObservableObject {
     private func handlePatchCompletion(successTitle: String, message: String) async {
         await MainActor.run {
             isGameOperationInProgress = false
+            isPatchingOperation = false
             isUnpatchingOperation = false
             refreshSnapshot()
             patchFeedback = PatchFeedback(title: successTitle, message: message, isError: false)
@@ -1460,6 +1464,7 @@ final class MainDashboardViewModel: ObservableObject {
     private func handlePatchError(_ error: Error, title: String) async {
         await MainActor.run {
             isGameOperationInProgress = false
+            isPatchingOperation = false
             isUnpatchingOperation = false
             refreshSnapshot()
             patchFeedback = PatchFeedback(title: title, message: error.localizedDescription, isError: true)
