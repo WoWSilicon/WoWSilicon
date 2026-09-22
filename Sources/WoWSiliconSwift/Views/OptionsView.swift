@@ -101,6 +101,15 @@ struct OptionsView: View {
                     binding: viewModel.boolBinding(\.enableVanillaTweaks)
                 )
             }
+            if viewModel.currentVersion?.isWorldOfWarcraft == true {
+                toggleRow(
+                    "Clear WDB cache before launch",
+                    binding: viewModel.boolBinding(\.autoDeleteWdb)
+                )
+                Text("Removes cached server data before starting this profile. Disable it for faster launches when a clean cache is not needed.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             optionAsAltControls
             retinaModeControls
             rosettaX87Controls

@@ -3,6 +3,64 @@ import Darwin
 @testable import WoWSiliconSwift
 
 final class LaunchServiceTests: XCTestCase {
+    func testWDBCleanupDisabledLeavesDirectoriesUntouched() throws {
+        let root = try makeWDBTestDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let wdb = root.appendingPathComponent("WDB", isDirectory: true)
+        try FileManager.default.createDirectory(at: wdb, withIntermediateDirectories: true)
+
+        let removed = try LaunchService.cleanWDBIfEnabled(false, at: root)
+
+        XCTAssertTrue(removed.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: wdb.path))
+    }
+
+    func testWDBCleanupRemovesBothNestedCacheLocations() throws {
+        let root = try makeWDBTestDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let primary = root.appendingPathComponent("WDB/Nested/More", isDirectory: true)
+        let cached = root.appendingPathComponent("Cache/WDB/Nested", isDirectory: true)
+        try FileManager.default.createDirectory(at: primary, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: cached, withIntermediateDirectories: true)
+        try Data("cache".utf8).write(to: primary.appendingPathComponent("entry.wdb"))
+        try Data("cache".utf8).write(to: cached.appendingPathComponent("entry.wdb"))
+
+        let removed = try LaunchService.cleanWDBIfEnabled(true, at: root)
+
+        XCTAssertEqual(Set(removed.map(\.standardizedFileURL)), Set([
+            root.appendingPathComponent("WDB", isDirectory: true).standardizedFileURL,
+            root.appendingPathComponent("Cache/WDB", isDirectory: true).standardizedFileURL
+        ]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("WDB").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Cache/WDB").path))
+    }
+
+    func testWDBCleanupAllowsAbsentDirectories() throws {
+        let root = try makeWDBTestDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertTrue(try LaunchService.cleanWDBIfEnabled(true, at: root).isEmpty)
+    }
+
+    func testWDBCleanupReportsRemovalFailure() throws {
+        let root = try makeWDBTestDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let wdb = root.appendingPathComponent("WDB", isDirectory: true)
+        try FileManager.default.createDirectory(at: wdb, withIntermediateDirectories: true)
+        let fileManager = RemovalFailingFileManager()
+
+        XCTAssertThrowsError(
+            try LaunchService.cleanWDBIfEnabled(true, at: root, fileManager: fileManager)
+        ) { error in
+            guard case LaunchServiceError.wdbCleanupFailed(let reason) = error else {
+                return XCTFail("Expected wdbCleanupFailed, got \(error)")
+            }
+            XCTAssertTrue(reason.contains(wdb.path))
+            XCTAssertTrue(reason.contains("simulated removal failure"))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: wdb.path))
+    }
+
     func testLaunchReportsPreparationFailure() async {
         var version = VersionManager.genericD3D9Template
         version.gamePath = ""
@@ -145,5 +203,22 @@ final class LaunchServiceTests: XCTestCase {
         XCTAssertEqual(result.exitCode, 0)
         XCTAssertEqual(result.stdout, command + "\nexecuted\nHISTORY\n" + command + "\n")
         XCTAssertFalse(FileManager.default.fileExists(atPath: commandURL.path))
+    }
+
+    private func makeWDBTestDirectory() throws -> URL {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WoWSiliconWDBTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return root
+    }
+}
+
+private final class RemovalFailingFileManager: FileManager, @unchecked Sendable {
+    override func removeItem(at URL: URL) throws {
+        throw NSError(
+            domain: "WoWSiliconTests",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "simulated removal failure"]
+        )
     }
 }

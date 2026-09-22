@@ -68,6 +68,7 @@ final class VersionStoreTests: XCTestCase {
               "game_path": "/Games/Wrath",
               "settings": {
                 "environment_variables": "FOO=BAR",
+                "auto_delete_wdb": false,
                 "enable_metal_hud": true,
                 "show_terminal_normally": true,
                 "enable_lib_silicon_patch": true
@@ -83,6 +84,7 @@ final class VersionStoreTests: XCTestCase {
         XCTAssertEqual(result.manager.currentVersionID, "wrathsilicon")
         XCTAssertEqual(wrath.gamePath, "/Games/Wrath")
         XCTAssertEqual(wrath.settings.environmentVariables, "FOO=BAR")
+        XCTAssertFalse(wrath.settings.autoDeleteWdb)
         XCTAssertTrue(wrath.settings.enableMetalHud)
         XCTAssertTrue(wrath.settings.showTerminalNormally)
     }
@@ -92,6 +94,7 @@ final class VersionStoreTests: XCTestCase {
         let store = VersionStore(supportDirectory: supportURL)
         let firstSettings = VersionSettings(
             enableVanillaTweaks: true,
+            autoDeleteWdb: true,
             enableMetalHud: true,
             showTerminalNormally: true,
             environmentVariables: "PROFILE=FIRST",
@@ -101,6 +104,7 @@ final class VersionStoreTests: XCTestCase {
         )
         let secondSettings = VersionSettings(
             enableVanillaTweaks: false,
+            autoDeleteWdb: false,
             enableMetalHud: false,
             showTerminalNormally: false,
             environmentVariables: "PROFILE=SECOND",

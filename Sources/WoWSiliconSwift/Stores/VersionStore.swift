@@ -243,7 +243,7 @@ struct VersionStore {
             merged.vanillaTweaksParameters = trimmedLegacyParameters
         }
         merged.enableVanillaTweaks = legacy.enableVanillaTweaks
-        merged.autoDeleteWdb = true
+        merged.autoDeleteWdb = legacy.autoDeleteWdb
         merged.enableMetalHud = legacy.enableMetalHud
         merged.showTerminalNormally = legacy.showTerminalNormally
         merged.remapOptionAsAlt = legacy.remapOptionAsAlt

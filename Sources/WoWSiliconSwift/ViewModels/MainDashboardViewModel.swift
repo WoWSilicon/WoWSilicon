@@ -115,14 +115,7 @@ final class MainDashboardViewModel: ObservableObject {
         updateWineBottleMigrationPromptState()
         TelemetryService.shared.setClientTelemetryEnabled(userPrefs.telemetryEnabled)
 
-        // Don't persist defaults into WoWSilicon before the user decides whether to migrate,
-        // as that would cause the destination files to already exist and block the file move.
-        // Also don't persist if the decode failed — writing defaults would overwrite the real data.
         if !shouldShowMigrationPrompt && !result.decodeFailed {
-            if userPrefs.autoDeleteWdb == false {
-                userPrefs.autoDeleteWdb = true
-                persistUserPrefs()
-            }
             if result.requiresLegacyPrefsMigration {
                 migrateLegacyPrefsToCurrentVersion()
             }
@@ -459,9 +452,6 @@ final class MainDashboardViewModel: ObservableObject {
         normalizeTelemetryPrefs()
         wineBottlePath = WineBottleService.currentBottleURL(prefs: userPrefs).path
         TelemetryService.shared.setClientTelemetryEnabled(userPrefs.telemetryEnabled)
-        if userPrefs.autoDeleteWdb == false {
-            userPrefs.autoDeleteWdb = true
-        }
         migrateLegacyPrefsToCurrentVersion()
         persistVersionManager()
         persistUserPrefs()
@@ -1677,7 +1667,7 @@ final class MainDashboardViewModel: ObservableObject {
             } else {
                 version.settings.enableVanillaTweaks = false
             }
-            version.settings.autoDeleteWdb = version.isWorldOfWarcraft
+            version.settings.autoDeleteWdb = userPrefs.autoDeleteWdb
             version.settings.remapOptionAsAlt = userPrefs.remapOptionAsAlt
             if !userPrefs.environmentVariables.isEmpty {
                 version.settings.environmentVariables = userPrefs.environmentVariables

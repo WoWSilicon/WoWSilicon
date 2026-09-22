@@ -10,6 +10,7 @@ enum LaunchServiceError: LocalizedError {
     case executableMissing(String)
     case vanillaTweaksMissing
     case patchNotApplied
+    case wdbCleanupFailed(String)
     case processLaunchFailed(String)
     case appleScriptFailed(String)
     case versionMismatch(String, String)
@@ -32,6 +33,8 @@ enum LaunchServiceError: LocalizedError {
             return "Vanilla Tweaks is enabled but WoW_tweaked.exe was not found. WoWSilicon can create it automatically before launching."
         case .patchNotApplied:
             return "Patches no longer appear to be applied. Re-run the patching steps before launching."
+        case .wdbCleanupFailed(let reason):
+            return "Could not clear the WDB cache before launch. \(reason)"
         case .processLaunchFailed(let reason):
             return reason
         case .appleScriptFailed(let reason):
@@ -178,9 +181,13 @@ final class LaunchService: @unchecked Sendable {
         }
 
         try Task.checkCancellation()
-        if performPrelaunchActions && version.settings.autoDeleteWdb {
-            LaunchPerformance.measure("WDB Cleanup") {
-                deleteWDBDirectories(at: gameURL)
+        if performPrelaunchActions {
+            _ = try LaunchPerformance.measure("WDB Cleanup") {
+                try Self.cleanWDBIfEnabled(
+                    version.settings.autoDeleteWdb,
+                    at: gameURL,
+                    fileManager: fileManager
+                )
             }
         }
 
@@ -244,7 +251,10 @@ final class LaunchService: @unchecked Sendable {
                 configuration.gameURL.appendingPathComponent("Cache/WDB", isDirectory: true)
             ]
             setupCommands.append(
-                contentsOf: wdbURLs.map { "/bin/rm -rf \(shellQuote($0.path))" }
+                contentsOf: wdbURLs.map { url in
+                    let failure = shellQuote("Could not clear the WDB cache at \(url.path)")
+                    return "/bin/rm -rf \(shellQuote(url.path)) || { /usr/bin/printf '%s\\n' \(failure) >&2; exit 1; }"
+                }
             )
         }
 
@@ -754,20 +764,35 @@ final class LaunchService: @unchecked Sendable {
         try? task.run()
     }
 
-    private func deleteWDBDirectories(at gameURL: URL) {
+    @discardableResult
+    static func cleanWDBIfEnabled(
+        _ enabled: Bool,
+        at gameURL: URL,
+        fileManager: FileManager = .default
+    ) throws -> [URL] {
+        guard enabled else { return [] }
+
         let candidates = [
             gameURL.appendingPathComponent("WDB", isDirectory: true),
             gameURL.appendingPathComponent("Cache", isDirectory: true).appendingPathComponent("WDB", isDirectory: true)
         ]
+        var removed: [URL] = []
+        var failures: [String] = []
 
         for url in candidates where fileManager.fileExists(atPath: url.path) {
+            try Task.checkCancellation()
             do {
                 try fileManager.removeItem(at: url)
-                print("Removed WDB directory at \(url.path)")
+                removed.append(url)
             } catch {
-                print("Failed to remove WDB directory at \(url.path): \(error.localizedDescription)")
+                failures.append("\(url.path): \(error.localizedDescription)")
             }
         }
+
+        guard failures.isEmpty else {
+            throw LaunchServiceError.wdbCleanupFailed(failures.joined(separator: "\n"))
+        }
+        return removed
     }
 
     // MARK: - Force quit
