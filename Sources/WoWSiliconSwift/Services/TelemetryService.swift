@@ -44,12 +44,14 @@ final class TelemetryService {
     private let cancelAllRequests: @Sendable () -> Void
     private let now: @Sendable () -> Date
     private let randomSample: @Sendable () -> Double
+    private let heartbeatIntervalOverride: TimeInterval?
     private var clientTelemetryEnabled = false
     private var cachedConfig: TelemetryConfig?
     private var configExpiresAt: Date?
     private var backoffUntil: Date?
     private var stateGeneration = 0
     private var configRequest: (id: UUID, task: Task<TelemetryHTTPResult, Error>)?
+    private var activeGameSession: ActiveGameSession?
 
     private convenience init() {
         let session = URLSession(configuration: .ephemeral)
@@ -79,13 +81,15 @@ final class TelemetryService {
         httpClient: @escaping TelemetryHTTPClient,
         cancelAllRequests: @escaping @Sendable () -> Void = {},
         now: @escaping @Sendable () -> Date = Date.init,
-        randomSample: @escaping @Sendable () -> Double = { Double.random(in: 0...1) }
+        randomSample: @escaping @Sendable () -> Double = { Double.random(in: 0...1) },
+        heartbeatInterval: TimeInterval? = nil
     ) {
         self.baseURL = baseURL
         self.httpClient = httpClient
         self.cancelAllRequests = cancelAllRequests
         self.now = now
         self.randomSample = randomSample
+        heartbeatIntervalOverride = heartbeatInterval
     }
 
     func setClientTelemetryEnabled(_ enabled: Bool) {
@@ -93,6 +97,7 @@ final class TelemetryService {
         stateGeneration += 1
 
         if !enabled {
+            activeGameSession = nil
             configRequest?.task.cancel()
             configRequest = nil
             cancelAllRequests()
@@ -106,7 +111,54 @@ final class TelemetryService {
 
     @discardableResult
     func recordWowStart(prefs: UserPrefs, context: TelemetryEventContext) -> Task<Void, Never>? {
-        record(event: "wow_start", prefs: prefs, context: context, sessionID: UUID().uuidString)
+        let session = ActiveGameSession(
+            id: UUID().uuidString,
+            prefs: prefs,
+            context: context,
+            lastHeartbeatAt: now(),
+            wasObservedRunning: false
+        )
+        guard let task = record(event: "wow_start", prefs: prefs, context: context, sessionID: session.id) else {
+            return nil
+        }
+        activeGameSession = session
+        return task
+    }
+
+    @discardableResult
+    func updateGameRunning(_ isRunning: Bool) -> Task<Void, Never>? {
+        guard var session = activeGameSession else { return nil }
+
+        if !isRunning {
+            if session.wasObservedRunning {
+                activeGameSession = nil
+                return record(
+                    event: "session_end",
+                    prefs: session.prefs,
+                    context: session.context,
+                    sessionID: session.id
+                )
+            }
+            return nil
+        }
+
+        session.wasObservedRunning = true
+        let configuredHeartbeatInterval = heartbeatIntervalOverride ?? cachedConfig.map {
+            TimeInterval(max($0.heartbeatIntervalMinutes, 1) * 60)
+        } ?? 5 * 60
+        guard now().timeIntervalSince(session.lastHeartbeatAt) >= configuredHeartbeatInterval else {
+            activeGameSession = session
+            return nil
+        }
+
+        session.lastHeartbeatAt = now()
+        activeGameSession = session
+        return record(
+            event: "heartbeat",
+            prefs: session.prefs,
+            context: session.context,
+            sessionID: session.id
+        )
     }
 
     private func record(
@@ -143,7 +195,12 @@ final class TelemetryService {
         guard let config = await fetchConfigIfNeeded(generation: generation) else { return }
         guard isEnabled(generation: generation) else { return }
         guard config.telemetryEnabled else { return }
-        guard randomSample() <= config.launchSampleRate else { return }
+        if event == "heartbeat" || event == "session_end" {
+            guard config.heartbeatEnabled else { return }
+            guard randomSample() <= config.heartbeatSampleRate else { return }
+        } else {
+            guard randomSample() <= config.launchSampleRate else { return }
+        }
 
         await post(
             TelemetryPayload(
@@ -234,19 +291,36 @@ final class TelemetryService {
 
 private let appVersionFallback = "unknown"
 
+private struct ActiveGameSession {
+    let id: String
+    let prefs: UserPrefs
+    let context: TelemetryEventContext
+    var lastHeartbeatAt: Date
+    var wasObservedRunning: Bool
+}
+
 private struct TelemetryConfig: Decodable, Sendable {
     let telemetryEnabled: Bool
+    let heartbeatEnabled: Bool
+    let heartbeatIntervalMinutes: Int
+    let heartbeatSampleRate: Double
     let launchSampleRate: Double
     let configTTLHours: Int
 
     static let fallback = TelemetryConfig(
         telemetryEnabled: true,
+        heartbeatEnabled: true,
+        heartbeatIntervalMinutes: 5,
+        heartbeatSampleRate: 1.0,
         launchSampleRate: 1.0,
         configTTLHours: 24
     )
 
     enum CodingKeys: String, CodingKey {
         case telemetryEnabled = "telemetry_enabled"
+        case heartbeatEnabled = "heartbeat_enabled"
+        case heartbeatIntervalMinutes = "heartbeat_interval_minutes"
+        case heartbeatSampleRate = "heartbeat_sample_rate"
         case launchSampleRate = "launch_sample_rate"
         case configTTLHours = "config_ttl_hours"
     }

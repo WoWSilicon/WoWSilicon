@@ -67,6 +67,57 @@ final class TelemetryServiceTests: XCTestCase {
         }
     }
 
+    func testHeartbeatUsesGameSessionIDAndIsRateLimited() async throws {
+        let stub = TelemetryHTTPStub(configStatusCode: 200)
+        let service = makeService(stub: stub, heartbeatInterval: 0)
+        service.setClientTelemetryEnabled(true)
+
+        let wowStart = try XCTUnwrap(service.recordWowStart(prefs: enabledPrefs, context: context))
+        await wowStart.value
+        let heartbeat = try XCTUnwrap(service.updateGameRunning(true))
+        await heartbeat.value
+
+        let events = await stub.events()
+        XCTAssertEqual(events.map(\.event), ["wow_start", "heartbeat"])
+        let wowStartEvent = try XCTUnwrap(events.first)
+        let heartbeatEvent = try XCTUnwrap(events.last)
+        XCTAssertEqual(wowStartEvent.sessionID, heartbeatEvent.sessionID)
+        XCTAssertNotEqual(wowStartEvent.sessionID, enabledPrefs.telemetryInstallID)
+    }
+
+    func testHeartbeatIsNotSentBeforeInterval() async throws {
+        let stub = TelemetryHTTPStub(configStatusCode: 200)
+        let service = makeService(stub: stub, heartbeatInterval: 300)
+        service.setClientTelemetryEnabled(true)
+
+        let wowStart = try XCTUnwrap(service.recordWowStart(prefs: enabledPrefs, context: context))
+        await wowStart.value
+
+        XCTAssertNil(service.updateGameRunning(true))
+        let counts = await stub.requestCounts()
+        XCTAssertEqual(counts.event, 1)
+    }
+
+    func testGameSessionEndsOnlyAfterRunningProcessWasObserved() async throws {
+        let stub = TelemetryHTTPStub(configStatusCode: 200)
+        let service = makeService(stub: stub, heartbeatInterval: 0)
+        service.setClientTelemetryEnabled(true)
+
+        let wowStart = try XCTUnwrap(service.recordWowStart(prefs: enabledPrefs, context: context))
+        await wowStart.value
+        service.updateGameRunning(false)
+        let firstHeartbeat = try XCTUnwrap(service.updateGameRunning(true))
+        await firstHeartbeat.value
+
+        let sessionEnd = try XCTUnwrap(service.updateGameRunning(false))
+        await sessionEnd.value
+        XCTAssertNil(service.updateGameRunning(true))
+        let counts = await stub.requestCounts()
+        XCTAssertEqual(counts.event, 3)
+        let events = await stub.events()
+        XCTAssertEqual(events.map(\.event), ["wow_start", "heartbeat", "session_end"])
+    }
+
     private var enabledPrefs: UserPrefs {
         UserPrefs(
             telemetryEnabled: true,
@@ -79,13 +130,17 @@ final class TelemetryServiceTests: XCTestCase {
         TelemetryEventContext(version: nil)
     }
 
-    private func makeService(stub: TelemetryHTTPStub) -> TelemetryService {
+    private func makeService(
+        stub: TelemetryHTTPStub,
+        heartbeatInterval: TimeInterval = 5 * 60
+    ) -> TelemetryService {
         TelemetryService(
             baseURL: URL(string: "https://telemetry.example")!,
             httpClient: { request in
                 try await stub.respond(to: request)
             },
-            randomSample: { 0 }
+            randomSample: { 0 },
+            heartbeatInterval: heartbeatInterval
         )
     }
 }
@@ -96,6 +151,7 @@ private actor TelemetryHTTPStub {
     private let configDelayNanoseconds: UInt64
     private var configRequestCount = 0
     private var eventRequestCount = 0
+    private var recordedEvents: [RecordedTelemetryEvent] = []
 
     init(
         configStatusCode: Int,
@@ -114,7 +170,7 @@ private actor TelemetryHTTPStub {
                 try await Task.sleep(nanoseconds: configDelayNanoseconds)
             }
             let data = Data(
-                #"{"telemetry_enabled":true,"heartbeat_enabled":false,"heartbeat_interval_minutes":60,"launch_sample_rate":1,"heartbeat_sample_rate":0,"config_ttl_hours":24}"#.utf8
+                #"{"telemetry_enabled":true,"heartbeat_enabled":true,"heartbeat_interval_minutes":5,"launch_sample_rate":1,"heartbeat_sample_rate":1,"config_ttl_hours":24}"#.utf8
             )
             return TelemetryHTTPResult(
                 data: data,
@@ -124,6 +180,10 @@ private actor TelemetryHTTPStub {
         }
 
         eventRequestCount += 1
+        if let data = request.httpBody,
+           let event = try? JSONDecoder().decode(RecordedTelemetryEvent.self, from: data) {
+            recordedEvents.append(event)
+        }
         return TelemetryHTTPResult(
             data: Data(),
             statusCode: eventStatusCode,
@@ -133,5 +193,19 @@ private actor TelemetryHTTPStub {
 
     func requestCounts() -> (config: Int, event: Int) {
         (configRequestCount, eventRequestCount)
+    }
+
+    func events() -> [RecordedTelemetryEvent] {
+        recordedEvents
+    }
+}
+
+private struct RecordedTelemetryEvent: Decodable {
+    let event: String
+    let sessionID: String
+
+    enum CodingKeys: String, CodingKey {
+        case event
+        case sessionID = "session_id"
     }
 }

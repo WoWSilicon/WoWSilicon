@@ -325,6 +325,7 @@ final class MainDashboardViewModel: ObservableObject {
 
             if !isForceQuittingWine, !isAudioOutputBusy, let processCount {
                 wineProcessCount = processCount
+                TelemetryService.shared.updateGameRunning(processCount > 0)
             }
 
             let interval = Self.wineProcessPollingIntervalSeconds(
