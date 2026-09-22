@@ -143,10 +143,7 @@ final class TelemetryService {
         guard let config = await fetchConfigIfNeeded(generation: generation) else { return }
         guard isEnabled(generation: generation) else { return }
         guard config.telemetryEnabled else { return }
-        if event == "heartbeat", !config.heartbeatEnabled { return }
-
-        let sampleRate = event == "heartbeat" ? config.heartbeatSampleRate : config.launchSampleRate
-        guard randomSample() <= sampleRate else { return }
+        guard randomSample() <= config.launchSampleRate else { return }
 
         await post(
             TelemetryPayload(
@@ -239,27 +236,18 @@ private let appVersionFallback = "unknown"
 
 private struct TelemetryConfig: Decodable, Sendable {
     let telemetryEnabled: Bool
-    let heartbeatEnabled: Bool
-    let heartbeatIntervalMinutes: Int
     let launchSampleRate: Double
-    let heartbeatSampleRate: Double
     let configTTLHours: Int
 
     static let fallback = TelemetryConfig(
         telemetryEnabled: true,
-        heartbeatEnabled: false,
-        heartbeatIntervalMinutes: 60,
         launchSampleRate: 1.0,
-        heartbeatSampleRate: 0.0,
         configTTLHours: 24
     )
 
     enum CodingKeys: String, CodingKey {
         case telemetryEnabled = "telemetry_enabled"
-        case heartbeatEnabled = "heartbeat_enabled"
-        case heartbeatIntervalMinutes = "heartbeat_interval_minutes"
         case launchSampleRate = "launch_sample_rate"
-        case heartbeatSampleRate = "heartbeat_sample_rate"
         case configTTLHours = "config_ttl_hours"
     }
 }

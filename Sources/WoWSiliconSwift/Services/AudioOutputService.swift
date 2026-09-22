@@ -38,11 +38,6 @@ enum AudioOutputServiceError: LocalizedError {
 enum AudioOutputService {
     static let helperEnvironmentOverride = "WOWSILICON_AUDIO_HELPER"
 
-    static func availableOutputs(customVariables: String = "") throws -> [WineAudioOutputDevice] {
-        let result = try runHelper(arguments: ["list"], customVariables: customVariables)
-        return parseDeviceList(result.stdout)
-    }
-
     static func snapshot(customVariables: String = "") throws -> WineAudioSnapshot {
         let result = try runHelper(arguments: ["snapshot"], customVariables: customVariables)
         return parseSnapshot(result.stdout)
@@ -128,17 +123,6 @@ enum AudioOutputService {
         return savedDeviceArguments(outputID: outputID, inputID: inputID).map { arguments in
             let quotedArguments = arguments.map(shellQuote).joined(separator: " ")
             return "\(environment) \(executable) \(helper) \(quotedArguments)"
-        }
-    }
-
-    static func parseDeviceList(_ output: String) -> [WineAudioOutputDevice] {
-        output.split(whereSeparator: { $0.isNewline }).compactMap { line in
-            let fields = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
-            guard fields.count == 2 else { return nil }
-            let id = String(fields[0])
-            guard !id.isEmpty else { return nil }
-            let rawName = String(fields[1]).trimmingCharacters(in: .whitespacesAndNewlines)
-            return WineAudioOutputDevice(id: id, name: rawName.isEmpty ? id : rawName)
         }
     }
 

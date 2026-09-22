@@ -22,20 +22,8 @@ enum WineProcessMonitor {
         "wineboot.exe"
     ]
 
-    static func currentProcessCount() -> Int? {
-        currentProcessIDs()?.count
-    }
-
     static func currentApplicationProcessCount() -> Int? {
         currentApplicationProcessIDs()?.count
-    }
-
-    static func persistentProcessCount(confirmAfter delay: TimeInterval = 0.75) -> Int? {
-        guard let initialCount = currentProcessCount() else { return nil }
-        guard initialCount > 0 else { return 0 }
-
-        Thread.sleep(forTimeInterval: delay)
-        return currentProcessCount()
     }
 
     static func waitForApplicationProcessExit(timeout: TimeInterval = 3) -> Int? {

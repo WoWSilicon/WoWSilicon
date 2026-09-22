@@ -348,10 +348,6 @@ struct OptionsView: View {
         "Installs Microsoft's x86 Visual C++ Runtime into the selected Wine bottle using the bundled Wine runtime."
     }
 
-    private var visualCppRuntimeStatusColor: Color {
-        dependencyStatusColor(viewModel.visualCppRuntimeStatus)
-    }
-
     private func dependencyStatusRow(title: String, status: DependencyInstallStatus, isBusy: Bool) -> some View {
         HStack(spacing: 8) {
             Text(title)
