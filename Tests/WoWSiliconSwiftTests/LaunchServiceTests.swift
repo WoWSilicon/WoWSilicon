@@ -2,6 +2,23 @@ import XCTest
 @testable import WoWSiliconSwift
 
 final class LaunchServiceTests: XCTestCase {
+    func testShellQuotePreservesMetacharactersAsOneLiteralArgument() throws {
+        let markerURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WoWSiliconShellQuote-\(UUID().uuidString)")
+        let value = "path with spaces/it's/$HOME/`touch \(markerURL.path)`/$(touch \(markerURL.path))"
+        defer { try? FileManager.default.removeItem(at: markerURL) }
+
+        let quoted = LaunchService.shared.shellQuote(value)
+        let result = try ProcessRunner.run(
+            executablePath: "/bin/sh",
+            arguments: ["-c", "set -- \(quoted); printf '%s\\n' \"$#\" \"$1\""]
+        )
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertEqual(result.stdout, "1\n\(value)\n")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: markerURL.path))
+    }
+
     func testTerminalBootstrapPrintsAndExecutesLongCommandThenRemovesFile() throws {
         let commandURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("WoWSiliconLaunchServiceTests-\(UUID().uuidString).sh")

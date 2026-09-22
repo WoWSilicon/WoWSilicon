@@ -374,7 +374,7 @@ final class LaunchService: @unchecked Sendable {
             value: WineRegistrySupport.winePrefixURL().path
         )
         let vulkanDriver = vulkanDriverShellAssignment(for: settings.graphicsSettings)
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath)\(vulkanDriver) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\"\(outputDeviceOverride)\(inputDeviceOverride) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath)\(vulkanDriver) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\(shellQuote(dllOverride))\(outputDeviceOverride)\(inputDeviceOverride) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = BundledWineRuntime.shellEnvironmentAssignments(settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
@@ -386,11 +386,7 @@ final class LaunchService: @unchecked Sendable {
         }
     }
 
-    private func doubleQuote(_ value: String) -> String {
-        "\"" + value.replacingOccurrences(of: "\"", with: "\\\"") + "\""
-    }
-
-    private func shellQuote(_ value: String) -> String {
+    func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
@@ -409,17 +405,17 @@ final class LaunchService: @unchecked Sendable {
             return
         }
 
-        let installer = doubleQuote(installerURL.path)
-        let wine = doubleQuote(wineExecutableURL.path)
+        let installer = shellQuote(installerURL.path)
+        let wine = shellQuote(wineExecutableURL.path)
         let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverrideWithBuiltinFallback
-        let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
+        let dyldLibraryPath = shellQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let winePrefix = BundledWineRuntime.shellEnvironmentAssignment(
             key: "WINEPREFIX",
             value: WineRegistrySupport.winePrefixURL().path
         )
         let custom = BundledWineRuntime.shellEnvironmentAssignments(version.settings.environmentVariables)
         let vulkanDriver = vulkanDriverShellAssignment(for: version.settings.graphicsSettings)
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath)\(vulkanDriver) WINEDLLOVERRIDES=\"\(dllOverride)\""
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath)\(vulkanDriver) WINEDLLOVERRIDES=\(shellQuote(dllOverride))"
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
         let shellCommand = "\(envPart) \(wine) \(installer)"
 
@@ -566,9 +562,9 @@ final class LaunchService: @unchecked Sendable {
         }
 
         let exeURL = URL(fileURLWithPath: exePath)
-        let launcherDir = doubleQuote(exeURL.deletingLastPathComponent().path)
-        let exeName = doubleQuote(exeURL.lastPathComponent)
-        let wine = doubleQuote(wineExecutableURL.path)
+        let launcherDir = shellQuote(exeURL.deletingLastPathComponent().path)
+        let exeName = shellQuote(exeURL.lastPathComponent)
+        let wine = shellQuote(wineExecutableURL.path)
 
         let mtlValue = version.settings.enableMetalHud ? "1" : "0"
         let spatialAudioMode = version.settings.spatializeStereo ? "fixed" : "off"
@@ -576,13 +572,13 @@ final class LaunchService: @unchecked Sendable {
         let outputDeviceOverride = version.settings.audioOutputDeviceID.isEmpty ? "" : " WOWSILICON_FOLLOW_SYSTEM_OUTPUT=0"
         let inputDeviceOverride = version.settings.audioInputDeviceID.isEmpty ? "" : " WOWSILICON_FOLLOW_SYSTEM_INPUT=0"
         let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverrideWithBuiltinFallback
-        let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
+        let dyldLibraryPath = shellQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let winePrefix = BundledWineRuntime.shellEnvironmentAssignment(
             key: "WINEPREFIX",
             value: WineRegistrySupport.winePrefixURL().path
         )
         let vulkanDriver = vulkanDriverShellAssignment(for: version.settings.graphicsSettings)
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath)\(vulkanDriver) WINE_D3D_CONFIG=renderer=vulkan WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\"\(outputDeviceOverride)\(inputDeviceOverride) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath)\(vulkanDriver) WINE_D3D_CONFIG=renderer=vulkan WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\(shellQuote(dllOverride))\(outputDeviceOverride)\(inputDeviceOverride) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = BundledWineRuntime.shellEnvironmentAssignments(version.settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
