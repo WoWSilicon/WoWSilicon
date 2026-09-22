@@ -119,12 +119,6 @@ final class MainDashboardViewModel: ObservableObject {
         refreshSnapshot()
         updateTelemetryConsentPromptState()
         recordLaunchTelemetryIfNeeded()
-        refreshOptionAsAltStatus()
-        refreshRetinaModeStatus()
-        refreshVisualCppRuntimeStatus()
-        refreshWineMonoStatus()
-        refreshGitStatus()
-        refreshRosettaStatus(promptIfMissing: true)
     }
 
     func selectVersion(id: String) {
@@ -389,9 +383,19 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     func beginOptionsSession() {
+        guard !hasActiveOptionsSession else { return }
+
         optionsSessionInitialVersionID = versionManager.currentVersionID
         optionsSessionInitialVanillaTweaksParameters = versionManager.currentVersion?.settings.vanillaTweaksParameters
         hasActiveOptionsSession = true
+
+        refreshOptionAsAltStatus()
+        refreshRetinaModeStatus()
+        refreshGraphicsSettings()
+        refreshVisualCppRuntimeStatus()
+        refreshWineMonoStatus()
+        refreshGitStatus()
+        refreshRosettaStatus(promptIfMissing: true)
     }
 
     func completeOptionsSession() {

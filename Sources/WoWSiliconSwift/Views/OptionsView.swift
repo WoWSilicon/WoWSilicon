@@ -66,12 +66,6 @@ struct OptionsView: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
-            viewModel.refreshOptionAsAltStatus()
-            viewModel.refreshRetinaModeStatus()
-            viewModel.refreshGraphicsSettings()
-            viewModel.refreshVisualCppRuntimeStatus()
-            viewModel.refreshGitStatus()
-            viewModel.refreshRosettaStatus()
             viewModel.beginOptionsSession()
             refreshRealmlist()
         }
