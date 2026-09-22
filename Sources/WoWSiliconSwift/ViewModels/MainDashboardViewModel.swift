@@ -33,6 +33,7 @@ final class MainDashboardViewModel: ObservableObject {
     @Published var shouldShowWineBottleMigrationPrompt: Bool = false
     @Published var shouldShowTelemetryConsentPrompt: Bool = false
     @Published private(set) var isWineBottleMigrationInProgress: Bool = false
+    @Published private(set) var canRetryWineProfileMigration: Bool = false
     @Published private(set) var wineBottlePath: String = ""
     @Published private(set) var audioOutputDevices: [WineAudioOutputDevice] = []
     @Published private(set) var audioInputDevices: [WineAudioOutputDevice] = []
@@ -69,6 +70,8 @@ final class MainDashboardViewModel: ObservableObject {
     private var pendingVanillaTweaksLaunch = false
     private var pendingWineLaunchVersion: GameVersion?
     private var launchTask: Task<Void, Never>?
+    private var wineProfileMigrationTask: Task<Void, Never>?
+    private var didRequestWineProfileMigration = false
     private var playToWineInterval: LaunchPerformanceInterval?
     private var optionsSessionInitialVanillaTweaksParameters: String?
     private var optionsSessionInitialVersionID: String?
@@ -98,20 +101,6 @@ final class MainDashboardViewModel: ObservableObject {
         userPrefs = prefsStore.load()
         normalizeTelemetryPrefs()
         wineBottlePath = WineBottleService.currentBottleURL(prefs: userPrefs).path
-        do {
-            if try WineBottleService.migrateExternalUserProfileIfNeeded(
-                bottleURL: WineBottleService.currentBottleURL(prefs: userPrefs)
-            ) {
-                debugPrint("Copied the Wine user profile into the configured WoWSilicon bottle; ~/Wine was kept as a backup.")
-            }
-        } catch {
-            debugPrint("Wine user profile migration failed: \(error.localizedDescription)")
-            patchFeedback = PatchFeedback(
-                title: "Wine Profile Migration Failed",
-                message: "WoWSilicon could not move the Windows user profile into the selected bottle. Your existing ~/Wine folder was not removed. \(error.localizedDescription)",
-                isError: true
-            )
-        }
         updateWineBottleMigrationPromptState()
         TelemetryService.shared.setClientTelemetryEnabled(userPrefs.telemetryEnabled)
 
@@ -462,6 +451,61 @@ final class MainDashboardViewModel: ObservableObject {
         refreshRetinaModeStatus()
         updateWineBottleMigrationPromptState()
         updateTelemetryConsentPromptState()
+        startWineProfileMigrationIfNeeded()
+    }
+
+    func startWineProfileMigrationIfNeeded() {
+        guard !didRequestWineProfileMigration,
+              wineProfileMigrationTask == nil,
+              !isWineBottleMigrationInProgress,
+              !shouldShowMigrationPrompt,
+              !shouldShowWineBottleMigrationPrompt else {
+            return
+        }
+
+        didRequestWineProfileMigration = true
+        canRetryWineProfileMigration = false
+        isWineBottleMigrationInProgress = true
+        shouldShowTelemetryConsentPrompt = false
+        let bottleURL = WineBottleService.currentBottleURL(prefs: userPrefs)
+
+        wineProfileMigrationTask = Task { [weak self] in
+            let migration = Task.detached(priority: .utility) {
+                try WineBottleService.migrateExternalUserProfileIfNeeded(bottleURL: bottleURL)
+            }
+
+            do {
+                let migrated = try await withTaskCancellationHandler {
+                    try await migration.value
+                } onCancel: {
+                    migration.cancel()
+                }
+                if migrated {
+                    debugPrint("Copied the Wine user profile into the configured WoWSilicon bottle; ~/Wine was kept as a backup.")
+                }
+            } catch is CancellationError {
+                self?.didRequestWineProfileMigration = false
+            } catch {
+                guard let self else { return }
+                debugPrint("Wine user profile migration failed: \(error.localizedDescription)")
+                self.canRetryWineProfileMigration = true
+                self.patchFeedback = PatchFeedback(
+                    title: "Wine Profile Migration Failed",
+                    message: "WoWSilicon could not copy the Windows user profile into the selected bottle. Your existing ~/Wine folder was not removed. You can retry from Options. \(error.localizedDescription)",
+                    isError: true
+                )
+            }
+
+            self?.isWineBottleMigrationInProgress = false
+            self?.wineProfileMigrationTask = nil
+            self?.updateTelemetryConsentPromptState()
+        }
+    }
+
+    func retryWineProfileMigration() {
+        guard canRetryWineProfileMigration, wineProfileMigrationTask == nil else { return }
+        didRequestWineProfileMigration = false
+        startWineProfileMigrationIfNeeded()
     }
 
     func handleWineBottleMigration(copyLegacyBottle: Bool) {
@@ -470,6 +514,7 @@ final class MainDashboardViewModel: ObservableObject {
             userPrefs.wineBottleMigrationAsked = true
             persistUserPrefs()
             updateTelemetryConsentPromptState()
+            startWineProfileMigrationIfNeeded()
             return
         }
 
@@ -491,6 +536,7 @@ final class MainDashboardViewModel: ObservableObject {
                     )
                     self.refreshWineBottleDependentStatuses()
                     self.updateTelemetryConsentPromptState()
+                    self.startWineProfileMigrationIfNeeded()
                 }
             } catch {
                 await MainActor.run {
@@ -539,6 +585,8 @@ final class MainDashboardViewModel: ObservableObject {
             wineBottlePath = validated.path
             refreshWineBottleDependentStatuses()
             refreshAudioOutputs()
+            didRequestWineProfileMigration = false
+            startWineProfileMigrationIfNeeded()
         } catch {
             presentWineBottleAlert(error.localizedDescription)
         }
@@ -552,6 +600,8 @@ final class MainDashboardViewModel: ObservableObject {
         wineBottlePath = WineBottleService.defaultBottleURL().path
         refreshWineBottleDependentStatuses()
         refreshAudioOutputs()
+        didRequestWineProfileMigration = false
+        startWineProfileMigrationIfNeeded()
     }
 
     func openWineBottleLocation() {
@@ -1780,6 +1830,7 @@ final class MainDashboardViewModel: ObservableObject {
     private func updateTelemetryConsentPromptState() {
         shouldShowTelemetryConsentPrompt = !shouldShowMigrationPrompt
             && !shouldShowWineBottleMigrationPrompt
+            && !isWineBottleMigrationInProgress
             && !userPrefs.telemetryConsentAsked
     }
 

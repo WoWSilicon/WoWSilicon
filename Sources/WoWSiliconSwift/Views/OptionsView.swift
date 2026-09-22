@@ -482,6 +482,19 @@ struct OptionsView: View {
                     .disabled(viewModel.usesDefaultWineBottleLocation || !viewModel.canChangeWineBottleLocation)
             }
 
+            if viewModel.isWineBottleMigrationInProgress {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Migrating Wine data…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else if viewModel.canRetryWineProfileMigration {
+                Button("Retry Profile Copy", action: viewModel.retryWineProfileMigration)
+                    .buttonStyle(.bordered)
+            }
+
             HStack(spacing: 10) {
                 Button("Open Wine Configuration…", action: viewModel.openWineConfiguration)
                     .buttonStyle(.bordered)

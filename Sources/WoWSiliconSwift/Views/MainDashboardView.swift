@@ -90,6 +90,7 @@ struct MainDashboardView: View {
                     isBusy: viewModel.isGameOperationInProgress
                         || viewModel.isForceQuittingWine
                         || viewModel.isCheckingWineProcesses
+                        || viewModel.isWineBottleMigrationInProgress
                 )
                 .padding(.horizontal, 32)
                 .padding(.bottom, 24)
@@ -226,6 +227,13 @@ struct MainDashboardView: View {
                 .interactiveDismissDisabled(true)
         }
         .sheet(isPresented: Binding(
+            get: { viewModel.isWineBottleMigrationInProgress },
+            set: { _ in }
+        )) {
+            WineMigrationLoadingView()
+                .interactiveDismissDisabled(true)
+        }
+        .sheet(isPresented: Binding(
             get: { viewModel.isGameOperationInProgress && !viewModel.isApplyingVanillaTweaks && !viewModel.isUnpatchingOperation },
             set: { _ in }
         )) {
@@ -272,6 +280,26 @@ struct VanillaTweaksLoadingView: View {
         }
         .padding(40)
         .frame(minWidth: 320)
+    }
+}
+
+struct WineMigrationLoadingView: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            ProgressView()
+                .scaleEffect(1.5)
+                .controlSize(.large)
+
+            Text("Migrating Wine data…")
+                .font(.headline)
+
+            Text("Please keep WoWSilicon open. Your existing Wine data is being copied and the original files will be kept.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(40)
+        .frame(minWidth: 360)
     }
 }
 

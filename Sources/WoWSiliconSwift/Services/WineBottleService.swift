@@ -134,6 +134,7 @@ enum WineBottleService {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         fileManager: FileManager = .default
     ) throws -> Bool {
+        try Task.checkCancellation()
         let usersURL = bottleURL.appendingPathComponent("drive_c/users", isDirectory: true)
         guard fileManager.fileExists(atPath: usersURL.path) else { return false }
         let userURLs = try fileManager.contentsOfDirectory(
@@ -148,6 +149,7 @@ enum WineBottleService {
         var migrated = false
 
         for userURL in userURLs {
+            try Task.checkCancellation()
             let values = try userURL.resourceValues(forKeys: [.isSymbolicLinkKey])
             guard values.isSymbolicLink == true else { continue }
 
@@ -161,8 +163,18 @@ enum WineBottleService {
             }
             guard destinationURL.standardizedFileURL == externalProfileURL else { continue }
 
+            let temporaryPrefix = ".\(userURL.lastPathComponent)-WoWSilicon-migration-"
+            let staleTemporaryURLs = try fileManager.contentsOfDirectory(
+                at: usersURL,
+                includingPropertiesForKeys: nil,
+                options: []
+            ).filter { $0.lastPathComponent.hasPrefix(temporaryPrefix) }
+            for staleURL in staleTemporaryURLs {
+                try fileManager.removeItem(at: staleURL)
+            }
+
             let temporaryURL = usersURL.appendingPathComponent(
-                ".\(userURL.lastPathComponent)-WoWSilicon-migration-\(UUID().uuidString)",
+                "\(temporaryPrefix)\(UUID().uuidString)",
                 isDirectory: true
             )
             defer { try? fileManager.removeItem(at: temporaryURL) }
@@ -173,6 +185,7 @@ enum WineBottleService {
                 try fileManager.createDirectory(at: temporaryURL, withIntermediateDirectories: false)
             }
 
+            try Task.checkCancellation()
             try fileManager.removeItem(at: userURL)
             do {
                 try fileManager.moveItem(at: temporaryURL, to: userURL)

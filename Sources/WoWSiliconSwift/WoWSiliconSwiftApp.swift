@@ -20,6 +20,7 @@ struct WoWSiliconSwiftApp: App {
                 .registerEnvironmentValues(viewModel)
                 .onAppear {
                     appDelegate.firstWindowDidAppear()
+                    viewModel.startWineProfileMigrationIfNeeded()
                     configureApplication()
                 }
         }
