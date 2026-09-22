@@ -105,7 +105,7 @@ struct GraphicsSectionView: View {
             return "Experimental Metal backend. Some WoW clients or configurations may have rendering issues or crashes."
         }
         if settings.vulkanDriver == .kosmicKrisp {
-            return "DXVK 3.1 through the experimental Metal 4 Vulkan driver. Requires macOS 26 or newer and a locally installed KosmicKrisp runtime."
+            return "DXVK 3.1 through the experimental Metal 4 Vulkan driver. Requires macOS 26 or newer."
         }
         return "Default Vulkan-based backend with broad compatibility. MTLD3D is required for HDR mode."
     }
