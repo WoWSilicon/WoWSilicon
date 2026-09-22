@@ -77,6 +77,8 @@ final class MainDashboardViewModel: ObservableObject {
     private var optionsSessionInitialVersionID: String?
     private var hasActiveOptionsSession = false
     private var patchStatusRefreshID = 0
+    private var optionAsAltStatusRefreshID = 0
+    private var retinaModeStatusRefreshID = 0
     private var didRecordLaunchTelemetry = false
     static let allowedCursorSizeMultipliers = [1, 2, 4]
 
@@ -99,16 +101,19 @@ final class MainDashboardViewModel: ObservableObject {
         }
 
         userPrefs = prefsStore.load()
-        normalizeTelemetryPrefs()
+        let telemetryPrefsChanged = normalizeTelemetryPrefs()
         wineBottlePath = WineBottleService.currentBottleURL(prefs: userPrefs).path
-        updateWineBottleMigrationPromptState()
+        let wineBottlePrefsChanged = updateWineBottleMigrationPromptState()
+        if telemetryPrefsChanged || wineBottlePrefsChanged {
+            persistUserPrefs()
+        }
         TelemetryService.shared.setClientTelemetryEnabled(userPrefs.telemetryEnabled)
 
         if !shouldShowMigrationPrompt && !result.decodeFailed {
             if result.requiresLegacyPrefsMigration {
                 migrateLegacyPrefsToCurrentVersion()
+                persistVersionManager()
             }
-            persistVersionManager()
         }
 
         refreshSnapshot()
@@ -128,11 +133,6 @@ final class MainDashboardViewModel: ObservableObject {
         versionManager.setCurrentVersion(id: id)
         persistVersionManager()
         refreshSnapshot()
-        refreshOptionAsAltStatus()
-        refreshRetinaModeStatus()
-        refreshVisualCppRuntimeStatus()
-        refreshWineMonoStatus()
-        refreshGitStatus()
     }
 
     func addVersion(name: String, baseID: String, wantsLauncher: Bool) {
@@ -148,10 +148,6 @@ final class MainDashboardViewModel: ObservableObject {
         versionManager.setCurrentVersion(id: newID)
         persistVersionManager()
         refreshSnapshot()
-        refreshOptionAsAltStatus()
-        refreshRetinaModeStatus()
-        refreshVisualCppRuntimeStatus()
-        refreshGitStatus()
     }
 
     func removeVersion(id: String) {
@@ -162,10 +158,6 @@ final class MainDashboardViewModel: ObservableObject {
         }
         persistVersionManager()
         refreshSnapshot()
-        refreshOptionAsAltStatus()
-        refreshRetinaModeStatus()
-        refreshVisualCppRuntimeStatus()
-        refreshGitStatus()
     }
 
 
@@ -443,13 +435,13 @@ final class MainDashboardViewModel: ObservableObject {
         TelemetryService.shared.setClientTelemetryEnabled(userPrefs.telemetryEnabled)
         migrateLegacyPrefsToCurrentVersion()
         persistVersionManager()
-        persistUserPrefs()
         refreshSnapshot()
         updateTelemetryConsentPromptState()
         recordLaunchTelemetryIfNeeded()
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
         updateWineBottleMigrationPromptState()
+        persistUserPrefs()
         updateTelemetryConsentPromptState()
         startWineProfileMigrationIfNeeded()
     }
@@ -1328,6 +1320,7 @@ final class MainDashboardViewModel: ObservableObject {
     private func setOptionAsAlt(_ enabled: Bool) {
         guard !isOptionAsAltBusy else { return }
 
+        optionAsAltStatusRefreshID += 1
         isOptionAsAltBusy = true
         optionAsAltStatus = .inProgress(enabled ? "Enabling…" : "Disabling…")
         let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
@@ -1359,6 +1352,8 @@ final class MainDashboardViewModel: ObservableObject {
 
     func refreshOptionAsAltStatus() {
         guard !isOptionAsAltBusy else { return }
+        optionAsAltStatusRefreshID += 1
+        let refreshID = optionAsAltStatusRefreshID
         let currentVersion = versionManager.currentVersion
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let enabled: Bool
@@ -1369,6 +1364,7 @@ final class MainDashboardViewModel: ObservableObject {
             }
             DispatchQueue.main.async {
                 guard let self else { return }
+                guard self.optionAsAltStatusRefreshID == refreshID else { return }
                 self.optionAsAltStatus = enabled ? .enabled : .disabled
                 self.applyOptionAsAltState(enabled: enabled, persist: false)
             }
@@ -1378,6 +1374,7 @@ final class MainDashboardViewModel: ObservableObject {
     private func setRetinaMode(_ enabled: Bool) {
         guard !isRetinaModeBusy else { return }
 
+        retinaModeStatusRefreshID += 1
         isRetinaModeBusy = true
         retinaModeStatus = .inProgress(enabled ? "Enabling…" : "Disabling…")
         let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
@@ -1407,6 +1404,8 @@ final class MainDashboardViewModel: ObservableObject {
 
     func refreshRetinaModeStatus() {
         guard !isRetinaModeBusy else { return }
+        retinaModeStatusRefreshID += 1
+        let refreshID = retinaModeStatusRefreshID
         let currentVersion = versionManager.currentVersion
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let enabled: Bool
@@ -1417,6 +1416,7 @@ final class MainDashboardViewModel: ObservableObject {
             }
             DispatchQueue.main.async {
                 guard let self else { return }
+                guard self.retinaModeStatusRefreshID == refreshID else { return }
                 self.retinaModeStatus = enabled ? .enabled : .disabled
             }
         }
@@ -1675,9 +1675,6 @@ final class MainDashboardViewModel: ObservableObject {
         launcherPathStatus = makePathStatus(for: currentVersion.launcherExePath)
         currentVersionLauncherName = "Open Launcher"
 
-        if !isOptionAsAltBusy {
-            refreshOptionAsAltStatus()
-        }
     }
 
     private func refreshPatchStatuses(for version: GameVersion) {
@@ -1820,11 +1817,14 @@ final class MainDashboardViewModel: ObservableObject {
         prefsStore.save(userPrefs)
     }
 
-    private func normalizeTelemetryPrefs() {
+    @discardableResult
+    private func normalizeTelemetryPrefs() -> Bool {
         let trimmedID = userPrefs.telemetryInstallID.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedID.isEmpty {
             userPrefs.telemetryInstallID = UUID().uuidString
+            return true
         }
+        return false
     }
 
     private func updateTelemetryConsentPromptState() {
@@ -1834,28 +1834,28 @@ final class MainDashboardViewModel: ObservableObject {
             && !userPrefs.telemetryConsentAsked
     }
 
-    private func updateWineBottleMigrationPromptState() {
+    @discardableResult
+    private func updateWineBottleMigrationPromptState() -> Bool {
         guard !shouldShowMigrationPrompt, !userPrefs.wineBottleMigrationAsked else {
             shouldShowWineBottleMigrationPrompt = false
-            return
+            return false
         }
 
         if !userPrefs.wineBottlePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             userPrefs.wineBottleMigrationAsked = true
-            persistUserPrefs()
             shouldShowWineBottleMigrationPrompt = false
-            return
+            return true
         }
 
         let destination = WineBottleService.currentBottleURL(prefs: userPrefs)
         if WineBottleService.isWineBottle(at: destination) {
             userPrefs.wineBottleMigrationAsked = true
-            persistUserPrefs()
             shouldShowWineBottleMigrationPrompt = false
-            return
+            return true
         }
 
         shouldShowWineBottleMigrationPrompt = WineBottleService.shouldOfferLegacyMigration(prefs: userPrefs)
+        return false
     }
 
     private func refreshWineBottleDependentStatuses() {

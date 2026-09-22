@@ -93,6 +93,9 @@ struct VersionStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(managerToSave)
+        if (try? Data(contentsOf: fileURL)) == data {
+            return
+        }
         try data.write(to: fileURL, options: .atomic)
     }
 

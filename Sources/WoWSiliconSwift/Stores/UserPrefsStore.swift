@@ -1,9 +1,15 @@
 import Foundation
 
 struct UserPrefsStore {
-    private let fileManager = FileManager.default
+    private let fileManager: FileManager
+    private let supportDirectory: URL?
     private let directoryName = "WoWSilicon"
     private let fileName = "prefs.json"
+
+    init(fileManager: FileManager = .default, supportDirectory: URL? = nil) {
+        self.fileManager = fileManager
+        self.supportDirectory = supportDirectory
+    }
 
     func load() -> UserPrefs {
         guard let prefsURL = prefsFileURL(),
@@ -36,6 +42,9 @@ struct UserPrefsStore {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(prefs)
+            if (try? Data(contentsOf: prefsURL)) == data {
+                return
+            }
             try data.write(to: prefsURL, options: .atomic)
         } catch {
             debugPrint("Failed to save prefs.json: \(error.localizedDescription)")
@@ -43,7 +52,7 @@ struct UserPrefsStore {
     }
 
     private func prefsFileURL() -> URL? {
-        guard let supportDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+        guard let supportDirectory = supportDirectory ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return nil
         }
         return supportDirectory

@@ -166,6 +166,25 @@ final class VersionStoreTests: XCTestCase {
         XCTAssertFalse(reloaded.requiresLegacyPrefsMigration)
     }
 
+    func testSavingUnchangedManagerDoesNotRewriteFile() throws {
+        let supportURL = try makeTemporaryDirectory()
+        let store = VersionStore(supportDirectory: supportURL)
+        let manager = VersionManager.makeDefault()
+        let versionsURL = supportURL.appendingPathComponent("WoWSilicon/versions.json")
+
+        try store.save(manager: manager)
+        let originalModificationDate = Date(timeIntervalSince1970: 1_000_000)
+        try FileManager.default.setAttributes(
+            [.modificationDate: originalModificationDate],
+            ofItemAtPath: versionsURL.path
+        )
+
+        try store.save(manager: manager)
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: versionsURL.path)
+        XCTAssertEqual(attributes[.modificationDate] as? Date, originalModificationDate)
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("WoWSiliconSwiftTests-\(UUID().uuidString)", isDirectory: true)
