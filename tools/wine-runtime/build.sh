@@ -75,7 +75,11 @@ export LDFLAGS="-L$toolchain_prefix/lib${LDFLAGS:+ $LDFLAGS}"
 export CC="${CC:-$llvm_bin/clang}"
 export CXX="${CXX:-$llvm_bin/clang++}"
 
-for command in "$CC" "$CXX" bison flex git i686-w64-mingw32-gcc x86_64-w64-mingw32-gcc make pkg-config; do
+for command in \
+  "$CC" "$CXX" bison flex git \
+  i686-w64-mingw32-gcc i686-w64-mingw32-strip \
+  x86_64-w64-mingw32-gcc x86_64-w64-mingw32-strip \
+  make pkg-config; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "Required build command not found: $command" >&2
     exit 1
@@ -158,10 +162,25 @@ cp "$build_root/tools/wine/wine" "$preserve_root/wine-wrapper"
 cp "$build_root/loader/wine" "$preserve_root/wine-loader"
 cp "$build_root/dlls/ntdll/ntdll.so" "$preserve_root/ntdll.so"
 
-make -C "$build_root" install-lib INSTALL_PROGRAM_FLAGS=--strip
+make -C "$build_root" install-lib
 install -m 755 "$preserve_root/wine-wrapper" "$install_root/bin/wine"
 install -m 755 "$preserve_root/wine-loader" "$install_root/lib/wine/x86_64-unix/wine"
 install -m 755 "$preserve_root/ntdll.so" "$install_root/lib/wine/x86_64-unix/ntdll.so"
+
+strip_pe_tree() {
+  local module_root="$1"
+  local strip_command="$2"
+  local binary
+
+  while IFS= read -r -d '' binary; do
+    if file "$binary" | grep -q 'PE32'; then
+      "$strip_command" --strip-unneeded "$binary"
+    fi
+  done < <(find "$module_root" -type f -print0)
+}
+
+strip_pe_tree "$install_root/lib/wine/i386-windows" i686-w64-mingw32-strip
+strip_pe_tree "$install_root/lib/wine/x86_64-windows" x86_64-w64-mingw32-strip
 
 cleanup_preserved_binaries
 trap - EXIT
