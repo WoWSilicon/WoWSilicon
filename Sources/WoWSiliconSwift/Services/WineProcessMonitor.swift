@@ -59,7 +59,7 @@ enum WineProcessMonitor {
     }
 
     private static func processIDs(applicationProcessesOnly: Bool) -> Set<Int32>? {
-        guard let result = try? ProcessRunner.run(
+        guard let result = try? ProcessRunner.runWithBoundedOutput(
             executablePath: "/bin/ps",
             arguments: ["-axo", "pid=,command="],
             timeout: 5

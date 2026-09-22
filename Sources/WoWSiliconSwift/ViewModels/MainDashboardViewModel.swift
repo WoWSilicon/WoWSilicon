@@ -327,12 +327,38 @@ final class MainDashboardViewModel: ObservableObject {
                 wineProcessCount = processCount
             }
 
-            do {
-                try await Task.sleep(for: .seconds(3))
-            } catch {
-                return
+            let interval = Self.wineProcessPollingIntervalSeconds(
+                processCount: processCount ?? wineProcessCount,
+                isLaunchOrShutdownActive: isWineProcessPollingActive
+            )
+            for _ in 0..<interval {
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return
+                }
+                if isWineProcessPollingActive && interval > 1 {
+                    break
+                }
             }
         }
+    }
+
+    static func wineProcessPollingIntervalSeconds(
+        processCount: Int,
+        isLaunchOrShutdownActive: Bool
+    ) -> Int {
+        if isLaunchOrShutdownActive {
+            return 1
+        }
+        return processCount > 0 ? 2 : 10
+    }
+
+    private var isWineProcessPollingActive: Bool {
+        isGameOperationInProgress
+            || isCheckingWineProcesses
+            || isForceQuittingWine
+            || isLauncherLoading
     }
 
     func selectGamePath() {

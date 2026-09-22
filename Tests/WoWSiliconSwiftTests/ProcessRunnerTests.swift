@@ -28,4 +28,25 @@ final class ProcessRunnerTests: XCTestCase {
             }
         }
     }
+
+    func testBoundedOutputCapturesBothStreamsInMemory() throws {
+        let result = try ProcessRunner.runWithBoundedOutput(
+            executablePath: "/bin/sh",
+            arguments: ["-c", "printf stdout; printf stderr >&2"]
+        )
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertEqual(result.stdout, "stdout")
+        XCTAssertEqual(result.stderr, "stderr")
+    }
+
+    func testBoundedOutputDrainsButDoesNotRetainPastLimit() throws {
+        let result = try ProcessRunner.runWithBoundedOutput(
+            executablePath: "/usr/bin/printf",
+            arguments: [String(repeating: "x", count: 4_096)],
+            maximumOutputBytes: 32
+        )
+
+        XCTAssertLessThanOrEqual(result.stdout.utf8.count, 32)
+    }
 }
