@@ -19,7 +19,9 @@ ICONSET := $(BUILD_DIR)/turtle.iconset
 APP_ICON := $(BUILD_DIR)/turtle.icns
 ICON_SCRIPT := $(BUILD_DIR)/make_icns.py
 SWIFT_ENV := SWIFT_MODULECACHE_PATH="$(BUILD_DIR)/swift-module-cache" CLANG_MODULE_CACHE_PATH="$(BUILD_DIR)/clang-module-cache"
-SWIFT_BUILD := $(SWIFT_ENV) swift build --build-system native --arch arm64 --disable-sandbox --build-path "$(BUILD_DIR)" --cache-path "$(BUILD_DIR)/spm-cache" --manifest-cache none
+MACOS_SDK_PATH := $(shell xcrun --sdk macosx --show-sdk-path)
+MACOS_SDK_VERSION := $(shell xcrun --sdk macosx --show-sdk-version)
+SWIFT_BUILD := $(SWIFT_ENV) swift build --arch arm64 --sdk "$(MACOS_SDK_PATH)" -Xlinker -platform_version -Xlinker macos -Xlinker 14.0 -Xlinker "$(MACOS_SDK_VERSION)" --disable-sandbox --build-path "$(BUILD_DIR)" --cache-path "$(BUILD_DIR)/spm-cache" --manifest-cache none
 WINE_RUNTIME_DIR ?= $(CURDIR)/.wine-runtime
 AUDIO_HELPER_SRC := tools/wine-audio-helper/wowsilicon-audio.c
 AUDIO_HELPER_DIR := $(BUILD_DIR)/audio-helper
