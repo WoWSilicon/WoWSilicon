@@ -3,6 +3,53 @@ import Darwin
 @testable import WoWSiliconSwift
 
 final class LaunchServiceTests: XCTestCase {
+    func testWineFocusMatcherAcceptsOnlyOneNewBundledRuntimeApplication() {
+        let runtimeRoot = URL(fileURLWithPath: "/Applications/WoWSilicon.app/Contents/Resources/Wine")
+        let x87Runtime = URL(fileURLWithPath: "/Applications/WoWSilicon.app/Contents/Resources/Patching/rosettax87/rosettax87")
+        var matcher = WineApplicationFocusMatcher(
+            baselineProcessIDs: [10],
+            runtimeRootURL: runtimeRoot,
+            additionalExecutableURLs: [x87Runtime]
+        )
+
+        XCTAssertFalse(matcher.accepts(
+            processIdentifier: 10,
+            executableURL: runtimeRoot.appendingPathComponent("bin/wine")
+        ))
+        XCTAssertFalse(matcher.accepts(
+            processIdentifier: 11,
+            executableURL: URL(fileURLWithPath: "/Applications/CrossOver.app/Contents/wine")
+        ))
+        XCTAssertFalse(matcher.accepts(
+            processIdentifier: 12,
+            executableURL: URL(fileURLWithPath: "/Applications/WoWSilicon.app/Contents/Resources/WineOther/bin/wine")
+        ))
+        XCTAssertTrue(matcher.accepts(
+            processIdentifier: 13,
+            executableURL: runtimeRoot.appendingPathComponent("bin/wine64-preloader")
+        ))
+        XCTAssertFalse(matcher.accepts(
+            processIdentifier: 14,
+            executableURL: runtimeRoot.appendingPathComponent("bin/wine")
+        ))
+    }
+
+    func testWineFocusMatcherAcceptsConfiguredX87WrapperOnlyByExactPath() {
+        let runtimeRoot = URL(fileURLWithPath: "/Applications/WoWSilicon.app/Contents/Resources/Wine")
+        let x87Runtime = URL(fileURLWithPath: "/Applications/WoWSilicon.app/Contents/Resources/Patching/rosettax87/rosettax87")
+        var matcher = WineApplicationFocusMatcher(
+            baselineProcessIDs: [],
+            runtimeRootURL: runtimeRoot,
+            additionalExecutableURLs: [x87Runtime]
+        )
+
+        XCTAssertFalse(matcher.accepts(
+            processIdentifier: 20,
+            executableURL: x87Runtime.deletingLastPathComponent().appendingPathComponent("unrelated")
+        ))
+        XCTAssertTrue(matcher.accepts(processIdentifier: 21, executableURL: x87Runtime))
+    }
+
     func testWDBCleanupDisabledLeavesDirectoriesUntouched() throws {
         let root = try makeWDBTestDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

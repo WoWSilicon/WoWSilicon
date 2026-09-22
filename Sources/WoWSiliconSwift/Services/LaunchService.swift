@@ -1,6 +1,43 @@
 import Foundation
 import AppKit
 
+struct WineApplicationFocusMatcher {
+    let baselineProcessIDs: Set<pid_t>
+    let runtimeRootURL: URL
+    let additionalExecutableURLs: Set<URL>
+    private(set) var didMatch = false
+
+    init(
+        baselineProcessIDs: Set<pid_t>,
+        runtimeRootURL: URL,
+        additionalExecutableURLs: Set<URL> = []
+    ) {
+        self.baselineProcessIDs = baselineProcessIDs
+        self.runtimeRootURL = runtimeRootURL
+        self.additionalExecutableURLs = additionalExecutableURLs
+    }
+
+    mutating func accepts(processIdentifier: pid_t, executableURL: URL?) -> Bool {
+        guard !didMatch,
+              !baselineProcessIDs.contains(processIdentifier),
+              let executableURL else {
+            return false
+        }
+
+        let runtimePath = runtimeRootURL.standardizedFileURL.path
+        let executablePath = executableURL.standardizedFileURL.path
+        let additionalExecutablePaths = Set(additionalExecutableURLs.map { $0.standardizedFileURL.path })
+        guard executablePath == runtimePath
+                || executablePath.hasPrefix(runtimePath + "/")
+                || additionalExecutablePaths.contains(executablePath) else {
+            return false
+        }
+
+        didMatch = true
+        return true
+    }
+}
+
 enum LaunchServiceError: LocalizedError {
     case alreadyRunning
     case gamePathMissing
@@ -53,7 +90,14 @@ final class LaunchService: @unchecked Sendable {
     private var runningProcesses: [Process] = []
     private let processQueue = DispatchQueue(label: "com.turtlesilicon.launchservice.processes")
     private let fileManager = FileManager.default
-    private var focusTimer: DispatchSourceTimer?
+    private var focusObservation: FocusObservation?
+
+    private struct FocusObservation {
+        let id: UUID
+        var matcher: WineApplicationFocusMatcher
+        let observer: NSObjectProtocol
+        let timeout: DispatchWorkItem
+    }
 
     private init() {}
 
@@ -272,7 +316,11 @@ final class LaunchService: @unchecked Sendable {
 
     // MARK: - Launch paths
 
+    @MainActor
     private func launchIntegrated(configuration: LaunchConfiguration) throws {
+        let focusID = startWineApplicationFocusObservation(
+            additionalExecutableURL: configuration.x87Runtime?.executableURL
+        )
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", configuration.shellCommand]
@@ -311,8 +359,7 @@ final class LaunchService: @unchecked Sendable {
             stderr.fileHandleForReading.readabilityHandler = nil
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.focusTimer?.cancel()
-                self.focusTimer = nil
+                self.cancelWineApplicationFocusObservation(id: focusID)
                 self.untrackProcess(process)
                 self.processDidTerminate?()
             }
@@ -322,8 +369,8 @@ final class LaunchService: @unchecked Sendable {
             try Task.checkCancellation()
             try process.run()
             trackProcess(process)
-            startFocusTimer()
         } catch {
+            cancelWineApplicationFocusObservation(id: focusID)
             if error is CancellationError {
                 throw error
             }
@@ -331,10 +378,18 @@ final class LaunchService: @unchecked Sendable {
         }
     }
 
+    @MainActor
     private func launchViaTerminal(configuration: LaunchConfiguration) throws {
         try Task.checkCancellation()
-        try launchTerminalCommand(configuration.shellCommand)
-        startFocusTimer()
+        let focusID = startWineApplicationFocusObservation(
+            additionalExecutableURL: configuration.x87Runtime?.executableURL
+        )
+        do {
+            try launchTerminalCommand(configuration.shellCommand)
+        } catch {
+            cancelWineApplicationFocusObservation(id: focusID)
+            throw error
+        }
     }
 
     private func launchTerminalCommand(_ shellCommand: String) throws {
@@ -556,6 +611,7 @@ final class LaunchService: @unchecked Sendable {
         }
     }
 
+    @MainActor
     func launchThirdPartyLauncher(version: GameVersion, completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void) {
         if version.settings.graphicsSettings.backend == .d9vk,
            version.settings.graphicsSettings.vulkanDriver == .kosmicKrisp,
@@ -620,6 +676,7 @@ final class LaunchService: @unchecked Sendable {
 
         let shellCommand = "cd \(launcherDir) && \(envPart) \(wine) \(exeName) --disable-gpu --in-process-gpu"
 
+        let focusID = startWineApplicationFocusObservation()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", shellCommand]
@@ -632,6 +689,7 @@ final class LaunchService: @unchecked Sendable {
         process.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
+                self.cancelWineApplicationFocusObservation(id: focusID)
                 self.untrackProcess(process)
                 self.processDidTerminate?()
             }
@@ -640,9 +698,9 @@ final class LaunchService: @unchecked Sendable {
         do {
             try process.run()
             trackProcess(process)
-            startFocusTimer()
             DispatchQueue.main.async { completion(.success(())) }
         } catch {
+            cancelWineApplicationFocusObservation(id: focusID)
             DispatchQueue.main.async { completion(.failure(.processLaunchFailed(error.localizedDescription))) }
         }
     }
@@ -700,37 +758,73 @@ final class LaunchService: @unchecked Sendable {
         return descriptor.applied
     }
 
-    private func startFocusTimer() {
-        focusTimer?.cancel()
-        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInitiated))
-        timer.schedule(deadline: .now() + .seconds(1), repeating: .milliseconds(500), leeway: .milliseconds(100))
+    @MainActor
+    private func startWineApplicationFocusObservation(additionalExecutableURL: URL? = nil) -> UUID {
+        cancelWineApplicationFocusObservation()
+        let id = UUID()
+        guard let runtimeRootURL = BundledWineRuntime.rootURL() else { return id }
 
-        var attempts = 0
-        timer.setEventHandler { [weak self, weak timer] in
-            attempts += 1
-            if attempts > 60 {
-                timer?.cancel()
-                DispatchQueue.main.async { [weak self] in self?.focusTimer = nil }
+        let matcher = WineApplicationFocusMatcher(
+            baselineProcessIDs: Set(NSWorkspace.shared.runningApplications.map(\.processIdentifier)),
+            runtimeRootURL: runtimeRootURL,
+            additionalExecutableURLs: Set([additionalExecutableURL].compactMap { $0 })
+        )
+        let observer = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication else {
                 return
             }
-            guard let strongSelf = self, strongSelf.isProcessRunning(named: "wine") else { return }
-            timer?.cancel()
-            DispatchQueue.main.async { [weak self] in self?.focusTimer = nil }
-            strongSelf.bringProcessToFront(named: "wine")
+            Task { @MainActor [weak self] in
+                self?.activateWineApplicationIfMatching(application, observationID: id)
+            }
         }
-        focusTimer = timer
-        timer.resume()
+        let timeout = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.cancelWineApplicationFocusObservation(id: id)
+            }
+        }
+        focusObservation = FocusObservation(
+            id: id,
+            matcher: matcher,
+            observer: observer,
+            timeout: timeout
+        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: timeout)
+        return id
     }
 
-    private func isProcessRunning(named name: String) -> Bool {
-        guard let result = try? ProcessRunner.run(
-            executablePath: "/usr/bin/pgrep",
-            arguments: ["-f", name],
-            timeout: 5
-        ) else {
-            return false
+    @MainActor
+    private func activateWineApplicationIfMatching(
+        _ application: NSRunningApplication,
+        observationID: UUID
+    ) {
+        guard var observation = focusObservation,
+              observation.id == observationID,
+              observation.matcher.accepts(
+                processIdentifier: application.processIdentifier,
+                executableURL: application.executableURL
+              ) else {
+            return
         }
-        return result.exitCode == 0
+
+        cancelWineApplicationFocusObservation(id: observationID)
+        NSApplication.shared.yieldActivation(to: application)
+        application.activate(from: .current, options: [])
+    }
+
+    @MainActor
+    private func cancelWineApplicationFocusObservation(id: UUID? = nil) {
+        guard let observation = focusObservation,
+              id == nil || observation.id == id else {
+            return
+        }
+        NSWorkspace.shared.notificationCenter.removeObserver(observation.observer)
+        observation.timeout.cancel()
+        focusObservation = nil
     }
 
     private func trackProcess(_ process: Process) {
@@ -743,25 +837,6 @@ final class LaunchService: @unchecked Sendable {
         processQueue.sync {
             runningProcesses.removeAll { $0 === process }
         }
-    }
-
-    private func bringProcessToFront(named name: String) {
-        let script = """
-        tell application "System Events"
-            set processList to (name of every process whose name contains "\(name)")
-            if length of processList > 0 then
-                set targetProcess to item 1 of processList
-                tell process targetProcess
-                    set frontmost to true
-                end tell
-            end if
-        end tell
-        """
-
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        task.arguments = ["-e", script]
-        try? task.run()
     }
 
     @discardableResult
