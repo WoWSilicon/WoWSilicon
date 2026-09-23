@@ -10,10 +10,10 @@ enum BundledX87Runtime {
     static let sidecarEnvironmentOverride = "WOWSILICON_X87_SIDECAR_PATH"
     static let wineEnvironmentKeys = ["ROSETTA_X87_PATH", "X87_SIDECAR_PATH"]
 
-    static func sidecarVersion(bundle: Bundle = .module) -> String? {
-        guard let versionURL = bundle.url(
-            forResource: "VERSION",
-            withExtension: nil,
+    static func sidecarVersion() -> String? {
+        guard let versionURL = PatchService.resourceURL(
+            named: "VERSION",
+            extension: nil,
             subdirectory: "Patching/x87sidecar"
         ), let version = try? String(contentsOf: versionURL, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines),
