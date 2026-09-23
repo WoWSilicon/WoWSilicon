@@ -52,6 +52,26 @@ enum BundledWineRuntime {
             .appendingPathComponent("external", isDirectory: true)
     }
 
+    static func vulkanDriverManifestURL(
+        for driver: VulkanDriver,
+        resourceURL: URL? = Bundle.main.resourceURL,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        guard let rootURL = rootURL(resourceURL: resourceURL, environment: environment) else {
+            return nil
+        }
+        let manifestURL = rootURL
+            .appendingPathComponent("lib/vulkan/icd.d", isDirectory: true)
+            .appendingPathComponent(driver.manifestFileName, isDirectory: false)
+        return fileManager.fileExists(atPath: manifestURL.path) ? manifestURL : nil
+    }
+
+    static func vulkanDriverShellAssignment(for driver: VulkanDriver) -> String? {
+        guard let manifestURL = vulkanDriverManifestURL(for: driver) else { return nil }
+        return shellEnvironmentAssignment(key: "VK_DRIVER_FILES", value: manifestURL.path)
+    }
+
     static func makeEnvironment(
         customVariables: String = "",
         winePrefixURL: URL = WineBottleService.currentBottleURL(),

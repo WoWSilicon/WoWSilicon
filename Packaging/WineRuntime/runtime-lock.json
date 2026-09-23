@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "runtimeRevision": 15,
+  "runtimeRevision": 16,
   "wine": {
     "version": "11.13",
     "repository": "https://github.com/WineAndAqua/wine.git",
@@ -8,7 +8,7 @@
     "commit": "37540b5d94ac1c86e2599ef55d7f3a15e3237ce8"
   },
   "mtld3d": {
-    "version": "v0.7.0"
+    "version": "v0.10.0"
   },
   "overlays": {
     "winerosetta": [],
@@ -16,22 +16,22 @@
       {
         "source": "mtld3d.conf",
         "destination": "lib/mtld3d.conf",
-        "sha256": "7d6292a82cecd8ee190f53aac444157f98822aa264d08329ba3344b57cf16917"
+        "sha256": "a284e9bf0220f5160b6d14b0102a58d31e6727537abb9116f3c48a18d00a5ab0"
       },
       {
         "source": "wine/i386-windows/d3d9.dll",
         "destination": "lib/wine/i386-windows/d3d9.dll",
-        "sha256": "daeb5f40f07ccf901a07947b44f5caac6206adeb8022058c7b90257e6d6bf4fd"
+        "sha256": "73188343e7bd92c854c1f266a3f37d713fc559a7f00b9b53318d143bb1655b7e"
       },
       {
         "source": "wine/i386-windows/mtld3d.dll",
         "destination": "lib/wine/i386-windows/mtld3d.dll",
-        "sha256": "19ae5c0a90dba32c8faf1543c80e521737677b3401499282a090e26af27d24cd"
+        "sha256": "b9efb24997cc80378074a2658df92c4f7b1b439144fb534e00a005a14608abc6"
       },
       {
         "source": "wine/x86_64-unix/mtld3d.so",
         "destination": "lib/wine/x86_64-unix/mtld3d.so",
-        "sha256": "6f7ec6e4d000c25000ac114c80d90dae86a75aeef3057c0d43590ee6c51de982"
+        "sha256": "0dbbdf01754b05cc243279d909bb3aa4b35d6105bda9c119a9498afe10cfa7ee"
       }
     ],
     "external": [

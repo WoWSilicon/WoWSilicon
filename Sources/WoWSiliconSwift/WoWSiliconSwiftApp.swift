@@ -9,8 +9,8 @@ struct WoWSiliconSwiftApp: App {
     @StateObject private var viewModel = MainDashboardViewModel()
 
     var body: some Scene {
-        WindowGroup {
-            MainDashboardView(viewModel: viewModel)
+        Window("WoWSilicon", id: "main") {
+            MainDashboardView(viewModel: viewModel, wineMigration: viewModel.wineMigration)
                 .frame(width: windowWidth, height: windowHeight)
                 .background(WindowConfigurator(
                     title: "WoWSilicon v\(appVersion)",
@@ -19,6 +19,8 @@ struct WoWSiliconSwiftApp: App {
                 ))
                 .registerEnvironmentValues(viewModel)
                 .onAppear {
+                    appDelegate.firstWindowDidAppear()
+                    viewModel.startWineProfileMigrationIfNeeded()
                     configureApplication()
                 }
         }
@@ -42,13 +44,25 @@ struct WoWSiliconSwiftApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var appLaunchInterval: LaunchPerformanceInterval? = LaunchPerformance.beginAppLaunch()
+
+    func firstWindowDidAppear() {
+        guard let appLaunchInterval else { return }
+        LaunchPerformance.endAppLaunch(appLaunchInterval)
+        self.appLaunchInterval = nil
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         .terminateNow
     }
 }
 
 #Preview {
-    MainDashboardView(viewModel: .preview)
+    MainDashboardView(
+        viewModel: .preview,
+        wineMigration: MainDashboardViewModel.preview.wineMigration
+    )
         .fixedSize()
 }

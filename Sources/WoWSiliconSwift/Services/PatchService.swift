@@ -36,12 +36,7 @@ enum PatchService {
 
         try ensureDirectoryExists(gameURL, errorOnMissing: .invalidGamePath(version.gamePath))
         if version.profileKind == .genericD3D9 {
-            try copyResource(
-                named: "d3d9",
-                extension: "dll",
-                subdirectory: "Patching/d9vk",
-                to: gameURL.appendingPathComponent("d3d9.dll")
-            )
+            try installD3D9DLL(for: version)
             return
         }
 
@@ -53,7 +48,7 @@ enum PatchService {
         try FileManager.default.createDirectory(at: modsURL, withIntermediateDirectories: true)
 
         try copyResource(named: "winerosetta", extension: "dll", subdirectory: "Patching/winerosetta", to: modsURL.appendingPathComponent("winerosetta.dll"))
-        try copyResource(named: "d3d9", extension: "dll", subdirectory: "Patching/d9vk", to: gameURL.appendingPathComponent("d3d9.dll"))
+        try installD3D9DLL(for: version)
         guard let mtld3dConfigurationURL = BundledWineRuntime.mtld3dConfigurationURL() else {
             throw PatchServiceError.resourceMissing("mtld3d.conf")
         }
@@ -93,12 +88,16 @@ enum PatchService {
 
         if version.usesRosettaPatching && version.supportsDLLLoading {
             try patchDivxDecoder(gameURL: gameURL, customVariables: version.settings.environmentVariables)
+        } else {
+            try revertDivxDecoder(gameURL: gameURL)
         }
 
         ensureGxResolution(in: gameURL)
     }
 
     private static func patchDivxDecoder(gameURL: URL, customVariables: String) throws {
+        try revertDivxDecoder(gameURL: gameURL)
+
         guard let wineExecutable = BundledWineRuntime.wineExecutableURL() else {
             let expectedPath = BundledWineRuntime.rootURL()?
                 .appendingPathComponent("bin/wine", isDirectory: false).path ?? "Contents/Resources/Wine/bin/wine"
@@ -163,7 +162,7 @@ enum PatchService {
         }
     }
 
-    private static func revertDivxDecoder(gameURL: URL) throws {
+    static func revertDivxDecoder(gameURL: URL) throws {
         for name in ["DivxDecoder.dll", "DivxTac.dll"] {
             let fileURL = gameURL.appendingPathComponent(name)
             let bakURL  = gameURL.appendingPathComponent("\(name).bak")
@@ -180,6 +179,30 @@ enum PatchService {
     static func isSupportedGameClient(at gameURL: URL) -> Bool {
         FileManager.default.fileExists(atPath: gameURL.appendingPathComponent("DivxDecoder.dll").path)
             || FileManager.default.fileExists(atPath: gameURL.appendingPathComponent("DivxDecoder.dll.bak").path)
+    }
+
+    static func d3d9ResourceSubdirectory(for driver: VulkanDriver) -> String {
+        switch driver {
+        case .moltenVK:
+            return "Patching/d9vk"
+        case .kosmicKrisp:
+            return "Patching/dxvk-kosmickrisp"
+        }
+    }
+
+    static func installD3D9DLL(for version: GameVersion) throws {
+        guard let gameURL = version.gameDirectoryURL else {
+            throw PatchServiceError.gamePathMissing
+        }
+
+        try copyResource(
+            named: "d3d9",
+            extension: "dll",
+            subdirectory: d3d9ResourceSubdirectory(
+                for: version.settings.graphicsSettings.vulkanDriver
+            ),
+            to: gameURL.appendingPathComponent("d3d9.dll")
+        )
     }
 
     static func removeGamePatch(for version: GameVersion) throws {

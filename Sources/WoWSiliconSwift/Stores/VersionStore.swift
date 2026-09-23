@@ -5,6 +5,7 @@ struct VersionStore {
         var manager: VersionManager
         var warnings: [String]
         var decodeFailed: Bool = false
+        var requiresLegacyPrefsMigration: Bool = false
     }
 
     private let fileManager: FileManager
@@ -24,7 +25,11 @@ struct VersionStore {
             warnings.append("Failed to resolve Application Support directory. Using defaults.")
             var fallback = VersionManager.makeDefault()
             fallback.ensureDefaults()
-            return LoadResult(manager: fallback, warnings: warnings)
+            return LoadResult(
+                manager: fallback,
+                warnings: warnings,
+                requiresLegacyPrefsMigration: true
+            )
         }
 
         var manager: VersionManager
@@ -64,7 +69,12 @@ struct VersionStore {
             }
         }
 
-        return LoadResult(manager: manager, warnings: warnings, decodeFailed: decodeFailed)
+        return LoadResult(
+            manager: manager,
+            warnings: warnings,
+            decodeFailed: decodeFailed,
+            requiresLegacyPrefsMigration: !loadedFromNewStore
+        )
     }
 
     func save(manager: VersionManager) throws {
@@ -83,6 +93,9 @@ struct VersionStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(managerToSave)
+        if (try? Data(contentsOf: fileURL)) == data {
+            return
+        }
         try data.write(to: fileURL, options: .atomic)
     }
 
@@ -233,7 +246,7 @@ struct VersionStore {
             merged.vanillaTweaksParameters = trimmedLegacyParameters
         }
         merged.enableVanillaTweaks = legacy.enableVanillaTweaks
-        merged.autoDeleteWdb = true
+        merged.autoDeleteWdb = legacy.autoDeleteWdb
         merged.enableMetalHud = legacy.enableMetalHud
         merged.showTerminalNormally = legacy.showTerminalNormally
         merged.remapOptionAsAlt = legacy.remapOptionAsAlt

@@ -56,8 +56,7 @@ final class ModServiceTests: XCTestCase {
             executableName: "Wow.exe",
             supportsVanillaTweaks: false,
             supportsDLLLoading: true,
-            usesRosettaPatching: true,
-            usesDivxDecoderPatch: false
+            usesRosettaPatching: true
         )
     }
 

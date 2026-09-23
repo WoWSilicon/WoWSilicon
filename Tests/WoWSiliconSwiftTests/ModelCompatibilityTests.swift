@@ -141,8 +141,7 @@ final class ModelCompatibilityTests: XCTestCase {
             executableName: "WoW.exe",
             supportsVanillaTweaks: true,
             supportsDLLLoading: true,
-            usesRosettaPatching: true,
-            usesDivxDecoderPatch: false
+            usesRosettaPatching: true
         )
 
         XCTAssertEqual(version.gameDirectoryPath, "/Games/WorldOfWarcraft")

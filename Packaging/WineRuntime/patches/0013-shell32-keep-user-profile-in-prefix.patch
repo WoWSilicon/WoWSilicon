@@ -1,0 +1,44 @@
+diff --git a/dlls/ntdll/unix/loader.c b/dlls/ntdll/unix/loader.c
+index 8f406bd95aa..d538758d9e2 100644
+--- a/dlls/ntdll/unix/loader.c
++++ b/dlls/ntdll/unix/loader.c
+@@ -342,7 +342,6 @@ static void set_home_dir(void)
+     const char *home = getenv( "HOME" );
+     const char *name = getenv( "USER" );
+     const char *p;
+-    char home_wine_dir[MAX_PATH];
+ 
+     if (!home || !name)
+     {
+@@ -358,9 +357,6 @@ static void set_home_dir(void)
+     if ((p = strrchr( name, '\\' ))) name = p + 1;
+     home_dir = strdup( home );
+     user_name = strdup( name );
+-
+-    sprintf( home_wine_dir, "%s/Wine", home ) ;
+-    mkdir( home_wine_dir, 0777 );
+ }
+ 
+ 
+diff --git a/dlls/shell32/shellpath.c b/dlls/shell32/shellpath.c
+index bd6a26369ae..d71a96badf1 100644
+--- a/dlls/shell32/shellpath.c
++++ b/dlls/shell32/shellpath.c
+@@ -3027,17 +3027,6 @@ HRESULT SHELL32_GetFolderPathAndSubDirW(
+         goto end;
+     }
+ 
+-    {
+-        WCHAR szUserPath[MAX_PATH];
+-        WCHAR userName[MAX_PATH];
+-        DWORD userLen = MAX_PATH;
+-
+-        lstrcpyW( szUserPath, L"C:\\users\\" );
+-        GetUserNameW( userName, &userLen );
+-        PathAppendW( szUserPath, userName );
+-        create_link( szUserPath, "", "$HOME/Wine" );
+-    }
+-
+     /* create symbolic links rather than directories for specific
+      * user shell folders */
+     //if (!pszSubPath)

@@ -425,6 +425,7 @@ enum TroubleshootingService {
         } else {
             baseLog += "Path: Missing\n"
         }
+        baseLog += "x87sidecar version: \(BundledX87Runtime.sidecarVersion() ?? "Unknown")\n"
 
         baseLog += "\n=== Patch Status ===\n"
         baseLog += "Game Patched: \(context.isGamePatched)\n"

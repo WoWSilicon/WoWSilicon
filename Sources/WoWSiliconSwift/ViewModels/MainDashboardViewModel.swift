@@ -14,6 +14,7 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var isGamePatched: Bool = false
     @Published private(set) var isGamePatchActionable: Bool = false
     @Published private(set) var isGameOperationInProgress: Bool = false
+    @Published private(set) var isPatchingOperation: Bool = false
     @Published private(set) var isUnpatchingOperation: Bool = false
     @Published private(set) var patchFeedback: PatchFeedback?
     @Published private(set) var canLaunch: Bool = false
@@ -32,7 +33,6 @@ final class MainDashboardViewModel: ObservableObject {
     @Published var shouldShowMigrationPrompt: Bool = false
     @Published var shouldShowWineBottleMigrationPrompt: Bool = false
     @Published var shouldShowTelemetryConsentPrompt: Bool = false
-    @Published private(set) var isWineBottleMigrationInProgress: Bool = false
     @Published private(set) var wineBottlePath: String = ""
     @Published private(set) var audioOutputDevices: [WineAudioOutputDevice] = []
     @Published private(set) var audioInputDevices: [WineAudioOutputDevice] = []
@@ -47,14 +47,7 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var optionAsAltStatus: OptionAsAltStatus = .unknown
     @Published private(set) var isRetinaModeBusy: Bool = false
     @Published private(set) var retinaModeStatus: OptionAsAltStatus = .unknown
-    @Published private(set) var isDependencyInstallInProgress: Bool = false
-    @Published private(set) var visualCppRuntimeStatus: DependencyInstallStatus = .unknown
-    @Published private(set) var isWineMonoInstallInProgress: Bool = false
-    @Published private(set) var wineMonoStatus: DependencyInstallStatus = .unknown
-    @Published private(set) var isGitInstallInProgress: Bool = false
-    @Published private(set) var gitStatus: DependencyInstallStatus = .unknown
-    @Published private(set) var isRosettaInstallInProgress: Bool = false
-    @Published private(set) var rosettaStatus: DependencyInstallStatus = .unknown
+    @Published var shouldShowRosettaInstallPrompt: Bool = false
     @Published private(set) var currentVersion: GameVersion?
     @Published private(set) var supportsAddons: Bool = false
     @Published private(set) var supportsMods: Bool = false
@@ -63,14 +56,19 @@ final class MainDashboardViewModel: ObservableObject {
     private let versionStore = VersionStore()
     private let prefsStore = UserPrefsStore()
     private let launchService = LaunchService.shared
+    private let gameLaunchCoordinator = GameLaunchCoordinator()
+    let dependencies = DependencyStatusViewModel()
+    let wineMigration = WineMigrationViewModel()
     private var versionManager: VersionManager
     private var userPrefs: UserPrefs
     private var pendingVanillaTweaksLaunch = false
-    private var pendingWineLaunchVersion: GameVersion?
+    private var launchTask: Task<Void, Never>?
     private var optionsSessionInitialVanillaTweaksParameters: String?
     private var optionsSessionInitialVersionID: String?
     private var hasActiveOptionsSession = false
     private var patchStatusRefreshID = 0
+    private var optionAsAltStatusRefreshID = 0
+    private var retinaModeStatusRefreshID = 0
     private var didRecordLaunchTelemetry = false
     static let allowedCursorSizeMultipliers = [1, 2, 4]
 
@@ -93,46 +91,32 @@ final class MainDashboardViewModel: ObservableObject {
         }
 
         userPrefs = prefsStore.load()
-        normalizeTelemetryPrefs()
+        let telemetryPrefsChanged = normalizeTelemetryPrefs()
         wineBottlePath = WineBottleService.currentBottleURL(prefs: userPrefs).path
-        updateWineBottleMigrationPromptState()
+        let wineBottlePrefsChanged = updateWineBottleMigrationPromptState()
+        if telemetryPrefsChanged || wineBottlePrefsChanged {
+            persistUserPrefs()
+        }
         TelemetryService.shared.setClientTelemetryEnabled(userPrefs.telemetryEnabled)
 
-        // Don't persist defaults into WoWSilicon before the user decides whether to migrate,
-        // as that would cause the destination files to already exist and block the file move.
-        // Also don't persist if the decode failed — writing defaults would overwrite the real data.
         if !shouldShowMigrationPrompt && !result.decodeFailed {
-            if userPrefs.autoDeleteWdb == false {
-                userPrefs.autoDeleteWdb = true
-                persistUserPrefs()
+            if result.requiresLegacyPrefsMigration {
+                migrateLegacyPrefsToCurrentVersion()
+                persistVersionManager()
             }
-            applyLegacyPrefsToVersion()
-            persistVersionManager()
         }
 
         refreshSnapshot()
         updateTelemetryConsentPromptState()
         recordLaunchTelemetryIfNeeded()
-        refreshOptionAsAltStatus()
-        refreshRetinaModeStatus()
-        refreshVisualCppRuntimeStatus()
-        refreshWineMonoStatus()
-        refreshGitStatus()
-        refreshRosettaStatus()
     }
 
     func selectVersion(id: String) {
         guard id != currentVersionID else { return }
 
         versionManager.setCurrentVersion(id: id)
-        applyLegacyPrefsToVersion()
         persistVersionManager()
         refreshSnapshot()
-        refreshOptionAsAltStatus()
-        refreshRetinaModeStatus()
-        refreshVisualCppRuntimeStatus()
-        refreshWineMonoStatus()
-        refreshGitStatus()
     }
 
     func addVersion(name: String, baseID: String, wantsLauncher: Bool) {
@@ -148,10 +132,6 @@ final class MainDashboardViewModel: ObservableObject {
         versionManager.setCurrentVersion(id: newID)
         persistVersionManager()
         refreshSnapshot()
-        refreshOptionAsAltStatus()
-        refreshRetinaModeStatus()
-        refreshVisualCppRuntimeStatus()
-        refreshGitStatus()
     }
 
     func removeVersion(id: String) {
@@ -162,10 +142,6 @@ final class MainDashboardViewModel: ObservableObject {
         }
         persistVersionManager()
         refreshSnapshot()
-        refreshOptionAsAltStatus()
-        refreshRetinaModeStatus()
-        refreshVisualCppRuntimeStatus()
-        refreshGitStatus()
     }
 
 
@@ -271,8 +247,9 @@ final class MainDashboardViewModel: ObservableObject {
         isLauncherLoading = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                try AudioOutputService.selectOutput(
-                    id: version.settings.audioOutputDeviceID,
+                try AudioOutputService.applySavedDevices(
+                    outputID: version.settings.audioOutputDeviceID,
+                    inputID: version.settings.audioInputDeviceID,
                     customVariables: version.settings.environmentVariables
                 )
                 DispatchQueue.main.async {
@@ -338,14 +315,41 @@ final class MainDashboardViewModel: ObservableObject {
 
             if !isForceQuittingWine, !isAudioOutputBusy, let processCount {
                 wineProcessCount = processCount
+                TelemetryService.shared.updateGameRunning(processCount > 0)
             }
 
-            do {
-                try await Task.sleep(for: .seconds(3))
-            } catch {
-                return
+            let interval = Self.wineProcessPollingIntervalSeconds(
+                processCount: processCount ?? wineProcessCount,
+                isLaunchOrShutdownActive: isWineProcessPollingActive
+            )
+            for _ in 0..<interval {
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return
+                }
+                if isWineProcessPollingActive && interval > 1 {
+                    break
+                }
             }
         }
+    }
+
+    static func wineProcessPollingIntervalSeconds(
+        processCount: Int,
+        isLaunchOrShutdownActive: Bool
+    ) -> Int {
+        if isLaunchOrShutdownActive {
+            return 1
+        }
+        return processCount > 0 ? 2 : 10
+    }
+
+    private var isWineProcessPollingActive: Bool {
+        isGameOperationInProgress
+            || isCheckingWineProcesses
+            || isForceQuittingWine
+            || isLauncherLoading
     }
 
     func selectGamePath() {
@@ -396,9 +400,19 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     func beginOptionsSession() {
+        guard !hasActiveOptionsSession else { return }
+
         optionsSessionInitialVersionID = versionManager.currentVersionID
         optionsSessionInitialVanillaTweaksParameters = versionManager.currentVersion?.settings.vanillaTweaksParameters
         hasActiveOptionsSession = true
+
+        refreshOptionAsAltStatus()
+        refreshRetinaModeStatus()
+        refreshGraphicsSettings()
+        refreshVisualCppRuntimeStatus()
+        refreshWineMonoStatus()
+        refreshGitStatus()
+        refreshRosettaStatus(promptIfMissing: true)
     }
 
     func completeOptionsSession() {
@@ -440,19 +454,43 @@ final class MainDashboardViewModel: ObservableObject {
         normalizeTelemetryPrefs()
         wineBottlePath = WineBottleService.currentBottleURL(prefs: userPrefs).path
         TelemetryService.shared.setClientTelemetryEnabled(userPrefs.telemetryEnabled)
-        if userPrefs.autoDeleteWdb == false {
-            userPrefs.autoDeleteWdb = true
-        }
-        applyLegacyPrefsToVersion()
+        migrateLegacyPrefsToCurrentVersion()
         persistVersionManager()
-        persistUserPrefs()
         refreshSnapshot()
         updateTelemetryConsentPromptState()
         recordLaunchTelemetryIfNeeded()
         refreshOptionAsAltStatus()
         refreshRetinaModeStatus()
         updateWineBottleMigrationPromptState()
+        persistUserPrefs()
         updateTelemetryConsentPromptState()
+        startWineProfileMigrationIfNeeded()
+    }
+
+    func startWineProfileMigrationIfNeeded() {
+        let bottleURL = WineBottleService.currentBottleURL(prefs: userPrefs)
+        let blocked = shouldShowMigrationPrompt || shouldShowWineBottleMigrationPrompt
+        let task = wineMigration.startProfileMigration(
+            bottleURL: bottleURL,
+            blocked: blocked,
+            completion: handleWineProfileMigrationOutcome
+        )
+        if task != nil {
+            shouldShowTelemetryConsentPrompt = false
+        }
+    }
+
+    func retryWineProfileMigration() {
+        let bottleURL = WineBottleService.currentBottleURL(prefs: userPrefs)
+        let blocked = shouldShowMigrationPrompt || shouldShowWineBottleMigrationPrompt
+        let task = wineMigration.retryProfileMigration(
+            bottleURL: bottleURL,
+            blocked: blocked,
+            completion: handleWineProfileMigrationOutcome
+        )
+        if task != nil {
+            shouldShowTelemetryConsentPrompt = false
+        }
     }
 
     func handleWineBottleMigration(copyLegacyBottle: Bool) {
@@ -461,38 +499,32 @@ final class MainDashboardViewModel: ObservableObject {
             userPrefs.wineBottleMigrationAsked = true
             persistUserPrefs()
             updateTelemetryConsentPromptState()
+            startWineProfileMigrationIfNeeded()
             return
         }
 
-        isWineBottleMigrationInProgress = true
-        Task.detached { [weak self] in
-            do {
-                let destination = try WineBottleService.copyLegacyBottle()
-                await MainActor.run {
-                    guard let self else { return }
-                    self.userPrefs.wineBottlePath = ""
-                    self.userPrefs.wineBottleMigrationAsked = true
-                    self.persistUserPrefs()
-                    self.wineBottlePath = destination.path
-                    self.isWineBottleMigrationInProgress = false
-                    self.patchFeedback = PatchFeedback(
-                        title: "Wine Bottle Copied",
-                        message: "Your legacy bottle was copied to \(destination.path). The original ~/.wine bottle was kept.",
-                        isError: false
-                    )
-                    self.refreshWineBottleDependentStatuses()
-                    self.updateTelemetryConsentPromptState()
-                }
-            } catch {
-                await MainActor.run {
-                    guard let self else { return }
-                    self.isWineBottleMigrationInProgress = false
-                    self.patchFeedback = PatchFeedback(
-                        title: "Wine Bottle Migration Failed",
-                        message: error.localizedDescription,
-                        isError: true
-                    )
-                }
+        wineMigration.copyLegacyBottle { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let destination):
+                self.userPrefs.wineBottlePath = ""
+                self.userPrefs.wineBottleMigrationAsked = true
+                self.persistUserPrefs()
+                self.wineBottlePath = destination.path
+                self.patchFeedback = PatchFeedback(
+                    title: "Wine Bottle Copied",
+                    message: "Your legacy bottle was copied to \(destination.path). The original ~/.wine bottle was kept.",
+                    isError: false
+                )
+                self.refreshWineBottleDependentStatuses()
+                self.updateTelemetryConsentPromptState()
+                self.startWineProfileMigrationIfNeeded()
+            case .failure(let error):
+                self.patchFeedback = PatchFeedback(
+                    title: "Wine Bottle Migration Failed",
+                    message: error.message,
+                    isError: true
+                )
             }
         }
     }
@@ -502,7 +534,7 @@ final class MainDashboardViewModel: ObservableObject {
     }
 
     var canChangeWineBottleLocation: Bool {
-        !isWineBottleMigrationInProgress
+        !wineMigration.isMigrationInProgress
     }
 
     func selectWineBottleLocation() {
@@ -530,6 +562,8 @@ final class MainDashboardViewModel: ObservableObject {
             wineBottlePath = validated.path
             refreshWineBottleDependentStatuses()
             refreshAudioOutputs()
+            wineMigration.resetProfileMigrationRequest()
+            startWineProfileMigrationIfNeeded()
         } catch {
             presentWineBottleAlert(error.localizedDescription)
         }
@@ -543,6 +577,8 @@ final class MainDashboardViewModel: ObservableObject {
         wineBottlePath = WineBottleService.defaultBottleURL().path
         refreshWineBottleDependentStatuses()
         refreshAudioOutputs()
+        wineMigration.resetProfileMigrationRequest()
+        startWineProfileMigrationIfNeeded()
     }
 
     func openWineBottleLocation() {
@@ -646,106 +682,85 @@ final class MainDashboardViewModel: ObservableObject {
             patchFeedback = PatchFeedback(title: "Cannot Launch", message: "Ensure the game path is set and the game patch is applied.", isError: true)
             return
         }
-        guard !isCheckingWineProcesses else { return }
+        guard !isGameOperationInProgress, !isCheckingWineProcesses, launchTask == nil else { return }
 
         patchFeedback = nil
         isCheckingWineProcesses = true
+        isGameOperationInProgress = true
 
-        Task { [weak self] in
-            while self?.isAudioOutputBusy == true {
-                do {
-                    try await Task.sleep(for: .milliseconds(100))
-                } catch {
-                    self?.isCheckingWineProcesses = false
-                    return
-                }
-            }
-
-            let liveProcessCount = await Task.detached(priority: .userInitiated) {
-                WineProcessMonitor.currentApplicationProcessCount()
-            }.value
-
+        launchTask = Task { [weak self] in
             guard let self else { return }
+            let preflight = await self.gameLaunchCoordinator.prepareLaunch(
+                version: currentVersion,
+                isAudioBusy: { [weak self] in self?.isAudioOutputBusy == true }
+            )
             self.isCheckingWineProcesses = false
 
-            if let liveProcessCount {
-                self.wineProcessCount = liveProcessCount
-            }
-
-            if let liveProcessCount, liveProcessCount > 0 {
-                self.pendingWineLaunchVersion = currentVersion
+            switch preflight {
+            case .ready(let processCount):
+                if let processCount {
+                    self.wineProcessCount = processCount
+                }
+                await self.completePreparedLaunch(currentVersion)
+            case .existingWine(let processCount):
+                self.wineProcessCount = processCount
+                self.isGameOperationInProgress = false
+                self.launchTask = nil
                 self.shouldShowExistingWinePrompt = true
-            } else {
-                self.continueLaunch(currentVersion)
+            case .cancelled:
+                self.isGameOperationInProgress = false
+                self.launchTask = nil
             }
         }
     }
 
     func handleExistingWineBeforeLaunch(cleanUp: Bool?) {
         shouldShowExistingWinePrompt = false
-        guard let pendingVersion = pendingWineLaunchVersion else { return }
-        pendingWineLaunchVersion = nil
-
-        guard let cleanUp else { return }
-        if cleanUp {
-            forceQuitWine(launchAfter: pendingVersion)
+        guard let pendingLaunch = gameLaunchCoordinator.resolvePendingLaunch(cleanUp: cleanUp) else { return }
+        isGameOperationInProgress = true
+        if pendingLaunch.shouldCleanUpWine {
+            forceQuitWine(launchAfter: pendingLaunch.version)
         } else {
-            continueLaunch(pendingVersion)
+            continueLaunch(pendingLaunch.version)
         }
     }
 
     private func continueLaunch(_ currentVersion: GameVersion) {
-
-        // Check for version mismatch if using vanilla tweaks
-        if currentVersion.settings.enableVanillaTweaks {
-            if let mismatch = launchService.checkVersionMismatch(for: currentVersion) {
-                self.versionMismatchData = mismatch
-                self.shouldShowVersionMismatchPrompt = true
-                return
-            }
-        }
-
-        let customVariables = currentVersion.settings.environmentVariables
-        let outputID = currentVersion.settings.audioOutputDeviceID
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            do {
-                try AudioOutputService.selectOutput(id: outputID, customVariables: customVariables)
-                DispatchQueue.main.async {
-                    self?.launchPreparedVersion(currentVersion)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    debugPrint("Could not apply the saved Wine audio output: \(error.localizedDescription)")
-                    self?.launchPreparedVersion(currentVersion)
-                }
-            }
+        launchTask = Task { [weak self] in
+            await self?.completePreparedLaunch(currentVersion)
         }
     }
 
-    private func launchPreparedVersion(_ currentVersion: GameVersion) {
+    private func installLaunchTerminationHandler() {
         launchService.processDidTerminate = { [weak self] in
             guard let self else { return }
             self.refreshSnapshot()
         }
+    }
 
-        launchService.launch(version: currentVersion) { [weak self] result in
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                switch result {
-                case .success:
-                    self.recordWowStartTelemetry(for: currentVersion)
-                    break
-                case .failure(let error):
-                    switch error {
-                    case .vanillaTweaksMissing:
-                        self.pendingVanillaTweaksLaunch = true
-                        self.shouldShowVanillaTweaksPrompt = true
-                    default:
-                        self.patchFeedback = PatchFeedback(title: "Launch Failed", message: error.localizedDescription, isError: true)
-                        self.refreshSnapshot()
-                    }
-                }
-            }
+    private func completePreparedLaunch(_ currentVersion: GameVersion) async {
+        installLaunchTerminationHandler()
+        let outcome = await gameLaunchCoordinator.launchPrepared(currentVersion)
+        handleLaunchOutcome(outcome, version: currentVersion)
+        isGameOperationInProgress = false
+        launchTask = nil
+    }
+
+    private func handleLaunchOutcome(_ outcome: GameLaunchOutcome, version: GameVersion) {
+        switch outcome {
+        case .started:
+            recordWowStartTelemetry(for: version)
+        case .versionMismatch(let base, let tweaked):
+            versionMismatchData = (base, tweaked)
+            shouldShowVersionMismatchPrompt = true
+        case .vanillaTweaksMissing:
+            pendingVanillaTweaksLaunch = true
+            shouldShowVanillaTweaksPrompt = true
+        case .failed(let error):
+            patchFeedback = PatchFeedback(title: "Launch Failed", message: error.localizedDescription, isError: true)
+            refreshSnapshot()
+        case .cancelled:
+            break
         }
     }
 
@@ -1039,17 +1054,37 @@ final class MainDashboardViewModel: ObservableObject {
             },
             set: { newValue in
                 guard var version = self.versionManager.currentVersion else { return }
+                let previousValue = version.settings.graphicsSettings
                 var normalizedValue = newValue
+                if normalizedValue.vulkanDriver != previousValue.vulkanDriver,
+                   !normalizedValue.vulkanDriver.isSupportedOnCurrentMacOS {
+                    self.patchFeedback = PatchFeedback(
+                        title: "KosmicKrisp Unavailable",
+                        message: "KosmicKrisp requires macOS 26 or later.",
+                        isError: true
+                    )
+                    return
+                }
                 if normalizedValue.backend != .mtld3d {
                     normalizedValue.hdrEnabled = false
                 }
+                let d3d9SelectionChanged = normalizedValue.backend == .d9vk
+                    && (previousValue.backend != normalizedValue.backend
+                        || previousValue.vulkanDriver != normalizedValue.vulkanDriver)
+                let shouldInstallD3D9 = d3d9SelectionChanged
+                    && PatchingStatusChecker.evaluateGamePatch(for: version).applied
                 version.settings.graphicsSettings = normalizedValue
                 self.updateCurrentVersion { current in current = version }
-                guard version.supportsCustomGraphicsSettings else { return }
+                guard version.supportsCustomGraphicsSettings || shouldInstallD3D9 else { return }
                 let versionForWork = version
                 DispatchQueue.global(qos: .userInitiated).async {
                     do {
-                        try ConfigService.applyGraphicsSettings(for: versionForWork)
+                        if shouldInstallD3D9 {
+                            try PatchService.installD3D9DLL(for: versionForWork)
+                        }
+                        if versionForWork.supportsCustomGraphicsSettings {
+                            try ConfigService.applyGraphicsSettings(for: versionForWork)
+                        }
                     } catch {
                         DispatchQueue.main.async {
                             self.patchFeedback = PatchFeedback(title: "Graphics Settings", message: error.localizedDescription, isError: true)
@@ -1069,168 +1104,75 @@ final class MainDashboardViewModel: ObservableObject {
 
     func disableRetinaMode() { setRetinaMode(false) }
 
-    var canInstallDependencies: Bool {
-        BundledWineRuntime.wineExecutableURL() != nil && !isDependencyInstallInProgress
-    }
-
     func installVisualCppRuntime() {
-        guard canInstallDependencies else { return }
-        isDependencyInstallInProgress = true
-        visualCppRuntimeStatus = .inProgress("Installing...")
-        patchFeedback = nil
         let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            do {
-                try DependencyService.installVisualCppRuntime(customVariables: customVariables)
-                DispatchQueue.main.async {
-                    self?.isDependencyInstallInProgress = false
-                    self?.visualCppRuntimeStatus = DependencyService.isVisualCppRuntimeInstalled() ? .installed : .missing
-                    self?.patchFeedback = PatchFeedback(title: "Dependencies", message: "Microsoft Visual C++ Runtime 2022 installed successfully.", isError: false)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self?.isDependencyInstallInProgress = false
-                    self?.visualCppRuntimeStatus = .error(error.localizedDescription)
-                    self?.patchFeedback = PatchFeedback(title: "Dependencies Failed", message: error.localizedDescription, isError: true)
-                    self?.refreshVisualCppRuntimeStatus()
-                }
-            }
+        let task = dependencies.installVisualCppRuntime(customVariables: customVariables) { [weak self] feedback in
+            self?.patchFeedback = feedback
+        }
+        if task != nil {
+            patchFeedback = nil
         }
     }
 
     func refreshVisualCppRuntimeStatus() {
-        guard !isDependencyInstallInProgress else { return }
-
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let installed = DependencyService.isVisualCppRuntimeInstalled()
-            DispatchQueue.main.async {
-                self?.visualCppRuntimeStatus = installed ? .installed : .missing
-            }
-        }
-    }
-
-    var canInstallWineMono: Bool {
-        BundledWineRuntime.wineExecutableURL() != nil && !isWineMonoInstallInProgress
+        dependencies.refreshVisualCppRuntimeStatus()
     }
 
     func installWineMono() {
-        guard canInstallWineMono else { return }
-        isWineMonoInstallInProgress = true
-        wineMonoStatus = .inProgress("Waiting for installer...")
-        patchFeedback = nil
         let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            do {
-                try DependencyService.installWineMono(customVariables: customVariables)
-                DispatchQueue.main.async {
-                    self?.isWineMonoInstallInProgress = false
-                    self?.wineMonoStatus = .installed
-                    self?.patchFeedback = PatchFeedback(title: "Dependencies", message: "Wine Mono installed successfully.", isError: false)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self?.isWineMonoInstallInProgress = false
-                    self?.wineMonoStatus = .error(error.localizedDescription)
-                    self?.patchFeedback = PatchFeedback(title: "Wine Mono Install Failed", message: error.localizedDescription, isError: true)
-                    self?.refreshWineMonoStatus()
-                }
-            }
+        let task = dependencies.installWineMono(customVariables: customVariables) { [weak self] feedback in
+            self?.patchFeedback = feedback
+        }
+        if task != nil {
+            patchFeedback = nil
         }
     }
 
     func refreshWineMonoStatus() {
-        guard !isWineMonoInstallInProgress else { return }
-
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let installed = DependencyService.isWineMonoInstalled()
-            DispatchQueue.main.async {
-                self?.wineMonoStatus = installed ? .installed : .missing
-            }
-        }
+        dependencies.refreshWineMonoStatus()
     }
 
     func installGit() {
-        guard !isGitInstallInProgress else { return }
-
-        isGitInstallInProgress = true
-        gitStatus = .inProgress("Opening installer...")
-        patchFeedback = nil
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            do {
-                try DependencyService.installGit()
-                DispatchQueue.main.async {
-                    self?.isGitInstallInProgress = false
-                    self?.gitStatus = DependencyService.isGitInstalled() ? .installed : .inProgress("Installer opened")
-                    self?.patchFeedback = PatchFeedback(title: "Git", message: "Apple's Git installer has been opened. Finish the installation, then refresh the status.", isError: false)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self?.isGitInstallInProgress = false
-                    self?.gitStatus = .error(error.localizedDescription)
-                    self?.patchFeedback = PatchFeedback(title: "Git Install Failed", message: error.localizedDescription, isError: true)
-                    self?.refreshGitStatus()
-                }
-            }
+        let task = dependencies.installGit { [weak self] feedback in
+            self?.patchFeedback = feedback
+        }
+        if task != nil {
+            patchFeedback = nil
         }
     }
 
     func refreshGitStatus() {
-        guard !isGitInstallInProgress else { return }
-
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let installed = DependencyService.isGitInstalled()
-            DispatchQueue.main.async {
-                self?.gitStatus = installed ? .installed : .missing
-            }
-        }
+        dependencies.refreshGitStatus()
     }
 
     func installRosetta() {
-        guard !isRosettaInstallInProgress, rosettaStatus != .installed else { return }
+        let task = dependencies.installRosetta { [weak self] feedback in
+            self?.patchFeedback = feedback
+        }
+        if task != nil {
+            patchFeedback = nil
+        }
+    }
 
-        isRosettaInstallInProgress = true
-        rosettaStatus = .inProgress("Opening installer...")
-        patchFeedback = nil
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            do {
-                try DependencyService.installRosetta()
-                DispatchQueue.main.async {
-                    self?.isRosettaInstallInProgress = false
-                    self?.rosettaStatus = .inProgress("Installer opened")
-                    self?.patchFeedback = PatchFeedback(
-                        title: "Rosetta 2",
-                        message: "Finish the Rosetta 2 installation in Terminal, then refresh the status.",
-                        isError: false
-                    )
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self?.isRosettaInstallInProgress = false
-                    self?.rosettaStatus = .error(error.localizedDescription)
-                    self?.patchFeedback = PatchFeedback(title: "Rosetta 2 Install Failed", message: error.localizedDescription, isError: true)
-                }
+    func refreshRosettaStatus(promptIfMissing: Bool = false) {
+        dependencies.refreshRosettaStatus { [weak self] in
+            if promptIfMissing {
+                self?.shouldShowRosettaInstallPrompt = true
             }
         }
     }
 
-    func refreshRosettaStatus() {
-        guard !isRosettaInstallInProgress else { return }
-
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let installed = DependencyService.isRosettaInstalled()
-            DispatchQueue.main.async {
-                self?.rosettaStatus = installed ? .installed : .missing
-            }
+    func handleRosettaInstallPrompt(install: Bool) {
+        shouldShowRosettaInstallPrompt = false
+        if install {
+            installRosetta()
         }
     }
 
     private func setOptionAsAlt(_ enabled: Bool) {
         guard !isOptionAsAltBusy else { return }
 
+        optionAsAltStatusRefreshID += 1
         isOptionAsAltBusy = true
         optionAsAltStatus = .inProgress(enabled ? "Enabling…" : "Disabling…")
         let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
@@ -1262,6 +1204,8 @@ final class MainDashboardViewModel: ObservableObject {
 
     func refreshOptionAsAltStatus() {
         guard !isOptionAsAltBusy else { return }
+        optionAsAltStatusRefreshID += 1
+        let refreshID = optionAsAltStatusRefreshID
         let currentVersion = versionManager.currentVersion
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let enabled: Bool
@@ -1272,6 +1216,7 @@ final class MainDashboardViewModel: ObservableObject {
             }
             DispatchQueue.main.async {
                 guard let self else { return }
+                guard self.optionAsAltStatusRefreshID == refreshID else { return }
                 self.optionAsAltStatus = enabled ? .enabled : .disabled
                 self.applyOptionAsAltState(enabled: enabled, persist: false)
             }
@@ -1281,6 +1226,7 @@ final class MainDashboardViewModel: ObservableObject {
     private func setRetinaMode(_ enabled: Bool) {
         guard !isRetinaModeBusy else { return }
 
+        retinaModeStatusRefreshID += 1
         isRetinaModeBusy = true
         retinaModeStatus = .inProgress(enabled ? "Enabling…" : "Disabling…")
         let customVariables = versionManager.currentVersion?.settings.environmentVariables ?? ""
@@ -1310,6 +1256,8 @@ final class MainDashboardViewModel: ObservableObject {
 
     func refreshRetinaModeStatus() {
         guard !isRetinaModeBusy else { return }
+        retinaModeStatusRefreshID += 1
+        let refreshID = retinaModeStatusRefreshID
         let currentVersion = versionManager.currentVersion
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let enabled: Bool
@@ -1320,6 +1268,7 @@ final class MainDashboardViewModel: ObservableObject {
             }
             DispatchQueue.main.async {
                 guard let self else { return }
+                guard self.retinaModeStatusRefreshID == refreshID else { return }
                 self.retinaModeStatus = enabled ? .enabled : .disabled
             }
         }
@@ -1464,6 +1413,7 @@ final class MainDashboardViewModel: ObservableObject {
         }
 
         isGameOperationInProgress = true
+        isPatchingOperation = true
         isUnpatchingOperation = false
         var versionSnapshot = version
 
@@ -1491,6 +1441,7 @@ final class MainDashboardViewModel: ObservableObject {
         }
 
         isGameOperationInProgress = true
+        isPatchingOperation = false
         isUnpatchingOperation = true
         let versionSnapshot = version
 
@@ -1512,6 +1463,7 @@ final class MainDashboardViewModel: ObservableObject {
     private func handlePatchCompletion(successTitle: String, message: String) async {
         await MainActor.run {
             isGameOperationInProgress = false
+            isPatchingOperation = false
             isUnpatchingOperation = false
             refreshSnapshot()
             patchFeedback = PatchFeedback(title: successTitle, message: message, isError: false)
@@ -1521,6 +1473,7 @@ final class MainDashboardViewModel: ObservableObject {
     private func handlePatchError(_ error: Error, title: String) async {
         await MainActor.run {
             isGameOperationInProgress = false
+            isPatchingOperation = false
             isUnpatchingOperation = false
             refreshSnapshot()
             patchFeedback = PatchFeedback(title: title, message: error.localizedDescription, isError: true)
@@ -1578,11 +1531,6 @@ final class MainDashboardViewModel: ObservableObject {
         launcherPathStatus = makePathStatus(for: currentVersion.launcherExePath)
         currentVersionLauncherName = "Open Launcher"
 
-        syncLegacyPrefs(from: currentVersion.settings)
-
-        if !isOptionAsAltBusy {
-            refreshOptionAsAltStatus()
-        }
     }
 
     private func refreshPatchStatuses(for version: GameVersion) {
@@ -1613,7 +1561,7 @@ final class MainDashboardViewModel: ObservableObject {
         refreshSnapshot()
     }
 
-    private func applyLegacyPrefsToVersion() {
+    private func migrateLegacyPrefsToCurrentVersion() {
         versionManager.updateCurrentVersion { version in
             version.settings.showTerminalNormally = userPrefs.showTerminalNormally
             version.settings.enableMetalHud = userPrefs.enableMetalHud
@@ -1622,7 +1570,7 @@ final class MainDashboardViewModel: ObservableObject {
             } else {
                 version.settings.enableVanillaTweaks = false
             }
-            version.settings.autoDeleteWdb = version.isWorldOfWarcraft
+            version.settings.autoDeleteWdb = userPrefs.autoDeleteWdb
             version.settings.remapOptionAsAlt = userPrefs.remapOptionAsAlt
             if !userPrefs.environmentVariables.isEmpty {
                 version.settings.environmentVariables = userPrefs.environmentVariables
@@ -1713,27 +1661,6 @@ final class MainDashboardViewModel: ObservableObject {
         return updated
     }
 
-    private func syncLegacyPrefs(from settings: VersionSettings) {
-        var updated = userPrefs
-        updated.showTerminalNormally = settings.showTerminalNormally
-        updated.enableMetalHud = settings.enableMetalHud
-        updated.enableVanillaTweaks = settings.enableVanillaTweaks
-        updated.autoDeleteWdb = true
-        updated.remapOptionAsAlt = settings.remapOptionAsAlt
-        updated.telemetryEnabled = userPrefs.telemetryEnabled
-        updated.telemetryConsentAsked = userPrefs.telemetryConsentAsked
-        updated.telemetryInstallID = userPrefs.telemetryInstallID
-        updated.environmentVariables = settings.environmentVariables
-        updated.vanillaTweaksParameters = settings.vanillaTweaksParameters
-        updated.x87Backend = settings.x87Backend
-
-        if updated != userPrefs {
-            userPrefs = updated
-            persistUserPrefs()
-        }
-    }
-
-
     private func persistVersionManager() {
         do {
             try versionStore.save(manager: versionManager)
@@ -1746,41 +1673,45 @@ final class MainDashboardViewModel: ObservableObject {
         prefsStore.save(userPrefs)
     }
 
-    private func normalizeTelemetryPrefs() {
+    @discardableResult
+    private func normalizeTelemetryPrefs() -> Bool {
         let trimmedID = userPrefs.telemetryInstallID.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedID.isEmpty {
             userPrefs.telemetryInstallID = UUID().uuidString
+            return true
         }
+        return false
     }
 
     private func updateTelemetryConsentPromptState() {
         shouldShowTelemetryConsentPrompt = !shouldShowMigrationPrompt
             && !shouldShowWineBottleMigrationPrompt
+            && !wineMigration.isMigrationInProgress
             && !userPrefs.telemetryConsentAsked
     }
 
-    private func updateWineBottleMigrationPromptState() {
+    @discardableResult
+    private func updateWineBottleMigrationPromptState() -> Bool {
         guard !shouldShowMigrationPrompt, !userPrefs.wineBottleMigrationAsked else {
             shouldShowWineBottleMigrationPrompt = false
-            return
+            return false
         }
 
         if !userPrefs.wineBottlePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             userPrefs.wineBottleMigrationAsked = true
-            persistUserPrefs()
             shouldShowWineBottleMigrationPrompt = false
-            return
+            return true
         }
 
         let destination = WineBottleService.currentBottleURL(prefs: userPrefs)
         if WineBottleService.isWineBottle(at: destination) {
             userPrefs.wineBottleMigrationAsked = true
-            persistUserPrefs()
             shouldShowWineBottleMigrationPrompt = false
-            return
+            return true
         }
 
         shouldShowWineBottleMigrationPrompt = WineBottleService.shouldOfferLegacyMigration(prefs: userPrefs)
+        return false
     }
 
     private func refreshWineBottleDependentStatuses() {
@@ -1788,6 +1719,23 @@ final class MainDashboardViewModel: ObservableObject {
         refreshRetinaModeStatus()
         refreshVisualCppRuntimeStatus()
         refreshWineMonoStatus()
+    }
+
+    private func handleWineProfileMigrationOutcome(_ outcome: WineProfileMigrationOutcome) {
+        switch outcome {
+        case .succeeded(let migrated):
+            if migrated {
+                debugPrint("Copied the Wine user profile into the configured WoWSilicon bottle; ~/Wine was kept as a backup.")
+            }
+        case .failed(let message):
+            debugPrint("Wine user profile migration failed: \(message)")
+            patchFeedback = PatchFeedback(
+                title: "Wine Profile Migration Failed",
+                message: "WoWSilicon could not copy the Windows user profile into the selected bottle. Your existing ~/Wine folder was not removed. You can retry from Options. \(message)",
+                isError: true
+            )
+        }
+        updateTelemetryConsentPromptState()
     }
 
     private func presentWineBottleAlert(_ message: String) {

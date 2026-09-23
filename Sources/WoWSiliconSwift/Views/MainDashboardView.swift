@@ -3,6 +3,7 @@ import AppKit
 
 struct MainDashboardView: View {
     @ObservedObject var viewModel: MainDashboardViewModel
+    @ObservedObject var wineMigration: WineMigrationViewModel
     @State private var showOptionsSheet = false
     @State private var showPatchAlert = false
     @State private var patchAlertTitle = "Patching"
@@ -90,6 +91,7 @@ struct MainDashboardView: View {
                     isBusy: viewModel.isGameOperationInProgress
                         || viewModel.isForceQuittingWine
                         || viewModel.isCheckingWineProcesses
+                        || wineMigration.isMigrationInProgress
                 )
                 .padding(.horizontal, 32)
                 .padding(.bottom, 24)
@@ -102,6 +104,8 @@ struct MainDashboardView: View {
         .sheet(isPresented: $showOptionsSheet) {
             OptionsView(
                 viewModel: viewModel,
+                dependencies: viewModel.dependencies,
+                wineMigration: wineMigration,
                 onClose: { showOptionsSheet = false }
             )
             .frame(width: 780, height: 540)
@@ -155,6 +159,16 @@ struct MainDashboardView: View {
             }
         } message: {
             Text("Help us show anonymous WoWSilicon usage stats, like how many people use the launcher, which WoW versions are used, macOS version, renderer, x87 translation, and configured realmlist server. We do not collect your IP address, username, account name, character name, file paths, or hardware identifiers.")
+        }
+        .alert("Rosetta 2 Required", isPresented: $viewModel.shouldShowRosettaInstallPrompt) {
+            Button("Not Now", role: .cancel) {
+                viewModel.handleRosettaInstallPrompt(install: false)
+            }
+            Button("Install Rosetta 2") {
+                viewModel.handleRosettaInstallPrompt(install: true)
+            }
+        } message: {
+            Text("Rosetta 2 is not installed. WoWSilicon needs it to run Intel components on Apple silicon. Install it before launching a game.")
         }
         .alert("Apply vanilla-tweaks?", isPresented: $vanillaTweaksAlert) {
             Button("Cancel", role: .cancel) {
@@ -216,7 +230,7 @@ struct MainDashboardView: View {
                 .interactiveDismissDisabled(true)
         }
         .sheet(isPresented: Binding(
-            get: { viewModel.isGameOperationInProgress && !viewModel.isApplyingVanillaTweaks && !viewModel.isUnpatchingOperation },
+            get: { viewModel.isPatchingOperation },
             set: { _ in }
         )) {
             PatchingLoadingView()

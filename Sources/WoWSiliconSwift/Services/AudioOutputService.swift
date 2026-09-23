@@ -38,11 +38,6 @@ enum AudioOutputServiceError: LocalizedError {
 enum AudioOutputService {
     static let helperEnvironmentOverride = "WOWSILICON_AUDIO_HELPER"
 
-    static func availableOutputs(customVariables: String = "") throws -> [WineAudioOutputDevice] {
-        let result = try runHelper(arguments: ["list"], customVariables: customVariables)
-        return parseDeviceList(result.stdout)
-    }
-
     static func snapshot(customVariables: String = "") throws -> WineAudioSnapshot {
         let result = try runHelper(arguments: ["snapshot"], customVariables: customVariables)
         return parseSnapshot(result.stdout)
@@ -56,6 +51,27 @@ enum AudioOutputService {
     static func selectInput(id: String, customVariables: String = "") throws {
         let arguments = id.isEmpty ? ["clear-input"] : ["set-input", id]
         _ = try runHelper(arguments: arguments, customVariables: customVariables)
+    }
+
+    static func applySavedDevices(
+        outputID: String,
+        inputID: String,
+        customVariables: String = ""
+    ) throws {
+        for arguments in savedDeviceArguments(outputID: outputID, inputID: inputID) {
+            _ = try runHelper(arguments: arguments, customVariables: customVariables)
+        }
+    }
+
+    static func savedDeviceArguments(outputID: String, inputID: String) -> [[String]] {
+        var commands: [[String]] = []
+        if !outputID.isEmpty {
+            commands.append(["set", outputID])
+        }
+        if !inputID.isEmpty {
+            commands.append(["set-input", inputID])
+        }
+        return commands
     }
 
     static func testOutput(
@@ -104,24 +120,9 @@ enum AudioOutputService {
         let executable = shellQuote(wineURL.path)
         let helper = shellQuote(helperURL.path)
 
-        var commands: [String] = []
-        if !outputID.isEmpty {
-            commands.append("\(environment) \(executable) \(helper) set \(shellQuote(outputID))")
-        }
-        if !inputID.isEmpty {
-            commands.append("\(environment) \(executable) \(helper) set-input \(shellQuote(inputID))")
-        }
-        return commands
-    }
-
-    static func parseDeviceList(_ output: String) -> [WineAudioOutputDevice] {
-        output.split(whereSeparator: { $0.isNewline }).compactMap { line in
-            let fields = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
-            guard fields.count == 2 else { return nil }
-            let id = String(fields[0])
-            guard !id.isEmpty else { return nil }
-            let rawName = String(fields[1]).trimmingCharacters(in: .whitespacesAndNewlines)
-            return WineAudioOutputDevice(id: id, name: rawName.isEmpty ? id : rawName)
+        return savedDeviceArguments(outputID: outputID, inputID: inputID).map { arguments in
+            let quotedArguments = arguments.map(shellQuote).joined(separator: " ")
+            return "\(environment) \(executable) \(helper) \(quotedArguments)"
         }
     }
 

@@ -1,9 +1,9 @@
 const CONFIG = {
   telemetry_enabled: true,
-  heartbeat_enabled: false,
-  heartbeat_interval_minutes: 60,
+  heartbeat_enabled: true,
+  heartbeat_interval_minutes: 5,
   launch_sample_rate: 1.0,
-  heartbeat_sample_rate: 0.0,
+  heartbeat_sample_rate: 1.0,
   config_ttl_hours: 24,
   min_supported_telemetry_schema: 1,
 };
@@ -15,8 +15,8 @@ const CORS_HEADERS = {
 };
 
 const MAX_BODY_BYTES = 4096;
-const ACTIVE_WINDOW_SECONDS = 30 * 60;
-const HEARTBEAT_DEDUPE_SECONDS = 15 * 60;
+const ACTIVE_WINDOW_SECONDS = 15 * 60;
+const HEARTBEAT_DEDUPE_SECONDS = 4 * 60;
 
 export default {
   async fetch(request, env) {
@@ -57,7 +57,7 @@ async function handleEvent(request, db) {
     return json({ error: "invalid_json" }, {}, 400);
   }
 
-  const event = sanitizeEnum(input.event, ["launch", "wow_start", "heartbeat"]);
+  const event = sanitizeEnum(input.event, ["launch", "wow_start", "heartbeat", "session_end"]);
   const installId = sanitizeId(input.install_id);
   const sessionId = sanitizeId(input.session_id || input.install_id);
 
@@ -82,6 +82,13 @@ async function handleEvent(request, db) {
      VALUES (?, ?, ?)
      ON CONFLICT(install_id) DO UPDATE SET last_seen_at = excluded.last_seen_at`
   ).bind(installId, now, now).run();
+
+  if (event === "session_end") {
+    await db.prepare(
+      "DELETE FROM active_sessions WHERE session_id = ? AND install_id = ?"
+    ).bind(sessionId, installId).run();
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
 
   if (event === "heartbeat") {
     const current = await db.prepare(
@@ -194,7 +201,7 @@ async function getStats(db) {
 
   const installs = await db.prepare("SELECT COUNT(*) AS count FROM installs").first();
   const active = await db.prepare(
-    "SELECT COUNT(*) AS count FROM active_sessions WHERE last_seen_at >= ?"
+    "SELECT COUNT(DISTINCT install_id) AS count FROM active_sessions WHERE last_seen_at >= ?"
   ).bind(activeSince).first();
 
   return {

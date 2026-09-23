@@ -1,14 +1,54 @@
 import Foundation
 import AppKit
 
+struct WineApplicationFocusMatcher {
+    let baselineProcessIDs: Set<pid_t>
+    let runtimeRootURL: URL
+    let additionalExecutableURLs: Set<URL>
+    private(set) var didMatch = false
+
+    init(
+        baselineProcessIDs: Set<pid_t>,
+        runtimeRootURL: URL,
+        additionalExecutableURLs: Set<URL> = []
+    ) {
+        self.baselineProcessIDs = baselineProcessIDs
+        self.runtimeRootURL = runtimeRootURL
+        self.additionalExecutableURLs = additionalExecutableURLs
+    }
+
+    mutating func accepts(processIdentifier: pid_t, executableURL: URL?) -> Bool {
+        guard !didMatch,
+              !baselineProcessIDs.contains(processIdentifier),
+              let executableURL else {
+            return false
+        }
+
+        let runtimePath = runtimeRootURL.standardizedFileURL.path
+        let executablePath = executableURL.standardizedFileURL.path
+        let additionalExecutablePaths = Set(additionalExecutableURLs.map { $0.standardizedFileURL.path })
+        guard executablePath == runtimePath
+                || executablePath.hasPrefix(runtimePath + "/")
+                || additionalExecutablePaths.contains(executablePath) else {
+            return false
+        }
+
+        didMatch = true
+        return true
+    }
+}
+
 enum LaunchServiceError: LocalizedError {
     case alreadyRunning
     case gamePathMissing
     case x87RuntimeMissing(String)
+    case vulkanDriverUnsupported(String)
+    case vulkanDriverMissing(String)
     case wineMissing(String)
     case executableMissing(String)
     case vanillaTweaksMissing
     case patchNotApplied
+    case wdbCleanupFailed(String)
     case processLaunchFailed(String)
     case appleScriptFailed(String)
     case versionMismatch(String, String)
@@ -21,6 +61,10 @@ enum LaunchServiceError: LocalizedError {
             return "Game path is not set. Please configure it before launching."
         case .x87RuntimeMissing(let path):
             return "Selected x87 runtime not found at \(path). Reinstall WoWSilicon and try again."
+        case .vulkanDriverUnsupported(let driver):
+            return "\(driver) requires macOS 26 or later. Select MoltenVK in Graphics settings."
+        case .vulkanDriverMissing(let driver):
+            return "The \(driver) Vulkan driver is not installed in this Wine runtime. Run tools/wine-runtime/install-kosmickrisp.sh and rebuild WoWSilicon."
         case .wineMissing(let path):
             return "Bundled Wine executable not found at \(path). Reinstall WoWSilicon and try again."
         case .executableMissing(let path):
@@ -29,6 +73,8 @@ enum LaunchServiceError: LocalizedError {
             return "Vanilla Tweaks is enabled but WoW_tweaked.exe was not found. WoWSilicon can create it automatically before launching."
         case .patchNotApplied:
             return "Patches no longer appear to be applied. Re-run the patching steps before launching."
+        case .wdbCleanupFailed(let reason):
+            return "Could not clear the WDB cache before launch. \(reason)"
         case .processLaunchFailed(let reason):
             return reason
         case .appleScriptFailed(let reason):
@@ -47,35 +93,80 @@ final class LaunchService: @unchecked Sendable {
     private var runningProcesses: [Process] = []
     private let processQueue = DispatchQueue(label: "com.turtlesilicon.launchservice.processes")
     private let fileManager = FileManager.default
-    private var focusTimer: DispatchSourceTimer?
+    private var focusObservation: FocusObservation?
+
+    private struct FocusObservation {
+        let id: UUID
+        var matcher: WineApplicationFocusMatcher
+        let observer: NSObjectProtocol
+        let timeout: DispatchWorkItem
+    }
 
     private init() {}
 
-    func launch(version: GameVersion, completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void) {
-        do {
-            let result = try prepareLaunchArtifacts(for: version)
+    func launch(version: GameVersion) async throws {
+        try Task.checkCancellation()
+        let preparation = Task.detached(priority: .userInitiated) { [self] in
+            try Task.checkCancellation()
+            if version.settings.enableVanillaTweaks,
+               let mismatch = checkVersionMismatch(for: version) {
+                throw LaunchServiceError.versionMismatch(mismatch.base, mismatch.tweaked)
+            }
 
-            if !patchesAppearValid(for: version) {
+            do {
+                try LaunchPerformance.measure("Audio Device Setup") {
+                    try AudioOutputService.applySavedDevices(
+                        outputID: version.settings.audioOutputDeviceID,
+                        inputID: version.settings.audioInputDeviceID,
+                        customVariables: version.settings.environmentVariables
+                    )
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                debugPrint("Could not apply the saved Wine audio output: \(error.localizedDescription)")
+            }
+
+            try Task.checkCancellation()
+            let result = try LaunchPerformance.measure("Launch Artifact Preparation") {
+                try prepareLaunchArtifacts(for: version)
+            }
+
+            try Task.checkCancellation()
+            let patchesAreValid = LaunchPerformance.measure("Patch Validation") {
+                patchesAppearValid(for: version)
+            }
+            if !patchesAreValid {
                 throw LaunchServiceError.patchNotApplied
             }
+            try Task.checkCancellation()
+            return result
+        }
+        let result = try await withTaskCancellationHandler {
+            try await preparation.value
+        } onCancel: {
+            preparation.cancel()
+        }
 
+        try Task.checkCancellation()
+        try await MainActor.run {
+            try Task.checkCancellation()
             if version.settings.showTerminalNormally {
-                try launchViaTerminal(configuration: result)
-                DispatchQueue.main.async { completion(.success(())) }
+                try LaunchPerformance.measure("Wine Process Spawn") {
+                    try launchViaTerminal(configuration: result)
+                }
                 DispatchQueue.main.async { self.processDidTerminate?() }
             } else {
-                try launchIntegrated(configuration: result, completion: completion)
+                try LaunchPerformance.measure("Wine Process Spawn") {
+                    try launchIntegrated(configuration: result)
+                }
             }
-        } catch let error as LaunchServiceError {
-            DispatchQueue.main.async { completion(.failure(error)) }
-        } catch {
-            DispatchQueue.main.async { completion(.failure(.processLaunchFailed(error.localizedDescription))) }
         }
     }
 
     // MARK: - Preparation
 
-    private struct LaunchConfiguration {
+    private struct LaunchConfiguration: Sendable {
         let version: GameVersion
         let gameURL: URL
         let wowExecutableURL: URL
@@ -104,6 +195,17 @@ final class LaunchService: @unchecked Sendable {
             throw LaunchServiceError.wineMissing(expectedPath)
         }
 
+        if version.settings.graphicsSettings.backend == .d9vk {
+            let driver = version.settings.graphicsSettings.vulkanDriver
+            guard driver.isSupportedOnCurrentMacOS else {
+                throw LaunchServiceError.vulkanDriverUnsupported(driver.displayName)
+            }
+            if driver == .kosmicKrisp,
+               BundledWineRuntime.vulkanDriverManifestURL(for: driver) == nil {
+                throw LaunchServiceError.vulkanDriverMissing(driver.displayName)
+            }
+        }
+
         let wowExecutableURL: URL
         if version.settings.enableVanillaTweaks {
             let tweakedURL = gameURL.appendingPathComponent("WoW_tweaked.exe")
@@ -130,15 +232,25 @@ final class LaunchService: @unchecked Sendable {
             throw LaunchServiceError.executableMissing(wowExecutableURL.path)
         }
 
-        if performPrelaunchActions && version.settings.autoDeleteWdb {
-            deleteWDBDirectories(at: gameURL)
+        try Task.checkCancellation()
+        if performPrelaunchActions {
+            _ = try LaunchPerformance.measure("WDB Cleanup") {
+                try Self.cleanWDBIfEnabled(
+                    version.settings.autoDeleteWdb,
+                    at: gameURL,
+                    fileManager: fileManager
+                )
+            }
         }
 
+        try Task.checkCancellation()
         let spatialAudioControlURL = SpatialAudioService.controlURL()
         let normalizeAudioControlURL = SpatialAudioService.normalizeAudioControlURL()
         if performPrelaunchActions {
-            try SpatialAudioService.setEnabled(version.settings.spatializeStereo, controlURL: spatialAudioControlURL)
-            try SpatialAudioService.setNormalizeAudio(version.settings.normalizeAudio, controlURL: normalizeAudioControlURL)
+            try LaunchPerformance.measure("Audio Control Writes") {
+                try SpatialAudioService.setEnabled(version.settings.spatializeStereo, controlURL: spatialAudioControlURL)
+                try SpatialAudioService.setNormalizeAudio(version.settings.normalizeAudio, controlURL: normalizeAudioControlURL)
+            }
         }
 
         let shellCommand = makeShellCommand(
@@ -191,7 +303,10 @@ final class LaunchService: @unchecked Sendable {
                 configuration.gameURL.appendingPathComponent("Cache/WDB", isDirectory: true)
             ]
             setupCommands.append(
-                contentsOf: wdbURLs.map { "/bin/rm -rf \(shellQuote($0.path))" }
+                contentsOf: wdbURLs.map { url in
+                    let failure = shellQuote("Could not clear the WDB cache at \(url.path)")
+                    return "/bin/rm -rf \(shellQuote(url.path)) || { /usr/bin/printf '%s\\n' \(failure) >&2; exit 1; }"
+                }
             )
         }
 
@@ -209,7 +324,11 @@ final class LaunchService: @unchecked Sendable {
 
     // MARK: - Launch paths
 
-    private func launchIntegrated(configuration: LaunchConfiguration, completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void) throws {
+    @MainActor
+    private func launchIntegrated(configuration: LaunchConfiguration) throws {
+        let focusID = startWineApplicationFocusObservation(
+            additionalExecutableURL: configuration.x87Runtime?.executableURL
+        )
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", configuration.shellCommand]
@@ -248,26 +367,37 @@ final class LaunchService: @unchecked Sendable {
             stderr.fileHandleForReading.readabilityHandler = nil
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.focusTimer?.cancel()
-                self.focusTimer = nil
+                self.cancelWineApplicationFocusObservation(id: focusID)
                 self.untrackProcess(process)
                 self.processDidTerminate?()
             }
         }
 
         do {
+            try Task.checkCancellation()
             try process.run()
             trackProcess(process)
-            startFocusTimer()
-            DispatchQueue.main.async { completion(.success(())) }
         } catch {
+            cancelWineApplicationFocusObservation(id: focusID)
+            if error is CancellationError {
+                throw error
+            }
             throw LaunchServiceError.processLaunchFailed(error.localizedDescription)
         }
     }
 
+    @MainActor
     private func launchViaTerminal(configuration: LaunchConfiguration) throws {
-        try launchTerminalCommand(configuration.shellCommand)
-        startFocusTimer()
+        try Task.checkCancellation()
+        let focusID = startWineApplicationFocusObservation(
+            additionalExecutableURL: configuration.x87Runtime?.executableURL
+        )
+        do {
+            try launchTerminalCommand(configuration.shellCommand)
+        } catch {
+            cancelWineApplicationFocusObservation(id: focusID)
+            throw error
+        }
     }
 
     private func launchTerminalCommand(_ shellCommand: String) throws {
@@ -342,7 +472,8 @@ final class LaunchService: @unchecked Sendable {
             key: "WINEPREFIX",
             value: WineRegistrySupport.winePrefixURL().path
         )
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\"\(outputDeviceOverride)\(inputDeviceOverride) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let vulkanDriver = vulkanDriverShellAssignment(for: settings.graphicsSettings)
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath)\(vulkanDriver) WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\(shellQuote(dllOverride))\(outputDeviceOverride)\(inputDeviceOverride) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = BundledWineRuntime.shellEnvironmentAssignments(settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
@@ -354,11 +485,7 @@ final class LaunchService: @unchecked Sendable {
         }
     }
 
-    private func doubleQuote(_ value: String) -> String {
-        "\"" + value.replacingOccurrences(of: "\"", with: "\\\"") + "\""
-    }
-
-    private func shellQuote(_ value: String) -> String {
+    func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
@@ -377,16 +504,17 @@ final class LaunchService: @unchecked Sendable {
             return
         }
 
-        let installer = doubleQuote(installerURL.path)
-        let wine = doubleQuote(wineExecutableURL.path)
+        let installer = shellQuote(installerURL.path)
+        let wine = shellQuote(wineExecutableURL.path)
         let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverrideWithBuiltinFallback
-        let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
+        let dyldLibraryPath = shellQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let winePrefix = BundledWineRuntime.shellEnvironmentAssignment(
             key: "WINEPREFIX",
             value: WineRegistrySupport.winePrefixURL().path
         )
         let custom = BundledWineRuntime.shellEnvironmentAssignments(version.settings.environmentVariables)
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINEDLLOVERRIDES=\"\(dllOverride)\""
+        let vulkanDriver = vulkanDriverShellAssignment(for: version.settings.graphicsSettings)
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath)\(vulkanDriver) WINEDLLOVERRIDES=\(shellQuote(dllOverride))"
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
         let shellCommand = "\(envPart) \(wine) \(installer)"
 
@@ -491,7 +619,21 @@ final class LaunchService: @unchecked Sendable {
         }
     }
 
+    @MainActor
     func launchThirdPartyLauncher(version: GameVersion, completion: @escaping @Sendable (Result<Void, LaunchServiceError>) -> Void) {
+        if version.settings.graphicsSettings.backend == .d9vk {
+            let driver = version.settings.graphicsSettings.vulkanDriver
+            guard driver.isSupportedOnCurrentMacOS else {
+                completion(.failure(.vulkanDriverUnsupported(driver.displayName)))
+                return
+            }
+            if driver == .kosmicKrisp,
+               BundledWineRuntime.vulkanDriverManifestURL(for: driver) == nil {
+                completion(.failure(.vulkanDriverMissing(driver.displayName)))
+                return
+            }
+        }
+
         let exePath = version.launcherExePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !exePath.isEmpty else {
             DispatchQueue.main.async { completion(.failure(.executableMissing("No launcher configured"))) }
@@ -524,9 +666,9 @@ final class LaunchService: @unchecked Sendable {
         }
 
         let exeURL = URL(fileURLWithPath: exePath)
-        let launcherDir = doubleQuote(exeURL.deletingLastPathComponent().path)
-        let exeName = doubleQuote(exeURL.lastPathComponent)
-        let wine = doubleQuote(wineExecutableURL.path)
+        let launcherDir = shellQuote(exeURL.deletingLastPathComponent().path)
+        let exeName = shellQuote(exeURL.lastPathComponent)
+        let wine = shellQuote(wineExecutableURL.path)
 
         let mtlValue = version.settings.enableMetalHud ? "1" : "0"
         let spatialAudioMode = version.settings.spatializeStereo ? "fixed" : "off"
@@ -534,17 +676,19 @@ final class LaunchService: @unchecked Sendable {
         let outputDeviceOverride = version.settings.audioOutputDeviceID.isEmpty ? "" : " WOWSILICON_FOLLOW_SYSTEM_OUTPUT=0"
         let inputDeviceOverride = version.settings.audioInputDeviceID.isEmpty ? "" : " WOWSILICON_FOLLOW_SYSTEM_INPUT=0"
         let dllOverride = version.settings.graphicsSettings.backend.wineDLLOverrideWithBuiltinFallback
-        let dyldLibraryPath = doubleQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
+        let dyldLibraryPath = shellQuote(BundledWineRuntime.makeEnvironment()["DYLD_LIBRARY_PATH"] ?? "")
         let winePrefix = BundledWineRuntime.shellEnvironmentAssignment(
             key: "WINEPREFIX",
             value: WineRegistrySupport.winePrefixURL().path
         )
-        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath) WINE_D3D_CONFIG=renderer=vulkan WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\"\(dllOverride)\"\(outputDeviceOverride)\(inputDeviceOverride) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
+        let vulkanDriver = vulkanDriverShellAssignment(for: version.settings.graphicsSettings)
+        let baseEnv = "\(winePrefix) DYLD_LIBRARY_PATH=\(dyldLibraryPath)\(vulkanDriver) WINE_D3D_CONFIG=renderer=vulkan WINE_LARGE_ADDRESS_AWARE=1 WINEDLLOVERRIDES=\(shellQuote(dllOverride))\(outputDeviceOverride)\(inputDeviceOverride) WOWSILICON_SPATIAL_AUDIO_MODE=\(spatialAudioMode) WOWSILICON_NORMALIZE_AUDIO=\(normalizeAudio) MTL_HUD_ENABLED=\(mtlValue) MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=1 DXVK_ASYNC=1"
         let custom = BundledWineRuntime.shellEnvironmentAssignments(version.settings.environmentVariables)
         let envPart = custom.isEmpty ? baseEnv : "\(custom) \(baseEnv)"
 
         let shellCommand = "cd \(launcherDir) && \(envPart) \(wine) \(exeName) --disable-gpu --in-process-gpu"
 
+        let focusID = startWineApplicationFocusObservation()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", shellCommand]
@@ -557,6 +701,7 @@ final class LaunchService: @unchecked Sendable {
         process.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
+                self.cancelWineApplicationFocusObservation(id: focusID)
                 self.untrackProcess(process)
                 self.processDidTerminate?()
             }
@@ -565,11 +710,21 @@ final class LaunchService: @unchecked Sendable {
         do {
             try process.run()
             trackProcess(process)
-            startFocusTimer()
             DispatchQueue.main.async { completion(.success(())) }
         } catch {
+            cancelWineApplicationFocusObservation(id: focusID)
             DispatchQueue.main.async { completion(.failure(.processLaunchFailed(error.localizedDescription))) }
         }
+    }
+
+    private func vulkanDriverShellAssignment(for settings: GraphicsSettings) -> String {
+        guard settings.backend == .d9vk,
+              let assignment = BundledWineRuntime.vulkanDriverShellAssignment(
+                for: settings.vulkanDriver
+              ) else {
+            return ""
+        }
+        return " \(assignment)"
     }
 
     func checkVersionMismatch(for version: GameVersion) -> (base: String, tweaked: String)? {
@@ -615,37 +770,73 @@ final class LaunchService: @unchecked Sendable {
         return descriptor.applied
     }
 
-    private func startFocusTimer() {
-        focusTimer?.cancel()
-        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInitiated))
-        timer.schedule(deadline: .now() + .seconds(1), repeating: .milliseconds(500), leeway: .milliseconds(100))
+    @MainActor
+    private func startWineApplicationFocusObservation(additionalExecutableURL: URL? = nil) -> UUID {
+        cancelWineApplicationFocusObservation()
+        let id = UUID()
+        guard let runtimeRootURL = BundledWineRuntime.rootURL() else { return id }
 
-        var attempts = 0
-        timer.setEventHandler { [weak self, weak timer] in
-            attempts += 1
-            if attempts > 60 {
-                timer?.cancel()
-                DispatchQueue.main.async { [weak self] in self?.focusTimer = nil }
+        let matcher = WineApplicationFocusMatcher(
+            baselineProcessIDs: Set(NSWorkspace.shared.runningApplications.map(\.processIdentifier)),
+            runtimeRootURL: runtimeRootURL,
+            additionalExecutableURLs: Set([additionalExecutableURL].compactMap { $0 })
+        )
+        let observer = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication else {
                 return
             }
-            guard let strongSelf = self, strongSelf.isProcessRunning(named: "wine") else { return }
-            timer?.cancel()
-            DispatchQueue.main.async { [weak self] in self?.focusTimer = nil }
-            strongSelf.bringProcessToFront(named: "wine")
+            Task { @MainActor [weak self] in
+                self?.activateWineApplicationIfMatching(application, observationID: id)
+            }
         }
-        focusTimer = timer
-        timer.resume()
+        let timeout = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.cancelWineApplicationFocusObservation(id: id)
+            }
+        }
+        focusObservation = FocusObservation(
+            id: id,
+            matcher: matcher,
+            observer: observer,
+            timeout: timeout
+        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: timeout)
+        return id
     }
 
-    private func isProcessRunning(named name: String) -> Bool {
-        guard let result = try? ProcessRunner.run(
-            executablePath: "/usr/bin/pgrep",
-            arguments: ["-f", name],
-            timeout: 5
-        ) else {
-            return false
+    @MainActor
+    private func activateWineApplicationIfMatching(
+        _ application: NSRunningApplication,
+        observationID: UUID
+    ) {
+        guard var observation = focusObservation,
+              observation.id == observationID,
+              observation.matcher.accepts(
+                processIdentifier: application.processIdentifier,
+                executableURL: application.executableURL
+              ) else {
+            return
         }
-        return result.exitCode == 0
+
+        cancelWineApplicationFocusObservation(id: observationID)
+        NSApplication.shared.yieldActivation(to: application)
+        application.activate(from: .current, options: [])
+    }
+
+    @MainActor
+    private func cancelWineApplicationFocusObservation(id: UUID? = nil) {
+        guard let observation = focusObservation,
+              id == nil || observation.id == id else {
+            return
+        }
+        NSWorkspace.shared.notificationCenter.removeObserver(observation.observer)
+        observation.timeout.cancel()
+        focusObservation = nil
     }
 
     private func trackProcess(_ process: Process) {
@@ -660,39 +851,35 @@ final class LaunchService: @unchecked Sendable {
         }
     }
 
-    private func bringProcessToFront(named name: String) {
-        let script = """
-        tell application "System Events"
-            set processList to (name of every process whose name contains "\(name)")
-            if length of processList > 0 then
-                set targetProcess to item 1 of processList
-                tell process targetProcess
-                    set frontmost to true
-                end tell
-            end if
-        end tell
-        """
+    @discardableResult
+    static func cleanWDBIfEnabled(
+        _ enabled: Bool,
+        at gameURL: URL,
+        fileManager: FileManager = .default
+    ) throws -> [URL] {
+        guard enabled else { return [] }
 
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        task.arguments = ["-e", script]
-        try? task.run()
-    }
-
-    private func deleteWDBDirectories(at gameURL: URL) {
         let candidates = [
             gameURL.appendingPathComponent("WDB", isDirectory: true),
             gameURL.appendingPathComponent("Cache", isDirectory: true).appendingPathComponent("WDB", isDirectory: true)
         ]
+        var removed: [URL] = []
+        var failures: [String] = []
 
         for url in candidates where fileManager.fileExists(atPath: url.path) {
+            try Task.checkCancellation()
             do {
                 try fileManager.removeItem(at: url)
-                print("Removed WDB directory at \(url.path)")
+                removed.append(url)
             } catch {
-                print("Failed to remove WDB directory at \(url.path): \(error.localizedDescription)")
+                failures.append("\(url.path): \(error.localizedDescription)")
             }
         }
+
+        guard failures.isEmpty else {
+            throw LaunchServiceError.wdbCleanupFailed(failures.joined(separator: "\n"))
+        }
+        return removed
     }
 
     // MARK: - Force quit

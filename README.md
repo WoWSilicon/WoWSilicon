@@ -53,7 +53,7 @@ It bundles a customized Wine runtime alongside RosettaX87, DX9 translation, and 
 ## Requirements
 
 - Apple Silicon Mac
-- macOS 15 or newer
+- macOS 14 or newer
 - A legally acquired local World of Warcraft client folder
 - Permission to modify the selected game folder
 

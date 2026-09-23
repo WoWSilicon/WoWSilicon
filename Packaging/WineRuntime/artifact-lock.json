@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "runtimeRevision": 15,
-  "releaseTag": "wine-runtime-r15",
-  "asset": "WoWSilicon-WineRuntime-r15.tar.xz",
-  "sizeBytes": 61997416,
-  "sha256": "2414cb391159ea7272bfd74e1c65db8d490299de7651adcb173a65cbe6bbae7e"
+  "runtimeRevision": 16,
+  "releaseTag": "wine-runtime-r16",
+  "asset": "WoWSilicon-WineRuntime-r16.tar.xz",
+  "sizeBytes": 64047524,
+  "sha256": "5c1d1fac3452a9ddce7673090425add81e3991c0e31122ef89ac0cc2855a1bbc"
 }

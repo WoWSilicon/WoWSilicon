@@ -24,7 +24,6 @@ final class VersionStoreTests: XCTestCase {
             supportsVanillaTweaks: true,
             supportsDLLLoading: true,
             usesRosettaPatching: true,
-            usesDivxDecoderPatch: false,
             settings: VersionSettings(enableMetalHud: true)
         )
         var manager = VersionManager.makeDefault()
@@ -69,6 +68,7 @@ final class VersionStoreTests: XCTestCase {
               "game_path": "/Games/Wrath",
               "settings": {
                 "environment_variables": "FOO=BAR",
+                "auto_delete_wdb": false,
                 "enable_metal_hud": true,
                 "show_terminal_normally": true,
                 "enable_lib_silicon_patch": true
@@ -84,8 +84,105 @@ final class VersionStoreTests: XCTestCase {
         XCTAssertEqual(result.manager.currentVersionID, "wrathsilicon")
         XCTAssertEqual(wrath.gamePath, "/Games/Wrath")
         XCTAssertEqual(wrath.settings.environmentVariables, "FOO=BAR")
+        XCTAssertFalse(wrath.settings.autoDeleteWdb)
         XCTAssertTrue(wrath.settings.enableMetalHud)
         XCTAssertTrue(wrath.settings.showTerminalNormally)
+    }
+
+    func testProfileSelectionPreservesDistinctSettingsAcrossSaveAndLoad() throws {
+        let supportURL = try makeTemporaryDirectory()
+        let store = VersionStore(supportDirectory: supportURL)
+        let firstSettings = VersionSettings(
+            enableVanillaTweaks: true,
+            autoDeleteWdb: true,
+            enableMetalHud: true,
+            showTerminalNormally: true,
+            environmentVariables: "PROFILE=FIRST",
+            vanillaTweaksParameters: "--first",
+            graphicsSettings: GraphicsSettings(backend: .mtld3d, resolution: "1920x1080"),
+            x87Backend: .x87Sidecar
+        )
+        let secondSettings = VersionSettings(
+            enableVanillaTweaks: false,
+            autoDeleteWdb: false,
+            enableMetalHud: false,
+            showTerminalNormally: false,
+            environmentVariables: "PROFILE=SECOND",
+            vanillaTweaksParameters: "--second",
+            graphicsSettings: GraphicsSettings(backend: .d9vk, resolution: "2560x1440"),
+            x87Backend: .disabled
+        )
+        var manager = VersionManager(
+            currentVersionID: "first",
+            versions: [
+                "first": GameVersion(
+                    id: "first",
+                    displayName: "First",
+                    wowVersion: "1.12.1",
+                    executableName: "WoW.exe",
+                    supportsVanillaTweaks: true,
+                    supportsDLLLoading: true,
+                    usesRosettaPatching: true,
+                    settings: firstSettings
+                ),
+                "second": GameVersion(
+                    id: "second",
+                    displayName: "Second",
+                    wowVersion: "1.12.1",
+                    executableName: "WoW.exe",
+                    supportsVanillaTweaks: true,
+                    supportsDLLLoading: true,
+                    usesRosettaPatching: true,
+                    settings: secondSettings
+                )
+            ]
+        )
+
+        manager.setCurrentVersion(id: "second")
+        manager.setCurrentVersion(id: "first")
+        manager.setCurrentVersion(id: "second")
+
+        XCTAssertEqual(manager.versions["first"]?.settings, firstSettings)
+        XCTAssertEqual(manager.versions["second"]?.settings, secondSettings)
+
+        try store.save(manager: manager)
+        let reloaded = store.loadVersionManager()
+
+        XCTAssertFalse(reloaded.requiresLegacyPrefsMigration)
+        XCTAssertEqual(reloaded.manager.currentVersionID, "second")
+        XCTAssertEqual(reloaded.manager.versions["first"]?.settings, firstSettings)
+        XCTAssertEqual(reloaded.manager.versions["second"]?.settings, secondSettings)
+    }
+
+    func testMissingVersionStoreRequestsLegacyPreferencesMigrationOnlyOnce() throws {
+        let supportURL = try makeTemporaryDirectory()
+        let store = VersionStore(supportDirectory: supportURL)
+
+        let initial = store.loadVersionManager()
+        XCTAssertTrue(initial.requiresLegacyPrefsMigration)
+
+        try store.save(manager: initial.manager)
+        let reloaded = store.loadVersionManager()
+        XCTAssertFalse(reloaded.requiresLegacyPrefsMigration)
+    }
+
+    func testSavingUnchangedManagerDoesNotRewriteFile() throws {
+        let supportURL = try makeTemporaryDirectory()
+        let store = VersionStore(supportDirectory: supportURL)
+        let manager = VersionManager.makeDefault()
+        let versionsURL = supportURL.appendingPathComponent("WoWSilicon/versions.json")
+
+        try store.save(manager: manager)
+        let originalModificationDate = Date(timeIntervalSince1970: 1_000_000)
+        try FileManager.default.setAttributes(
+            [.modificationDate: originalModificationDate],
+            ofItemAtPath: versionsURL.path
+        )
+
+        try store.save(manager: manager)
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: versionsURL.path)
+        XCTAssertEqual(attributes[.modificationDate] as? Date, originalModificationDate)
     }
 
     private func makeTemporaryDirectory() throws -> URL {

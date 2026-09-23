@@ -22,6 +22,16 @@ struct GraphicsSectionView: View {
                         }
                     }
 
+                    if settings.backend == .d9vk {
+                        Picker("Vulkan Driver", selection: $settings.vulkanDriver) {
+                            ForEach(VulkanDriver.allCases, id: \.self) { driver in
+                                Text(vulkanDriverLabel(driver))
+                                    .tag(driver)
+                                    .disabled(!isVulkanDriverAvailable(driver))
+                            }
+                        }
+                    }
+
                     if showsWoWSettings {
                         Toggle("HDR Mode", isOn: $settings.hdrEnabled)
                             .toggleStyle(.switch)
@@ -30,7 +40,7 @@ struct GraphicsSectionView: View {
 
                     Text(backendHelpText)
                         .font(.caption)
-                        .foregroundStyle(settings.backend == .mtld3d ? .orange : .secondary)
+                        .foregroundStyle(backendHelpIsWarning ? .orange : .secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(8)
@@ -84,14 +94,37 @@ struct GraphicsSectionView: View {
     }
 
     private var backendHelpText: String {
+        if settings.backend == .d9vk && !settings.vulkanDriver.isSupportedOnCurrentMacOS {
+            return "KosmicKrisp requires macOS 26 or later. Select MoltenVK to use this profile on the current Mac."
+        }
         if !showsWoWSettings {
             return settings.backend == .mtld3d
                 ? "Uses the bundled Metal-based Direct3D 9 renderer."
-                : "Uses the bundled Vulkan-based D9VK renderer."
+                : (settings.vulkanDriver == .kosmicKrisp
+                    ? "Uses the bundled DXVK 3.1 Direct3D 9 renderer."
+                    : "Uses the bundled macOS D9VK Direct3D 9 renderer.")
         }
-        return settings.backend == .mtld3d
-            ? "Experimental Metal backend. Some WoW clients or configurations may have rendering issues or crashes."
-            : "Default Vulkan-based backend with broad compatibility. MTLD3D is required for HDR mode."
+        if settings.backend == .mtld3d {
+            return "Experimental Metal backend. Some WoW clients or configurations may have rendering issues or crashes."
+        }
+        if settings.vulkanDriver == .kosmicKrisp {
+            return "DXVK 3.1 through the experimental Metal 4 Vulkan driver. Requires macOS 26 or newer."
+        }
+        return "Default Vulkan-based backend with broad compatibility. MTLD3D is required for HDR mode."
+    }
+
+    private var backendHelpIsWarning: Bool {
+        settings.backend == .mtld3d
+            || (settings.backend == .d9vk && !settings.vulkanDriver.isSupportedOnCurrentMacOS)
+    }
+
+    private func vulkanDriverLabel(_ driver: VulkanDriver) -> String {
+        driver.isSupportedOnCurrentMacOS ? driver.displayName : "\(driver.displayName) (macOS 26+)"
+    }
+
+    private func isVulkanDriverAvailable(_ driver: VulkanDriver) -> Bool {
+        driver.isSupportedOnCurrentMacOS
+            && (driver == .moltenVK || BundledWineRuntime.vulkanDriverManifestURL(for: driver) != nil)
     }
 
     // MARK: - Row builders

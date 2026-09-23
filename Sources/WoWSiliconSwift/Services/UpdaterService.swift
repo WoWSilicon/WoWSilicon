@@ -1,5 +1,4 @@
 import AppKit
-import Darwin
 import Sparkle
 
 @MainActor
@@ -47,23 +46,5 @@ final class UpdaterService: NSObject {
 extension UpdaterService: SPUUpdaterDelegate {
     func updaterShouldRelaunchApplication(_ updater: SPUUpdater) -> Bool {
         return true
-    }
-
-    func updater(
-        _ updater: SPUUpdater,
-        shouldPostponeRelaunchForUpdate item: SUAppcastItem,
-        untilInvokingBlock installHandler: @escaping () -> Void
-    ) -> Bool {
-        DispatchQueue.main.async {
-            installHandler()
-        }
-        return false
-    }
-
-    func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
-        NSApp.terminate(nil)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            exit(0)
-        }
     }
 }

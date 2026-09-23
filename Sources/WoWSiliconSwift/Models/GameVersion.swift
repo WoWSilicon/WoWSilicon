@@ -8,7 +8,7 @@ enum GraphicsBackend: String, Codable, CaseIterable, Sendable {
 
     var displayName: String {
         switch self {
-        case .d9vk: return "D9VK"
+        case .d9vk: return "DXVK"
         case .mtld3d: return "MTLD3D"
         }
     }
@@ -25,6 +25,35 @@ enum GraphicsBackend: String, Codable, CaseIterable, Sendable {
         case .d9vk: return "d3d9=n,b"
         case .mtld3d: return "d3d9=b"
         }
+    }
+}
+
+enum VulkanDriver: String, Codable, CaseIterable, Sendable {
+    case moltenVK = "moltenvk"
+    case kosmicKrisp = "kosmickrisp"
+
+    static let kosmicKrispMinimumMacOSMajorVersion = 26
+
+    var displayName: String {
+        switch self {
+        case .moltenVK: return "MoltenVK"
+        case .kosmicKrisp: return "KosmicKrisp"
+        }
+    }
+
+    var manifestFileName: String {
+        switch self {
+        case .moltenVK: return "MoltenVK_icd.json"
+        case .kosmicKrisp: return "KosmicKrisp_icd.json"
+        }
+    }
+
+    func isSupported(onMacOS version: OperatingSystemVersion) -> Bool {
+        self != .kosmicKrisp || version.majorVersion >= Self.kosmicKrispMinimumMacOSMajorVersion
+    }
+
+    var isSupportedOnCurrentMacOS: Bool {
+        isSupported(onMacOS: ProcessInfo.processInfo.operatingSystemVersion)
     }
 }
 
@@ -109,6 +138,7 @@ enum ShadowQuality: String, Codable, CaseIterable, Sendable {
 
 struct GraphicsSettings: Codable, Equatable, Sendable {
     var backend: GraphicsBackend
+    var vulkanDriver: VulkanDriver
     var hdrEnabled: Bool
     var windowMode: WindowMode
     var resolution: String
@@ -126,6 +156,7 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
 
     static let `default` = GraphicsSettings(
         backend: .d9vk,
+        vulkanDriver: .moltenVK,
         hdrEnabled: false,
         windowMode: .windowed,
         resolution: "",
@@ -150,13 +181,14 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
     static let commonRefreshRates = [30, 60, 120, 144, 165, 240]
 
     enum CodingKeys: String, CodingKey {
-        case backend, hdrEnabled, windowMode, resolution, refreshRate, vsync, multisampling
+        case backend, vulkanDriver, hdrEnabled, windowMode, resolution, refreshRate, vsync, multisampling
         case textureFiltering, specular, projectedTextures
         case viewDistance, groundEffectDensity, weatherDensity, particleDensity, shadowQuality
     }
 
     init(
         backend: GraphicsBackend = .d9vk,
+        vulkanDriver: VulkanDriver = .moltenVK,
         hdrEnabled: Bool = false,
         windowMode: WindowMode = .windowed,
         resolution: String = "",
@@ -173,6 +205,7 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
         shadowQuality: ShadowQuality = .off
     ) {
         self.backend = backend
+        self.vulkanDriver = vulkanDriver
         self.hdrEnabled = hdrEnabled
         self.windowMode = windowMode
         self.resolution = resolution
@@ -192,6 +225,7 @@ struct GraphicsSettings: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         backend = try c.decodeIfPresent(GraphicsBackend.self, forKey: .backend) ?? .d9vk
+        vulkanDriver = try c.decodeIfPresent(VulkanDriver.self, forKey: .vulkanDriver) ?? .moltenVK
         hdrEnabled = try c.decodeIfPresent(Bool.self, forKey: .hdrEnabled) ?? false
         windowMode = try c.decodeIfPresent(WindowMode.self, forKey: .windowMode) ?? .windowed
         resolution = try c.decodeIfPresent(String.self, forKey: .resolution) ?? ""
@@ -397,7 +431,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     var supportsVanillaTweaks: Bool
     var supportsDLLLoading: Bool
     var usesRosettaPatching: Bool
-    var usesDivxDecoderPatch: Bool
     var optimizationLevel: OptimizationLevel
     var settings: VersionSettings
     var launcherExePath: String
@@ -490,7 +523,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         supportsVanillaTweaks: Bool,
         supportsDLLLoading: Bool,
         usesRosettaPatching: Bool,
-        usesDivxDecoderPatch: Bool,
         optimizationLevel: OptimizationLevel = .low,
         settings: VersionSettings = VersionSettings(),
         launcherExePath: String = "",
@@ -505,7 +537,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         self.supportsVanillaTweaks = supportsVanillaTweaks
         self.supportsDLLLoading = supportsDLLLoading
         self.usesRosettaPatching = usesRosettaPatching
-        self.usesDivxDecoderPatch = usesDivxDecoderPatch
         self.optimizationLevel = optimizationLevel
         self.settings = settings
         self.launcherExePath = launcherExePath
@@ -522,7 +553,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         case supportsVanillaTweaks = "supports_vanilla_tweaks"
         case supportsDLLLoading = "supports_dll_loading"
         case usesRosettaPatching = "uses_rosetta_patching"
-        case usesDivxDecoderPatch = "uses_divx_decoder_patch"
         case optimizationLevel = "optimization_level"
         case settings
         case launcherExePath = "launcher_exe_path"
@@ -540,7 +570,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         supportsVanillaTweaks = try container.decodeIfPresent(Bool.self, forKey: .supportsVanillaTweaks) ?? false
         supportsDLLLoading = try container.decodeIfPresent(Bool.self, forKey: .supportsDLLLoading) ?? false
         usesRosettaPatching = try container.decodeIfPresent(Bool.self, forKey: .usesRosettaPatching) ?? false
-        usesDivxDecoderPatch = try container.decodeIfPresent(Bool.self, forKey: .usesDivxDecoderPatch) ?? false
         optimizationLevel = try container.decodeIfPresent(OptimizationLevel.self, forKey: .optimizationLevel) ?? .low
         settings = try container.decodeIfPresent(VersionSettings.self, forKey: .settings) ?? VersionSettings()
         launcherExePath = try container.decodeIfPresent(String.self, forKey: .launcherExePath) ?? ""
@@ -553,7 +582,6 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         supportsVanillaTweaks = defaults.supportsVanillaTweaks
         supportsDLLLoading = defaults.supportsDLLLoading
         usesRosettaPatching = defaults.usesRosettaPatching
-        usesDivxDecoderPatch = defaults.usesDivxDecoderPatch
         optimizationLevel = defaults.optimizationLevel
 
         if !supportsVanillaTweaks {
@@ -583,7 +611,6 @@ struct VersionManager: Codable, Sendable {
             supportsVanillaTweaks: true,
             supportsDLLLoading: true,
             usesRosettaPatching: true,
-            usesDivxDecoderPatch: false,
             optimizationLevel: .high,
             settings: VersionSettings(autoDeleteWdb: true, enableLibSiliconPatch: true)
         ),
@@ -595,7 +622,6 @@ struct VersionManager: Codable, Sendable {
             supportsVanillaTweaks: false,
             supportsDLLLoading: true,
             usesRosettaPatching: true,
-            usesDivxDecoderPatch: false,
             optimizationLevel: .mid,
             settings: VersionSettings(autoDeleteWdb: true)
         ),
@@ -607,7 +633,6 @@ struct VersionManager: Codable, Sendable {
             supportsVanillaTweaks: false,
             supportsDLLLoading: true,
             usesRosettaPatching: true,
-            usesDivxDecoderPatch: false,
             optimizationLevel: .high,
             settings: VersionSettings(autoDeleteWdb: true, enableLibSiliconPatch: true)
         )
@@ -622,7 +647,6 @@ struct VersionManager: Codable, Sendable {
         supportsVanillaTweaks: false,
         supportsDLLLoading: false,
         usesRosettaPatching: false,
-        usesDivxDecoderPatch: false,
         settings: VersionSettings(autoDeleteWdb: false)
     )
 

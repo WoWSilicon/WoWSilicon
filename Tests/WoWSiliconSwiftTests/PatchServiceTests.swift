@@ -45,6 +45,37 @@ final class PatchServiceTests: XCTestCase {
         XCTAssertNoThrow(try PatchService.validatePatchedDLL(named: "DivxDecoder.dll", in: gameDirectory))
     }
 
+    func testRevertDivxDecoderRestoresOriginalAndRemovesBackup() throws {
+        let gameDirectory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: gameDirectory) }
+        let divxURL = gameDirectory.appendingPathComponent("DivxDecoder.dll")
+        let bakURL = gameDirectory.appendingPathComponent("DivxDecoder.dll.bak")
+
+        try Data("patched-data".utf8).write(to: divxURL)
+        try Data("original-data".utf8).write(to: bakURL)
+
+        try PatchService.revertDivxDecoder(gameURL: gameDirectory)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: bakURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: divxURL.path))
+        XCTAssertEqual(try Data(contentsOf: divxURL), Data("original-data".utf8))
+    }
+
+    func testRevertDivxDecoderRestoresOrphanedBackup() throws {
+        let gameDirectory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: gameDirectory) }
+        let divxURL = gameDirectory.appendingPathComponent("DivxDecoder.dll")
+        let bakURL = gameDirectory.appendingPathComponent("DivxDecoder.dll.bak")
+
+        try Data("original-data".utf8).write(to: bakURL)
+
+        try PatchService.revertDivxDecoder(gameURL: gameDirectory)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: bakURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: divxURL.path))
+        XCTAssertEqual(try Data(contentsOf: divxURL), Data("original-data".utf8))
+    }
+
     func testNormalizeRootDllModsMovesOnlyReferencedMods() throws {
         let gameDirectory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: gameDirectory) }
