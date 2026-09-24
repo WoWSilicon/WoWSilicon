@@ -1,0 +1,130 @@
+--- a/src/d3d9/d3d9_options.h
++++ b/src/d3d9/d3d9_options.h
+@@ -159,6 +159,9 @@
+     /// Enable emulation of device loss when a fullscreen app loses focus
+     bool deviceLossOnFocusLoss;
+ 
++    /// Scale factor for the hardware cursor on HiDPI displays.
++    int32_t enlargeHardwareCursor;
++
+     /// Disable counting losable resources and rejecting calls to Reset() if any are still alive
+     bool countLosableResources;
+ 
+--- a/src/d3d9/d3d9_options.cpp
++++ b/src/d3d9/d3d9_options.cpp
+@@ -74,6 +74,8 @@
+     this->deviceLossOnFocusLoss         = config.getOption<bool>        ("d3d9.deviceLossOnFocusLoss",         false);
+     this->samplerLodBias                = config.getOption<float>       ("d3d9.samplerLodBias",                0.0f);
+     this->clampNegativeLodBias          = config.getOption<bool>        ("d3d9.clampNegativeLodBias",          false);
++    this->enlargeHardwareCursor         = config.getOption<int32_t>     ("d3d9.enlargeHardwareCursor",         1);
++    this->enlargeHardwareCursor         = this->enlargeHardwareCursor <= 1 ? 1 : this->enlargeHardwareCursor <= 2 ? 2 : 4;
+     this->countLosableResources         = config.getOption<bool>        ("d3d9.countLosableResources",         true);
+     this->reproducibleCommandStream     = config.getOption<bool>        ("d3d9.reproducibleCommandStream",     false);
+     this->extraFrontbuffer              = config.getOption<bool>        ("d3d9.extraFrontbuffer",              false);
+--- a/src/d3d9/d3d9_cursor.h
++++ b/src/d3d9/d3d9_cursor.h
+@@ -49,7 +49,7 @@
+ 
+     BOOL ShowCursor(BOOL bShow);
+ 
+-    void SetHardwareCursor(UINT XHotSpot, UINT YHotSpot, const CursorBitmap& bitmap);
++    void SetHardwareCursor(UINT XHotSpot, UINT YHotSpot, const uint8_t* bitmap, UINT width, UINT height);
+ 
+     void SetSoftwareCursor(UINT XHotSpot, UINT YHotSpot, UINT Width, UINT Height);
+ 
+@@ -82,4 +82,4 @@
+ 
+   };
+ 
+-}
+\ No newline at end of file
++}
+--- a/src/d3d9/d3d9_cursor.cpp
++++ b/src/d3d9/d3d9_cursor.cpp
+@@ -2,6 +2,7 @@
+ #include "d3d9_util.h"
+ 
+ #include <utility>
++#include <vector>
+ 
+ namespace dxvk {
+ 
+@@ -61,19 +62,18 @@
+   }
+ 
+ 
+-  void D3D9Cursor::SetHardwareCursor(UINT XHotSpot, UINT YHotSpot, const CursorBitmap& bitmap) {
++  void D3D9Cursor::SetHardwareCursor(UINT XHotSpot, UINT YHotSpot, const uint8_t* bitmap, UINT width, UINT height) {
+     if (IsActiveSoftwareCursor())
+       ResetSoftwareCursor();
+ 
+-    CursorMask mask;
+-    std::memset(mask, ~0, sizeof(mask));
++    std::vector<uint8_t> mask(((width + 15) / 16) * 2 * height, 0xff);
+ 
+     ICONINFO info;
+     info.fIcon    = FALSE;
+     info.xHotspot = XHotSpot;
+     info.yHotspot = YHotSpot;
+-    info.hbmMask  = ::CreateBitmap(HardwareCursorWidth, HardwareCursorHeight, 1, 1,  &mask[0]);
+-    info.hbmColor = ::CreateBitmap(HardwareCursorWidth, HardwareCursorHeight, 1, 32, &bitmap[0]);
++    info.hbmMask  = ::CreateBitmap(width, height, 1, 1, mask.data());
++    info.hbmColor = ::CreateBitmap(width, height, 1, 32, bitmap);
+ 
+     if (IsHardwareCursor())
+       ::DestroyCursor(m_hCursor);
+@@ -130,7 +130,7 @@
+   }
+ 
+ 
+-  void D3D9Cursor::SetHardwareCursor(UINT XHotSpot, UINT YHotSpot, const CursorBitmap& bitmap) {
++  void D3D9Cursor::SetHardwareCursor(UINT XHotSpot, UINT YHotSpot, const uint8_t* bitmap, UINT width, UINT height) {
+     Logger::warn("D3D9Cursor::SetHardwareCursor: Not supported on current platform.");
+   }
+ 
+--- a/src/d3d9/d3d9_device.cpp
++++ b/src/d3d9/d3d9_device.cpp
+@@ -351,6 +351,34 @@
+     const uint8_t* data = reinterpret_cast<const uint8_t*>(lockedBox.pBits);
+ 
+     if (hwCursor) {
++      const uint32_t scale = static_cast<uint32_t>(m_d3d9Options.enlargeHardwareCursor);
++      if (scale > 1 && inputWidth && inputHeight) {
++        const uint32_t srcWidth  = std::min(inputWidth, HardwareCursorWidth);
++        const uint32_t srcHeight = std::min(inputHeight, HardwareCursorHeight);
++        const uint32_t dstWidth  = srcWidth * scale;
++        const uint32_t dstHeight = srcHeight * scale;
++        std::vector<uint8_t> bitmap(dstWidth * dstHeight * HardwareCursorFormatSize);
++
++        for (uint32_t y = 0; y < srcHeight; y++) {
++          for (uint32_t x = 0; x < srcWidth; x++) {
++            const uint8_t* pixel = data + y * lockedBox.RowPitch + x * HardwareCursorFormatSize;
++            for (uint32_t dy = 0; dy < scale; dy++) {
++              for (uint32_t dx = 0; dx < scale; dx++) {
++                uint8_t* dest = bitmap.data() + ((y * scale + dy) * dstWidth + x * scale + dx) * HardwareCursorFormatSize;
++                std::memcpy(dest, pixel, HardwareCursorFormatSize);
++              }
++            }
++          }
++        }
++
++        hr = UnlockImage(cursorTex, 0, 0);
++        if (unlikely(FAILED(hr)))
++          return hr;
++
++        m_cursor.SetHardwareCursor(XHotSpot * scale, YHotSpot * scale, bitmap.data(), dstWidth, dstHeight);
++        return D3D_OK;
++      }
++
+       CursorBitmap bitmap = { 0 };
+       // We need to consider applications that might misbehave in
+       // windowed mode, setting a cursor smaller or larger than 32 x 32 px.
+@@ -369,7 +397,7 @@
+       if (unlikely(FAILED(hr)))
+         return hr;
+ 
+-      m_cursor.SetHardwareCursor(XHotSpot, YHotSpot, bitmap);
++      m_cursor.SetHardwareCursor(XHotSpot, YHotSpot, bitmap, HardwareCursorWidth, HardwareCursorHeight);
+     } else {
+       const size_t copyPitch = inputWidth * HardwareCursorFormatSize;
+       std::vector<uint8_t> bitmap(inputHeight * copyPitch, 0);

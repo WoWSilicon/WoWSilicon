@@ -13,6 +13,19 @@ final class GraphicsBackendTests: XCTestCase {
         )
     }
 
+    func testBundledD3D9BuildsSupportCursorScaling() throws {
+        let option = Data("d3d9.enlargeHardwareCursor".utf8)
+        for driver in VulkanDriver.allCases {
+            let url = try XCTUnwrap(PatchService.resourceURL(
+                named: "d3d9",
+                extension: "dll",
+                subdirectory: PatchService.d3d9ResourceSubdirectory(for: driver)
+            ))
+            let binary = try Data(contentsOf: url)
+            XCTAssertNotNil(binary.range(of: option), "Missing cursor scaling in \(driver)")
+        }
+    }
+
     func testD9VKIsDefaultForExistingSettings() throws {
         let settings = try JSONDecoder().decode(GraphicsSettings.self, from: Data("{}".utf8))
         XCTAssertEqual(settings.backend, .d9vk)
