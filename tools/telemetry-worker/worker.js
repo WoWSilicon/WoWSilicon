@@ -42,6 +42,30 @@ export default {
       });
     }
 
+    if (request.method === "GET" && url.pathname === "/report.json") {
+      const period = url.searchParams.get("period") || "30";
+      const version = url.searchParams.get("version") || "";
+      const day = url.searchParams.get("day") || "";
+      const today = new Date().toISOString().slice(0, 10);
+      if (!["today", "7", "30", "90", "month", "all", "day"].includes(period) ||
+          (period === "day" && (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > today)) ||
+          (period !== "day" && day) ||
+          (version && !/^[a-z0-9][a-z0-9._ -]{0,31}$/.test(version))) {
+        return json({ error: "invalid_filter" }, {}, 400);
+      }
+      if (version) {
+        const history = await cachedData(request, ctx, `history-${today}`, 21600, () => getHistory(env.DB));
+        if (!history.days.some(item => item.players_by_wow_version?.some(row => row.value === version))) {
+          return json({ error: "unknown_version" }, {}, 400);
+        }
+      }
+      const cacheKey = `report-v1-${today}-${period}-${day}-${version}`;
+      return json(await cachedData(request, ctx, cacheKey, period === "today" ? 300 : 21600,
+        () => getReport(env.DB, period, day, version, today)), {
+        "Cache-Control": "public, max-age=300",
+      });
+    }
+
     if (request.method === "POST" && url.pathname === "/event") {
       return handleEvent(request, env.DB);
     }
@@ -349,4 +373,41 @@ async function getHistory(db) {
   }
 
   return { days: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)) };
+}
+
+async function getReport(db, period, day, version, today) {
+  const start = new Date(`${today}T00:00:00Z`);
+  if (["7", "30", "90"].includes(period)) start.setUTCDate(start.getUTCDate() - Number(period) + 1);
+  const from = period === "day" ? day : period === "all" ? "0000-01-01" :
+    period === "month" ? `${today.slice(0, 7)}-01` : start.toISOString().slice(0, 10);
+  const to = period === "day" ? day : today;
+  const versionFilter = version ?
+    `AND EXISTS (SELECT 1 FROM daily_dimension_installs v
+      WHERE v.day = e.day AND v.dimension = 'wow_version'
+        AND v.value = ? AND v.install_id = e.install_id)` : "";
+  const eventSql = `SELECT e.event, COUNT(DISTINCT e.install_id) AS count
+    FROM daily_event_installs e
+    WHERE e.day BETWEEN ? AND ? AND e.event IN ('launch', 'wow_start') ${versionFilter}
+    GROUP BY e.event`;
+  const eventArgs = version ? [from, to, version] : [from, to];
+  const eventRows = await db.prepare(eventSql).bind(...eventArgs).all();
+
+  const dimensionSql = `SELECT d.dimension, d.value, COUNT(DISTINCT d.install_id) AS count
+    FROM daily_dimension_installs d
+    WHERE d.day BETWEEN ? AND ?
+      AND d.dimension IN ('wow_version', 'app_version', 'macos_version', 'renderer', 'realmlist')
+      AND EXISTS (SELECT 1 FROM daily_event_installs e
+        WHERE e.day = d.day AND e.event = 'wow_start' AND e.install_id = d.install_id
+        ${versionFilter})
+    GROUP BY d.dimension, d.value
+    ORDER BY count DESC LIMIT 500`;
+  const dimensionArgs = version ? [from, to, version] : [from, to];
+  const dimensionRows = await db.prepare(dimensionSql).bind(...dimensionArgs).all();
+
+  return {
+    generated_at: new Date().toISOString(),
+    from, to, version,
+    unique_events: rowsToObject(eventRows.results, "event"),
+    unique_dimensions: groupDimensions(dimensionRows.results),
+  };
 }
