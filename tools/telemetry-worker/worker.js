@@ -1,10 +1,10 @@
 const CONFIG = {
   telemetry_enabled: true,
-  heartbeat_enabled: false,
-  heartbeat_interval_minutes: 60,
+  heartbeat_enabled: true,
+  heartbeat_interval_minutes: 15,
   launch_sample_rate: 1.0,
-  heartbeat_sample_rate: 0.0,
-  config_ttl_hours: 24,
+  heartbeat_sample_rate: 1.0,
+  config_ttl_hours: 1,
   min_supported_telemetry_schema: 1,
 };
 
@@ -16,7 +16,7 @@ const CORS_HEADERS = {
 
 const MAX_BODY_BYTES = 4096;
 const ACTIVE_WINDOW_SECONDS = 30 * 60;
-const HEARTBEAT_DEDUPE_SECONDS = 15 * 60;
+const HEARTBEAT_DEDUPE_SECONDS = 5 * 60;
 
 export default {
   async fetch(request, env, ctx) {
@@ -34,6 +34,11 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/stats.json") {
       return json(await getStats(env.DB, request, ctx));
+    }
+
+    if (request.method === "GET" && url.pathname === "/live.json") {
+      return json(await cachedData(request, ctx, `live-v1-${Math.floor(Date.now() / 60000)}`, 60,
+        () => getLive(env.DB)), { "Cache-Control": "public, max-age=30" });
     }
 
     if (request.method === "GET" && url.pathname === "/history.json") {
@@ -101,7 +106,7 @@ async function handleEvent(request, db) {
     return json({ error: "invalid_json" }, {}, 400);
   }
 
-  const event = sanitizeEnum(input.event, ["launch", "wow_start", "heartbeat"]);
+  const event = sanitizeEnum(input.event, ["launch", "wow_start", "heartbeat", "session_end"]);
   const installId = sanitizeId(input.install_id);
   const sessionId = sanitizeId(input.session_id || input.install_id);
 
@@ -113,32 +118,36 @@ async function handleEvent(request, db) {
     return json({ error: "invalid_event" }, {}, 400);
   }
 
-  if (event === "heartbeat" && !CONFIG.heartbeat_enabled) {
+  if ((event === "heartbeat" || event === "session_end") && !CONFIG.heartbeat_enabled) {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
   const now = Math.floor(Date.now() / 1000);
+  if (event === "heartbeat") {
+    await db.prepare(
+      "UPDATE active_sessions SET last_seen_at = ? WHERE session_id = ? AND install_id = ? AND last_seen_at <= ?"
+    ).bind(now, sessionId, installId, now - HEARTBEAT_DEDUPE_SECONDS).run();
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+  if (event === "session_end") {
+    await db.prepare("DELETE FROM active_sessions WHERE session_id = ? AND install_id = ?")
+      .bind(sessionId, installId).run();
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+
   const day = new Date(now * 1000).toISOString().slice(0, 10);
   const dimensions = normalizedDimensions(input);
 
-  await db.prepare("DELETE FROM active_sessions WHERE last_seen_at < ?")
-    .bind(now - 24 * 60 * 60).run();
+  if (event === "wow_start" && Math.random() < 0.02) {
+    await db.prepare("DELETE FROM active_sessions WHERE last_seen_at < ?")
+      .bind(now - 24 * 60 * 60).run();
+  }
 
   await db.prepare(
     `INSERT INTO installs (install_id, first_seen_at, last_seen_at)
      VALUES (?, ?, ?)
      ON CONFLICT(install_id) DO UPDATE SET last_seen_at = excluded.last_seen_at`
   ).bind(installId, now, now).run();
-
-  if (event === "heartbeat") {
-    const current = await db.prepare(
-      "SELECT last_seen_at FROM active_sessions WHERE session_id = ?"
-    ).bind(sessionId).first();
-
-    if (current && now - current.last_seen_at < HEARTBEAT_DEDUPE_SECONDS) {
-      return new Response(null, { status: 204, headers: CORS_HEADERS });
-    }
-  }
 
   await db.prepare(
     `INSERT OR IGNORE INTO daily_event_installs (day, event, install_id)
@@ -154,7 +163,7 @@ async function handleEvent(request, db) {
     }
   }
 
-  if (event === "wow_start" || event === "heartbeat") {
+  if (event === "wow_start") {
     await db.prepare(
       `INSERT INTO active_sessions
          (session_id, install_id, last_seen_at, app_version, wow_version, renderer, macos_version, realmlist)
@@ -262,6 +271,28 @@ async function getStats(db, request, ctx) {
     unique_dimensions: historical.dimensions,
     unique_dimensions_today: groupDimensions(todayDimensions.results),
     unique_dimensions_month: groupDimensions(monthDimensions.results),
+  };
+}
+
+async function getLive(db) {
+  const now = Math.floor(Date.now() / 1000);
+  const active = await db.prepare(
+    "SELECT install_id, wow_version FROM active_sessions WHERE last_seen_at >= ?"
+  ).bind(now - ACTIVE_WINDOW_SECONDS).all();
+  const installs = new Set();
+  const versions = new Map();
+  for (const row of active.results || []) {
+    installs.add(row.install_id);
+    if (row.wow_version) {
+      if (!versions.has(row.wow_version)) versions.set(row.wow_version, new Set());
+      versions.get(row.wow_version).add(row.install_id);
+    }
+  }
+  return {
+    generated_at: new Date(now * 1000).toISOString(),
+    window_minutes: ACTIVE_WINDOW_SECONDS / 60,
+    count: installs.size,
+    by_version: Object.fromEntries([...versions].map(([version, ids]) => [version, ids.size])),
   };
 }
 

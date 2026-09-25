@@ -29,3 +29,5 @@ CREATE TABLE IF NOT EXISTS active_sessions (
   macos_version TEXT,
   realmlist TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_active_sessions_last_seen_at ON active_sessions(last_seen_at);
