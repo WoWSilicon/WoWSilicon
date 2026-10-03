@@ -1,0 +1,26 @@
+Subject: [PATCH] winemac: Preserve mouse capture on keyboard type changes.
+
+Switching between devices with different macOS keyboard types generates
+KEYBOARD_CHANGED even when the input source and Windows keyboard layout
+remain the same. Sending WM_CANCELMODE for this type-only change releases
+mouse capture in legacy WoW while its mouse buttons are still held.
+
+Keep rebuilding the key tables and activating the layout, but only send
+WM_CANCELMODE when NtUserActivateKeyboardLayout returns a different HKL.
+
+diff --git a/dlls/winemac.drv/keyboard.c b/dlls/winemac.drv/keyboard.c
+--- a/dlls/winemac.drv/keyboard.c
++++ b/dlls/winemac.drv/keyboard.c
+@@ -1044,7 +1044,9 @@ void macdrv_keyboard_changed(const macdrv_event *event)
+
+     macdrv_compute_keyboard_layout(thread_data);
+
+-    NtUserActivateKeyboardLayout(thread_data->active_keyboard_layout, 0);
+-
+-    send_message(get_active_window(), WM_CANCELMODE, 0, 0);
++    /* A different physical keyboard can require new key tables without changing
++     * the input source. Do not cancel mouse capture for such type-only changes. */
++    if (NtUserActivateKeyboardLayout(thread_data->active_keyboard_layout, 0) !=
++        thread_data->active_keyboard_layout)
++        send_message(get_active_window(), WM_CANCELMODE, 0, 0);
+ }
